@@ -13,6 +13,9 @@ interface GameState {
 
   activeCase: ClientCase | null;
   lastResult: VerdictResult | null;
+  /** The decided case's accent, kept alive after activeCase is cleared so the
+   *  verdict screen can still flash the colour the case arrived in. */
+  lastAccent: string | null;
   city: CityState | null;
 
   bootstrapping: boolean;
@@ -37,6 +40,7 @@ export const useGame = create<GameState>((set, get) => ({
 
   activeCase: null,
   lastResult: null,
+  lastAccent: null,
   city: null,
 
   bootstrapping: true,
@@ -102,7 +106,7 @@ export const useGame = create<GameState>((set, get) => ({
       wasHung: verdict === null,
     });
 
-    set({ lastResult: result, city: result.city, activeCase: null });
+    set({ lastResult: result, lastAccent: activeCase.accent, city: result.city, activeCase: null });
     return result;
   },
 
