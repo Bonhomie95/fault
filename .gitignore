@@ -5,9 +5,14 @@ web-build/
 expo-env.d.ts
 .DS_Store
 *.log
+.claude
+.vscode
+
 
 # Secrets — the Groq key and DB URL live here
-server/.env
+.env
 
 # Prisma generated client
 server/generated/
+expo-env.d.ts
+# @end expo-cli

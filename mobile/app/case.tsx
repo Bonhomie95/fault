@@ -289,6 +289,7 @@ function WitnessesTab({
         >
           <Text style={[styles.cardTag, { color: accent }]}>WITNESS {i + 1}</Text>
           <Text style={styles.name}>{w.name}</Text>
+          {w.role.length > 0 && <Text style={styles.meta}>{w.role}</Text>}
           {/* The most text-heavy section. You will not finish it. */}
           <Text style={styles.testimony}>“{w.testimony}”</Text>
         </Pressable>

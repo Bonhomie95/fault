@@ -58,13 +58,30 @@ describe('the authored docket', () => {
   }
 
   it('names every character it adds to the pool', () => {
+    // The pool name and the witness name are the same identity key. If they
+    // drift apart, the Echo System stops recognising people it has already met.
     for (const c of SEED_CASES) {
       const names = c.character_pool_additions.map((p) => p.name);
       assert.ok(names.includes(c.defendant.name), `${c.title} omits its own defendant`);
       for (const w of c.witnesses) {
-        assert.ok(names.includes(w.name), `${c.title} omits witness ${w.name}`);
+        assert.ok(names.includes(w.name), `${c.title} omits witness "${w.name}"`);
       }
     }
+  });
+
+  it('keeps titles and descriptors out of names', () => {
+    // "Sergeant Musa Danjuma" and "Musa Danjuma" are one person; only one of
+    // those strings can be the key, and it has to be the bare name.
+    const offenders: string[] = [];
+    for (const c of SEED_CASES) {
+      const people = [c.defendant.name, ...c.witnesses.map((w) => w.name)];
+      for (const name of people) {
+        if (name.includes(',')) offenders.push(`${name} (descriptor in name)`);
+        if (/^(Dr|Mr|Mrs|Ms|Sergeant|Inspector|Officer)\b/.test(name))
+          offenders.push(`${name} (title in name)`);
+      }
+    }
+    assert.deepEqual(offenders, []);
   });
 
   it('carries a mix of answerable and unanswerable cases', () => {

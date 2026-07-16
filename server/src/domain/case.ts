@@ -28,7 +28,16 @@ export const evidenceSchema = z.object({
 });
 
 export const witnessSchema = z.object({
+  /**
+   * The person's name and nothing else — no ", gate security" qualifier.
+   * This string is the Echo System's identity key: it is what gets written to
+   * the character pool, what a later case is matched against, and what seeds
+   * the silhouette. A descriptor baked in here makes the same human a
+   * different person on their second appearance.
+   */
   name: z.string(),
+  /** How they come to be testifying: "gate security", "the estranged husband". */
+  role: z.string().default(''),
   testimony: z.string(),
   /** Each witness carries one provable lie and one ambiguous claim (GDD 2.1). */
   lie: z.string(),
@@ -86,7 +95,7 @@ export interface ClientCase {
     portraitSeed: number;
   };
   evidence: { id: string; description: string; prosecution_reading: string; defence_reading: string }[];
-  witnesses: { name: string; testimony: string }[];
+  witnesses: { name: string; role: string; testimony: string }[];
   prosecutionArgument: string;
   defenceArgument: string;
   /** Names in this case the player has judged before. The Echo System (GDD 2.4)

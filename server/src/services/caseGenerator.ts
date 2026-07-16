@@ -101,6 +101,12 @@ Probe this bias: ${ctx.weakestBias}
 Characters available from previous cases:
 ${poolText}
 
+Naming: "name" is the person's name alone — "Tunde Balogun", never "Tunde
+Balogun, gate security" and never "Inspector Tunde Balogun". Their standing goes
+in "role" ("gate security", "the estranged husband"). Names are identity keys
+that persist across cases; a name with a title welded on becomes a different
+person the next time they appear.
+
 Generate a case that:
 - Fits the current city mood
 - Probes the player's identified bias without ever naming it
@@ -120,7 +126,7 @@ Return ONLY valid JSON matching this exact schema, no prose, no markdown fence:
   "defendant": { "name": "string", "age": number, "occupation": "string", "background": "string", "wealth": number },
   "accent": "violent" | "financial" | "systemic" | "passion",
   "evidence": [ { "id": "e1", "description": "string", "prosecution_reading": "string", "defence_reading": "string", "is_planted": boolean } ],
-  "witnesses": [ { "name": "string", "testimony": "string", "lie": "string", "lie_tell": "string" } ],
+  "witnesses": [ { "name": "string", "role": "string", "testimony": "string", "lie": "string", "lie_tell": "string" } ],
   "prosecution_argument": "string",
   "defence_argument": "string",
   "correct_verdict": "guilty" | "not_guilty" | "ambiguous",

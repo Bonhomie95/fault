@@ -76,7 +76,7 @@ export interface ClientCase {
     prosecution_reading: string;
     defence_reading: string;
   }[];
-  witnesses: { name: string; testimony: string }[];
+  witnesses: { name: string; role: string; testimony: string }[];
   prosecutionArgument: string;
   defenceArgument: string;
   returningCharacters: { name: string; portraitSeed: number }[];

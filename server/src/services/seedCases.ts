@@ -51,7 +51,8 @@ export const SEED_CASES: GeneratedCase[] = [
     ],
     witnesses: [
       {
-        name: 'Tunde Balogun, gate security',
+        name: 'Tunde Balogun',
+        role: 'gate security',
         testimony:
           'I watched the gate the whole shift. Nobody drove out. I saw Adaeze near the loading bay around two, maybe half two. She was carrying something — a box, I think. I did not stop her because she works there. I never left my post the entire night.',
         lie: 'He left his post — the gate log records a 22-minute break at 02:35.',
@@ -59,7 +60,8 @@ export const SEED_CASES: GeneratedCase[] = [
           '"I never left my post the entire night" — an unprompted absolute, offered before anyone asked.',
       },
       {
-        name: 'Ifeoma Chukwu, shift supervisor',
+        name: 'Ifeoma Chukwu',
+        role: 'shift supervisor',
         testimony:
           'Adaeze asked me twice that month about the ledger codes. Who could see them, whether they were logged. I thought it was odd. She has always been a good worker. I would not say she stole anything. But she asked.',
         lie: 'She was not on shift that month — her roster shows her on medical leave until the 30th.',
@@ -118,14 +120,16 @@ export const SEED_CASES: GeneratedCase[] = [
     ],
     witnesses: [
       {
-        name: 'Blessing Adeyi, market trader',
+        name: 'Blessing Adeyi',
+        role: 'market trader',
         testimony:
           'The other man pushed first, I saw that clearly from my stall. Then Emeka hit him once and it was finished. I have known Emeka since he was a boy. He is not a violent person. I had a clear view of the whole thing from beginning to end.',
         lie: 'Her stall faces away from the junction; the sightline is blocked by a container.',
         lie_tell: '"I had a clear view of the whole thing" — the claim grows more certain as it is repeated.',
       },
       {
-        name: 'Sergeant Musa Danjuma',
+        name: 'Musa Danjuma',
+        role: 'sergeant, arresting officer',
         testimony:
           'We arrived at 16:20. The complainant was on the ground, bleeding. Obi was calm — too calm, in my experience. He said, "He should have paid me." He did not resist arrest. He made no attempt to explain himself.',
         lie: 'The arrest record shows Obi gave a statement at the scene claiming he was struck first.',
@@ -184,14 +188,16 @@ export const SEED_CASES: GeneratedCase[] = [
     ],
     witnesses: [
       {
-        name: 'Chinelo Eze, depositor',
+        name: 'Chinelo Eze',
+        role: 'depositor',
         testimony:
           'He looked me in the face at the Ikorodu office and told me my unit would be ready by December. I gave him everything I had. My sister warned me. I told her he built the first estate, I saw it with my own eyes. He never once mentioned any problem with a contractor.',
         lie: 'She was sent a written notice of contractor difficulty in August; the office log records her signature.',
         lie_tell: '"He never once mentioned any problem" — contradicted by her own signature.',
       },
       {
-        name: 'Bashir Lawal, former Kestrel accountant',
+        name: 'Bashir Lawal',
+        role: 'former Kestrel accountant',
         testimony:
           'Kestrel was real. We had a yard, forty men, a cement account. Then the naira moved and the yard closed. Mr Adeyemi called me eleven times that month. He was not calm. He kept asking if we could finish anything at all. I have never met him in person.',
         lie: 'He has met Adeyemi — the Trust’s visitor log records four site meetings between them.',
@@ -249,7 +255,8 @@ export const SEED_CASES: GeneratedCase[] = [
     ],
     witnesses: [
       {
-        name: 'Inspector Kelechi Umeh',
+        name: 'Kelechi Umeh',
+        role: 'inspector, arresting officer',
         testimony:
           'The vehicle was stopped for a routine check. She was nervous, sweating, would not meet my eyes. I opened the boot and found the package immediately, in plain view once the wheel was lifted. My camera was recording continuously throughout the search.',
         lie: 'The footage has a four-minute gap; the recording was not continuous.',
@@ -257,7 +264,8 @@ export const SEED_CASES: GeneratedCase[] = [
           '"Recording continuously throughout" — a claim the evidence log flatly disproves, made under no pressure to make it.',
       },
       {
-        name: 'Dr Ngozi Umeh, faculty supervisor',
+        name: 'Ngozi Umeh',
+        role: 'faculty supervisor',
         testimony:
           'Amara is the strongest student in her year. She had no reason to do this — her family is comfortable, she had a placement waiting. I would trust her with anything. I have no relationship with the arresting officer whatsoever.',
         lie: 'The arresting officer is her brother-in-law.',
@@ -316,14 +324,16 @@ export const SEED_CASES: GeneratedCase[] = [
     ],
     witnesses: [
       {
-        name: 'Yemi Adebayo, estranged husband',
+        name: 'Yemi Adebayo',
+        role: 'estranged husband',
         testimony:
           'She said she would rather see it burn than let my sister have it. Said it to my face, in the kitchen, in front of the children. She has a temper. I filed for divorce because I was afraid of her. I have nothing to gain from any of this.',
         lie: 'He is the named beneficiary on his sister’s policy and stands to collect ₦11m.',
         lie_tell: '"I have nothing to gain" — the one claim the paperwork answers directly.',
       },
       {
-        name: 'Sikirat Bello, neighbouring trader',
+        name: 'Sikirat Bello',
+        role: 'neighbouring trader',
         testimony:
           'I smelled the kerosene before I saw anything. I ran out and there was a figure at the back of Folake’s stall, moving away. Not tall. Could have been a woman. Could have been anyone. It was dark and I am sixty-one years old and I was not wearing my glasses.',
         lie: 'She told the fire officer that night she saw nobody at all.',
@@ -382,14 +392,16 @@ export const SEED_CASES: GeneratedCase[] = [
     ],
     witnesses: [
       {
-        name: 'Hauwa Sule, company secretary and daughter',
+        name: 'Hauwa Sule',
+        role: 'company secretary and daughter',
         testimony:
           'The drivers were sleeping in the cab for nineteen days. My father paid because they had nothing to eat. He cried when he made that transfer. He has never paid anyone before, not once in thirty years, and I would know because I keep every book in that company.',
         lie: 'The books she keeps show four similar payments to depot officials since 2021.',
         lie_tell: '"I would know because I keep every book" — she indicts herself to defend him.',
       },
       {
-        name: 'Obiora Nnamdi, roads official (co-accused)',
+        name: 'Obiora Nnamdi',
+        role: 'roads official, co-accused',
         testimony:
           'The payment was a facilitation fee. It is normal. Everyone does it. I never asked Mr Sule for anything — he offered, and I would not insult a man by refusing. The delay was a computer problem, nothing to do with me.',
         lie: 'He personally entered the hold order on all nineteen days; the system log carries his ID.',

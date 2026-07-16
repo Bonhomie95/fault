@@ -60,7 +60,11 @@ function toClientCase(
       prosecution_reading: e.prosecution_reading,
       defence_reading: e.defence_reading,
     })),
-    witnesses: witnesses.map((w) => ({ name: w.name, testimony: w.testimony })),
+    witnesses: witnesses.map((w) => ({
+      name: w.name,
+      role: w.role ?? '',
+      testimony: w.testimony,
+    })),
     prosecutionArgument: row.prosecutionArgument,
     defenceArgument: row.defenceArgument,
     returningCharacters,

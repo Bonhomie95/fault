@@ -28,6 +28,13 @@ const pct = (n: number, d: number) => (d === 0 ? 0 : (n / d) * 100);
 const isAligned = (verdict: string, correct: string) =>
   correct === 'ambiguous' ? null : verdict === correct;
 
+/** "a", "a and b", "a, b, and c" — never "a, and b, and c". */
+function listSentence(items: string[]): string {
+  if (items.length === 1) return items[0]!;
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
 export async function computeJurorStats(userId: string): Promise<JurorStats> {
   const verdicts = await prisma.verdictRecord.findMany({
     where: { userId },
@@ -105,17 +112,20 @@ export async function computeJurorStats(userId: string): Promise<JurorStats> {
   const pressureAccuracy = accuracyOf(verdicts.filter((v) => v.timeRemaining <= PRESSURE_THRESHOLD));
   const gutAccuracy = accuracyOf(verdicts.filter((v) => v.timeRemaining <= GUT_THRESHOLD));
 
+  // Every pattern is a verb phrase agreeing with "this juror ...", so they can
+  // be listed straight into a sentence without reading like a stat dump.
   const notablePatterns: string[] = [];
   const hung = verdicts.filter((v) => v.wasHung).length;
-  if (hung > 0) notablePatterns.push(`${hung} verdict(s) left to the clock`);
+  if (hung > 0)
+    notablePatterns.push(`left ${hung} verdict${hung === 1 ? '' : 's'} to the clock`);
   if (socioeconomicBias > 20) notablePatterns.push('convicts poor defendants more readily');
   if (socioeconomicBias < -20) notablePatterns.push('convicts wealthy defendants more readily');
   if (pairs > 0 && consistencyScore < 60)
     notablePatterns.push('gives different verdicts to structurally identical cases');
   const overall = accuracyOf(verdicts);
-  if (gutAccuracy > overall + 10) notablePatterns.push('more accurate under time pressure');
+  if (gutAccuracy > overall + 10) notablePatterns.push('is more accurate under time pressure');
   if (gutAccuracy < overall - 10 && gutAccuracy > 0)
-    notablePatterns.push('less accurate under time pressure');
+    notablePatterns.push('is less accurate under time pressure');
 
   return {
     convictionRate: pct(convictions, total),
@@ -181,14 +191,20 @@ export async function writeJurorProfile(userId: string, jurorName: string): Prom
   const acquittals = Math.round(((100 - stats.convictionRate) / 100) * stats.totalCases);
 
   if (!groq) {
-    // Deterministic fallback keeps the same voice when AI is off.
+    // Deterministic fallback keeps the same voice when AI is off. This is the
+    // shipping path whenever GROQ_API_KEY is unset, so it has to read like
+    // prose a journalist filed, not like a template.
     const leaning =
-      stats.convictionRate > 60 ? 'convicts more often than not' : stats.convictionRate < 40 ? 'acquits more often than not' : 'splits evenly between conviction and acquittal';
+      stats.convictionRate > 60
+        ? 'convict more often than not' // agrees with the plural "They"
+        : stats.convictionRate < 40
+          ? 'acquit more often than not'
+          : 'split evenly between conviction and acquittal';
     return [
       `Juror ${jurorName} has presided over ${stats.totalCases} case${stats.totalCases === 1 ? '' : 's'}, with a conviction rate of ${Math.round(stats.convictionRate)}%.`,
       `They ${leaning}, and have acquitted ${acquittals} defendant${acquittals === 1 ? '' : 's'}.`,
       stats.notablePatterns.length > 0
-        ? `Court records note that this juror ${stats.notablePatterns.join(', and ')}.`
+        ? `Court records note that this juror ${listSentence(stats.notablePatterns)}.`
         : 'Court records note no irregularity in their reasoning.',
     ].join(' ');
   }
