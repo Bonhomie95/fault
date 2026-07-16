@@ -1,0 +1,196 @@
+// FAULT — persistence layer.
+// The city is per-player: every juror inhabits their own Orun City, shaped
+// only by their own verdicts. Nothing here is shared across users except
+// the aggregate consensus counters on Case.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7: the connection URL lives in prisma.config.ts, and the runtime
+// client is constructed with a driver adapter (see src/lib/prisma.ts).
+datasource db {
+  provider = "postgresql"
+}
+
+enum Verdict {
+  guilty
+  not_guilty
+}
+
+enum CorrectVerdict {
+  guilty
+  not_guilty
+  ambiguous
+}
+
+enum CharacterRole {
+  defendant
+  witness
+  prosecutor
+  defender
+  victim
+}
+
+/// How a character left your courtroom. Drives which echo they can return as.
+enum CharacterFate {
+  convicted
+  acquitted
+  untried // witnesses, counsel — never judged, but still remembered
+}
+
+model User {
+  id           String   @id @default(cuid())
+  jurorName    String
+  createdAt    DateTime @default(now())
+
+  // Accessibility: the deliberation clock in seconds. Default 120 (GDD 2.1).
+  // Extended tiers carry no penalty and no badge change (GDD 8, Settings).
+  clockSeconds Int      @default(120)
+  trialUnlocked Boolean @default(false) // false = 10-case trial
+
+  cases        Case[]
+  verdicts     VerdictRecord[]
+  characters   Character[]
+  cityState    CityState?
+  jurorProfile JurorProfile?
+
+  @@map("users")
+}
+
+model CityState {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  crimeRate            Float    @default(50)
+  judicialTrust        Float    @default(50)
+  wealthDisparity      Float    @default(50)
+  organizedCrimePower  Float    @default(50)
+  policeIntegrity      Float    @default(50)
+  mediaPressure        Float    @default(50)
+
+  activeFactions       String[] @default([])
+  updatedAt            DateTime @updatedAt
+
+  @@map("city_state")
+}
+
+model Case {
+  id                  String         @id @default(cuid())
+  userId              String
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// 1-indexed position in this player's docket. Drives chapter + echo windows.
+  caseNumber          Int
+  title               String
+  charge              String
+  accent              String         // case mood colour (GDD 5.1)
+  mood                String         // derived from city state at generation time
+
+  defendantName       String
+  defendantAge        Int
+  defendantOccupation String
+  defendantBackground String         @db.Text
+  /// Wealth band 0-100. Never shown to the player; used to score
+  /// socioeconomic_bias and to pick the city effect.
+  defendantWealth     Float          @default(50)
+
+  evidence            Json           // Evidence[]
+  witnesses           Json           // Witness[]
+  prosecutionArgument String         @db.Text
+  defenceArgument     String         @db.Text
+
+  correctVerdict      CorrectVerdict
+  /// Which side the evidence actually favours, for evidence_weight scoring.
+  evidenceStrength    Float          @default(0) // -1 fully defence .. +1 fully prosecution
+  isHandAuthored      Boolean        @default(false)
+
+  /// Structural fingerprint. Two cases sharing this are the consistency probe
+  /// (GDD 2.5): identical structure, delivered ~20 cases apart.
+  structureKey        String?
+
+  /// Community consensus for the "63% of players convicted" beat (GDD 11.4).
+  consensusGuilty     Int            @default(0)
+  consensusNotGuilty  Int            @default(0)
+
+  createdAt           DateTime       @default(now())
+
+  verdict             VerdictRecord?
+  characters          Character[]
+
+  @@unique([userId, caseNumber])
+  @@index([userId, structureKey])
+  @@map("cases")
+}
+
+model VerdictRecord {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  caseId        String   @unique
+  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  verdict       Verdict
+  /// Seconds left on the clock at the moment of decision. 0 = forced.
+  timeRemaining Int
+  /// True when the clock ran out and the game chose for you (GDD 2.2).
+  wasHung       Boolean  @default(false)
+
+  /// Newspaper-style downstream consequence, revealed at the next Dossier
+  /// Review. Written at verdict time, read 10 cases later.
+  outcomeText   String?  @db.Text
+  outcomeSeen   Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("verdicts")
+}
+
+model Character {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name           String
+  role           CharacterRole
+  fate           CharacterFate
+  /// Portrait seed — silhouettes are deterministic per character (GDD 5.2),
+  /// so a returning face is the same face.
+  portraitSeed   Int
+  themes         String[]      @default([])
+
+  originCaseId   String
+  originCase     Case          @relation(fields: [originCaseId], references: [id], onDelete: Cascade)
+  originCaseNumber Int
+  lastUsedCase   Int
+  relevanceScore Float         @default(0)
+  /// Times this person has come back. Caps runaway reuse.
+  echoCount      Int           @default(0)
+
+  createdAt      DateTime      @default(now())
+
+  @@index([userId, lastUsedCase])
+  @@map("characters")
+}
+
+model JurorProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  convictionRate    Float    @default(0)
+  evidenceWeight    Float    @default(0)
+  socioeconomicBias Float    @default(0)
+  consistencyScore  Float    @default(0)
+  pressureAccuracy  Float    @default(0)
+  gutAccuracy       Float    @default(0)
+
+  totalCases        Int      @default(0)
+  /// Groq-written prose profile (GDD 7.5). Regenerated at each review break.
+  writtenProfile    String?  @db.Text
+  updatedAt         DateTime @updatedAt
+
+  @@map("juror_profiles")
+}
