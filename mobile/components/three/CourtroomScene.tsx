@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { Vector3 } from 'three';
 import type { ClientCase } from '@/lib/api';
+import { useReducedMotion } from '@/lib/motion';
 import { Canvas, useFrame, useThree } from '@/lib/r3f';
 import { EvidenceObject } from './EvidenceObject';
 import { Figure } from './Figure';
@@ -8,45 +9,141 @@ import { Figure } from './Figure';
 export type DossierTab = 'defendant' | 'evidence' | 'witnesses' | 'arguments';
 
 /**
- * The room.
+ * The room, from the twelfth seat.
  *
- * You are the jury of one, so the camera is your head: it does not cut, it
- * moves. Swiping a tab walks you around the same continuous space rather than
- * swapping a screen, which is what makes the dossier feel like a place you are
- * standing in instead of a document you are scrolling.
+ * You are the jury of one. The camera is your head, and this file now means it
+ * literally: your head does not move. It is bolted to a seat in the jury box
+ * and only your gaze travels.
+ *
+ * It used to claim the same thing and not do it. The old marks flew the camera
+ * to 2.15m to look down at the exhibit table and slid it 1.85m sideways to face
+ * the witness stand — a drone on a boom, not a person in a chair. Two things
+ * were wrong with that. It broke the fiction the whole game rests on, and
+ * translating a camera through a space is the single most reliable way to make
+ * someone motion-sick on a handset, which is a strange thing to do to a player
+ * you have asked to sit still and concentrate for 120 seconds.
+ *
+ * So: one seat, four gazes. Turning to the witness is a turn of the head.
+ * Reading the exhibits is looking down at the table in front of you. The room
+ * is fixed and you are in it.
  */
 
-interface CameraMark {
-  position: [number, number, number];
+/** The twelfth seat. Eye height of someone seated, and it does not change. */
+const HEAD: [number, number, number] = [0, 1.15, 1.75];
+
+/**
+ * How far out counsel stand.
+ *
+ * Constrained by the lens, not by taste: at the arguments fov this frame is
+ * ±11.6° wide, and anyone past that is simply not on screen.
+ */
+const COUNSEL_X = 0.58;
+
+interface Gaze {
+  /** Where you are looking. Never where you are. */
   target: [number, number, number];
+  /**
+   * Focal length, as attention.
+   *
+   * With the head fixed, this is what is left to express "lean in" and "take
+   * the room in" — and it is honest, because narrowing on a face is what your
+   * attention actually does. Kept in a narrow band: a big fov swing from a
+   * static camera is a dolly zoom, which is a horror-film effect and would
+   * read as the room lurching.
+   */
+  fov: number;
 }
 
-const MARKS: Record<DossierTab, CameraMark> = {
-  // Face to face with the accused — close enough to read them, which is the
-  // whole trap. You are meant to look at this person and feel something.
-  defendant: { position: [0, 1.12, 1.5], target: [0, 1.02, -0.6] },
-  // Over the exhibit table, looking down at what you have been given.
-  evidence: { position: [0, 2.15, 1.45], target: [0, 0.75, 0.15] },
-  // Turned toward the stand.
-  witnesses: { position: [1.85, 1.4, 2.05], target: [1.5, 0.95, -0.4] },
-  // Between the two arguments, watching them talk past each other.
-  arguments: { position: [0, 1.5, 2.9], target: [0, 1.0, -1.1] },
+const GAZES: Record<DossierTab, Gaze> = {
+  // Straight ahead at the accused, and narrowed — close enough to read them,
+  // which is the whole trap. You are meant to look at this person and feel
+  // something.
+  defendant: { target: [0, 1.02, -0.95], fov: 36 },
+  // Down at the table in front of you. You do not fly over it; the exhibit
+  // rises to meet you when you pick it up (see EvidenceObject).
+  evidence: { target: [0, 0.8, 0.15], fov: 46 },
+  // A turn of the head to the right, toward the stand.
+  witnesses: { target: [1.5, 1.05, -0.4], fov: 42 },
+  // Both counsel at once, so this is the widest the room ever gets. It cannot
+  // go wider: three.js fov is VERTICAL and this canvas is 0.461 aspect, so 48°
+  // vertical buys only ~23° horizontal. Framing anyone beyond ±11.6° means
+  // moving them, not the lens — see COUNSEL_X. Nobody is talking to you. They
+  // are talking past you.
+  arguments: { target: [0, 1.05, -1.6], fov: 48 },
 };
 
-function CameraRig({ tab }: { tab: DossierTab }) {
+function CameraRig({ tab, reducedMotion }: { tab: DossierTab; reducedMotion: boolean }) {
   const { camera } = useThree();
-  const target = useRef(new Vector3(...MARKS.defendant.target));
+  const target = useRef(new Vector3(...GAZES.defendant.target));
+  const head = useMemo(() => new Vector3(...HEAD), []);
 
-  useFrame((_state, delta) => {
-    const mark = MARKS[tab];
-    const k = Math.min(1, delta * 2.4); // slow enough to feel like turning your head
+  useFrame((state, delta) => {
+    const gaze = GAZES[tab];
+    // Slow enough to feel like turning your head rather than cutting to a
+    // camera. Frame-rate independent, so a 120Hz phone does not turn twice as
+    // fast as a 60Hz one.
+    const k = 1 - Math.exp(-delta * 2.6);
 
-    camera.position.lerp(new Vector3(...mark.position), k);
-    target.current.lerp(new Vector3(...mark.target), k);
+    camera.position.copy(head);
+
+    if (!reducedMotion) {
+      // Breathing. Six millimetres — far too small to notice and the only
+      // reason the room feels occupied rather than paused. A perfectly still
+      // camera reads as a screenshot.
+      const t = state.clock.elapsedTime;
+      camera.position.y += Math.sin(t * 0.62) * 0.006;
+      camera.position.x += Math.sin(t * 0.41) * 0.004;
+    }
+
+    target.current.lerp(new Vector3(...gaze.target), k);
     camera.lookAt(target.current);
+
+    const cam = camera as typeof camera & { fov: number; updateProjectionMatrix: () => void };
+    if (Math.abs(cam.fov - gaze.fov) > 0.01) {
+      cam.fov += (gaze.fov - cam.fov) * k;
+      cam.updateProjectionMatrix();
+    }
   });
 
   return null;
+}
+
+/**
+ * The rail of the jury box, at the bottom of your vision.
+ *
+ * The oldest trick in first-person: you believe you are somewhere when you can
+ * see the edge of it. Without this the seat is an assertion; with it there is a
+ * physical thing between you and the court, and you are behind it.
+ *
+ * Its height is not taste, it is arithmetic, and the first version got it wrong
+ * — a frustum check said 0 of 4 sample points were on screen, because the rail
+ * sat below the forward sightline and rendered nothing at all on three of the
+ * four tabs.
+ *
+ * The band is narrow. Too low and it is off the bottom of the frame; too high
+ * and it hides the exhibit table you look down at. At z=1.35 the window is
+ * 1.000..1.062, so the top edge sits at 1.03: visible looking forward, and
+ * still 3cm under the sightline to the evidence. Wide enough that the 6mm of
+ * breathing cannot push it into either failure.
+ */
+function JuryRail({ accent }: { accent: string }) {
+  return (
+    <group>
+      <mesh position={[0, 0.98, 1.35]} receiveShadow castShadow>
+        <boxGeometry args={[9, 0.1, 0.12]} />
+        <meshStandardMaterial color="#1A1A17" roughness={0.75} />
+      </mesh>
+      <mesh position={[0, 0.5, 1.37]} receiveShadow>
+        <boxGeometry args={[9, 0.86, 0.06]} />
+        <meshStandardMaterial color="#111110" roughness={0.95} />
+      </mesh>
+      {/* the case's colour catches the rail edge nearest you */}
+      <mesh position={[0, 1.031, 1.3]}>
+        <boxGeometry args={[9, 0.004, 0.02]} />
+        <meshBasicMaterial color={accent} transparent opacity={0.55} />
+      </mesh>
+    </group>
+  );
 }
 
 function Room({ accent }: { accent: string }) {
@@ -89,40 +186,25 @@ function Room({ accent }: { accent: string }) {
   );
 }
 
-/** The jury box. Eleven shapes in the dark — present, silent, not voting. */
-function JuryBox({ accent }: { accent: string }) {
-  const seats = useMemo(
-    () =>
-      Array.from({ length: 11 }, (_, i) => ({
-        seed: 900 + i,
-        x: -3.4 + (i % 6) * 0.42,
-        z: -1.6 - Math.floor(i / 6) * 0.5,
-      })),
-    [],
-  );
-
-  return (
-    <group position={[-1.3, 0, 0]}>
-      <mesh position={[-2.35, 0.32, -1.85]} receiveShadow>
-        <boxGeometry args={[2.9, 0.64, 1.4]} />
-        <meshStandardMaterial color="#141412" roughness={0.95} />
-      </mesh>
-      {seats.map((s) => (
-        <Figure
-          key={s.seed}
-          seed={s.seed}
-          appearance={appearanceForSeed(s.seed)}
-          posture="seated"
-          position={[s.x, 0.64, s.z]}
-          rotation={[0, 0.35, 0]}
-          scale={0.62}
-          accent={accent}
-          alive={false}
-        />
-      ))}
-    </group>
-  );
-}
+/*
+ * The other eleven are not rendered, and that is a decision, not an omission.
+ *
+ * They used to sit in a box off to the left the camera never visited. Moving
+ * them to flank the twelfth seat felt like the fix — you would catch them in
+ * your periphery when you turned your head. A frustum check said otherwise:
+ * 0 of 11 on every tab, every frame.
+ *
+ * The lens cannot be argued with. This canvas is 0.461 aspect, which buys about
+ * 22° of horizontal view, so anything visible has to be roughly five times
+ * further forward than it is sideways. A person in the next seat is sideways at
+ * zero depth. You would have to turn 90° to see them, and no gaze here does.
+ *
+ * Which is the truth of the room anyway: you do not see the jury beside you,
+ * and in this game they were never going to look back. Eleven invisible figures
+ * are eleven figures of cost on a phone for nothing, so they are gone and the
+ * rail does the work of saying where you are sitting. You are the jury of one.
+ * You never see the other eleven.
+ */
 
 interface SceneProps {
   activeCase: ClientCase;
@@ -130,6 +212,10 @@ interface SceneProps {
   examinedEvidence: string | null;
   onSelectEvidence: (id: string) => void;
   focusedWitness: number;
+}
+
+interface InnerSceneProps extends SceneProps {
+  reducedMotion: boolean;
 }
 
 function hashName(name: string): number {
@@ -153,7 +239,14 @@ function appearanceForSeed(seed: number): number {
   return (x - Math.floor(x)) * 100;
 }
 
-function Scene({ activeCase, tab, examinedEvidence, onSelectEvidence, focusedWitness }: SceneProps) {
+function Scene({
+  activeCase,
+  tab,
+  examinedEvidence,
+  onSelectEvidence,
+  focusedWitness,
+  reducedMotion,
+}: InnerSceneProps) {
   const accent = activeCase.accent;
 
   return (
@@ -171,9 +264,9 @@ function Scene({ activeCase, tab, examinedEvidence, onSelectEvidence, focusedWit
       <pointLight position={[0, 2.6, 0.4]} intensity={1.6} distance={7} color={accent} />
       <fog attach="fog" args={['#0D0D0D', 4.5, 12]} />
 
-      <CameraRig tab={tab} />
+      <CameraRig tab={tab} reducedMotion={reducedMotion} />
       <Room accent={accent} />
-      <JuryBox accent={accent} />
+      <JuryRail accent={accent} />
 
       {/* The accused. Stands where the light is worst.
           `appearance` shapes this face and is uncorrelated with guilt — if it
@@ -202,13 +295,22 @@ function Scene({ activeCase, tab, examinedEvidence, onSelectEvidence, focusedWit
         />
       ))}
 
-      {/* Prosecution and defence, facing each other across you. */}
+      {/* Prosecution and defence, flanking the accused and talking past him.
+
+          They used to stand at x=±1.15, z=-1.15, which put them ±21.6° off
+          centre — outside a frame that is only ±11.6° wide on a portrait phone.
+          Both of them were cut off, in the old floating camera as well as this
+          one, on the one tab that exists to show them. Nobody noticed because a
+          3D scene that renders is assumed to render the right thing.
+
+          Pulled in to ±9.8° and set behind the defendant, which frames him
+          between the two people arguing about him. */}
       <Figure
         seed={hashName(`${activeCase.id}-prosecution`)}
         appearance={appearanceForSeed(hashName(`${activeCase.id}-prosecution`))}
         posture="arguing"
-        position={[-1.15, 0, -1.15]}
-        rotation={[0, 0.45, 0]}
+        position={[-COUNSEL_X, 0, -1.6]}
+        rotation={[0, 0.5, 0]}
         accent={accent}
         focused={tab === 'arguments'}
       />
@@ -216,8 +318,8 @@ function Scene({ activeCase, tab, examinedEvidence, onSelectEvidence, focusedWit
         seed={hashName(`${activeCase.id}-defence`)}
         appearance={appearanceForSeed(hashName(`${activeCase.id}-defence`))}
         posture="arguing"
-        position={[1.15, 0, -1.15]}
-        rotation={[0, -0.45, 0]}
+        position={[COUNSEL_X, 0, -1.6]}
+        rotation={[0, -0.5, 0]}
         accent={accent}
         focused={tab === 'arguments'}
       />
@@ -240,15 +342,19 @@ function Scene({ activeCase, tab, examinedEvidence, onSelectEvidence, focusedWit
 }
 
 export function CourtroomScene(props: SceneProps) {
+  // Read outside the Canvas: hooks inside r3f's tree run on its own renderer,
+  // and this is a React Native accessibility API, not a three.js concern.
+  const reducedMotion = useReducedMotion();
+
   return (
     <Canvas
       shadows
-      camera={{ position: MARKS.defendant.position, fov: 42, near: 0.1, far: 40 }}
+      camera={{ position: HEAD, fov: GAZES.defendant.fov, near: 0.1, far: 40 }}
       gl={{ antialias: true }}
       style={{ flex: 1 }}
     >
       <color attach="background" args={['#0D0D0D']} />
-      <Scene {...props} />
+      <Scene {...props} reducedMotion={reducedMotion} />
     </Canvas>
   );
 }
