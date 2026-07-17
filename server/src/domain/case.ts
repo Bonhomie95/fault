@@ -60,6 +60,13 @@ export const generatedCaseSchema = z.object({
     background: z.string(),
     /** 0 = destitute, 100 = untouchable. Never surfaced to the player. */
     wealth: z.number().min(0).max(100).default(50),
+    /**
+     * How sympathetic this person *looks* — 0 unsettling, 100 disarming.
+     * Drives the 3D face only. Must be uncorrelated with guilt: the whole
+     * measurement depends on appearance carrying no information, so that a
+     * juror who follows the face is following nothing.
+     */
+    appearance: z.number().min(0).max(100).default(50),
   }),
   accent: z.enum(['violent', 'financial', 'systemic', 'passion']),
   evidence: z.array(evidenceSchema).length(3),
@@ -87,12 +94,22 @@ export interface ClientCase {
   accent: string;
   mood: string;
   clockSeconds: number;
+  /** Real place, real court, real police service. Every person is invented. */
+  place: {
+    country: string;
+    jurisdiction: string;
+    tier: string;
+    tierLabel: string;
+  };
   defendant: {
     name: string;
     age: number;
     occupation: string;
     background: string;
     portraitSeed: number;
+    /** Shipped to the client because the face has to be drawn. It is the one
+     *  "hidden" value the player is *meant* to see — just not as a number. */
+    appearance: number;
   };
   evidence: { id: string; description: string; prosecution_reading: string; defence_reading: string }[];
   witnesses: { name: string; role: string; testimony: string }[];

@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import type { Tier } from '@prisma/client';
 import type { ClientCase, Evidence, Witness } from '../domain/case.js';
 import { prisma } from '../lib/prisma.js';
-import { accentHexFor, nextCase, structureKeyFor } from '../services/caseGenerator.js';
+import { accentHexFor, nextCase, placeForUser, structureKeyFor } from '../services/caseGenerator.js';
+import { tierLabel } from '../domain/jurisdiction.js';
 import { deriveCaseMood } from '../services/cityEffects.js';
 import { getCityState } from '../services/cityState.js';
 import { portraitSeedFor } from '../services/characterPool.js';
@@ -24,10 +26,14 @@ function toClientCase(
     charge: string;
     accent: string;
     mood: string;
+    country: string;
+    jurisdiction: string;
+    tier: Tier;
     defendantName: string;
     defendantAge: number;
     defendantOccupation: string;
     defendantBackground: string;
+    defendantAppearance: number;
     evidence: unknown;
     witnesses: unknown;
     prosecutionArgument: string;
@@ -47,12 +53,21 @@ function toClientCase(
     accent: row.accent,
     mood: row.mood,
     clockSeconds,
+    place: {
+      country: row.country,
+      jurisdiction: row.jurisdiction,
+      tier: row.tier,
+      tierLabel: tierLabel(row.tier, row.country),
+    },
     defendant: {
       name: row.defendantName,
       age: row.defendantAge,
       occupation: row.defendantOccupation,
       background: row.defendantBackground,
       portraitSeed: portraitSeedFor(row.defendantName),
+      // The face is meant to work on you. It is the one thing the game hides
+      // by showing rather than by withholding.
+      appearance: row.defendantAppearance,
     },
     evidence: evidence.map((e) => ({
       id: e.id,
@@ -113,7 +128,8 @@ caseRouter.get('/next', requireJuror, async (req, res) => {
 
   const caseNumber = heard + 1;
   const city = await getCityState(userId);
-  const { generated, source } = await nextCase(userId, caseNumber, city);
+  const place = placeForUser(user);
+  const { generated, source } = await nextCase(userId, caseNumber, city, place);
 
   const created = await prisma.case.create({
     data: {
@@ -123,18 +139,24 @@ caseRouter.get('/next', requireJuror, async (req, res) => {
       charge: generated.charge,
       accent: accentHexFor(generated.accent),
       mood: deriveCaseMood(city),
+      country: place.country,
+      // The fallback docket is set in a fictional city, so it must not claim a
+      // real court. Only generated cases carry a real jurisdiction.
+      jurisdiction: source === 'fallback' ? '' : place.court,
+      tier: place.tier,
       defendantName: generated.defendant.name,
       defendantAge: generated.defendant.age,
       defendantOccupation: generated.defendant.occupation,
       defendantBackground: generated.defendant.background,
       defendantWealth: generated.defendant.wealth,
+      defendantAppearance: generated.defendant.appearance,
       evidence: generated.evidence,
       witnesses: generated.witnesses,
       prosecutionArgument: generated.prosecution_argument,
       defenceArgument: generated.defence_argument,
       correctVerdict: generated.correct_verdict,
       evidenceStrength: generated.evidence_strength,
-      isHandAuthored: source === 'authored' || source === 'fallback',
+      isHandAuthored: source === 'fallback',
       structureKey: structureKeyFor(generated),
     },
   });

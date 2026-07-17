@@ -1,7 +1,12 @@
 // FAULT — persistence layer.
-// The city is per-player: every juror inhabits their own Orun City, shaped
-// only by their own verdicts. Nothing here is shared across users except
-// the aggregate consensus counters on Case.
+// The city is per-player: every juror inhabits their own city, shaped only by
+// their own verdicts. Nothing here is shared across users except the aggregate
+// consensus counters on Case.
+//
+// Cases are set in the player's real country and may name real jurisdictions
+// and police services as setting. Every individual — defendant, witness,
+// officer, counsel — is fictional. See caseGenerator's system prompt and
+// content filter; that boundary is load-bearing, not stylistic.
 
 generator client {
   provider = "prisma-client-js"
@@ -39,16 +44,78 @@ enum CharacterFate {
   untried // witnesses, counsel — never judged, but still remembered
 }
 
+enum AuthProvider {
+  apple
+  google
+  device // dev/Expo Go bypass — never issued in production
+}
+
+/// The ladder. You start where you live and climb outward; nobody hears a
+/// war-crimes case in their first week.
+enum Tier {
+  district      // where you live
+  state         // region / fylke / province / state
+  national      // federal
+  supranational // EU, African Union, ASEAN, Mercosur...
+  international // treaty courts
+  world
+}
+
+/// Where an application to sit in another country stands.
+enum ApplicationStatus {
+  pending
+  accepted
+  rejected
+  withdrawn
+}
+
+enum MissionKind {
+  daily
+  weekly
+  career
+}
+
 model User {
   id           String   @id @default(cuid())
+  /// Chosen by the player, always. The OAuth provider's display name is never
+  /// adopted — you pick who you are in the jury room.
   jurorName    String
   createdAt    DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
 
   // Accessibility: the deliberation clock in seconds. Default 120 (GDD 2.1).
   // Extended tiers carry no penalty and no badge change (GDD 8, Settings).
   clockSeconds Int      @default(120)
   trialUnlocked Boolean @default(false) // false = 10-case trial
 
+  // ---- Where you are from ----
+  // Set once at swearing-in from device location (or a picker if declined).
+  // Only the country and district are ever stored: the personalisation is
+  // country-level, so keeping coordinates would be collecting what the game
+  // does not use.
+  homeCountry  String?  // ISO 3166-1 alpha-2, e.g. "NO"
+  homeDistrict String?  // real district within that country, e.g. "Oslo"
+  /// Where the player is currently sitting. Starts at their home district and
+  /// climbs; may sit in another country once an application is accepted.
+  currentTier      Tier    @default(district)
+  currentCountry   String?
+  localeTag        String? // e.g. "nb-NO" — drives naming register
+
+  // ---- Standing ----
+  // Rank is service and only ever rises; it cannot spoil a case because it
+  // does not know whether you were right. Trust is judgement, and it moves
+  // only on delayed outcomes surfaced at review breaks (see progression.ts).
+  rank         Int      @default(1)
+  xp           Int      @default(0)
+  trust        Float    @default(50)
+
+  currentStreak Int     @default(0)
+  longestStreak Int     @default(0)
+  lastDocketDay String? // YYYY-MM-DD in the player's own day, for streaks
+
+  identities   AuthIdentity[]
+  applications JurisdictionApplication[]
+  missions     MissionProgress[]
   cases        Case[]
   verdicts     VerdictRecord[]
   characters   Character[]
@@ -56,6 +123,72 @@ model User {
   jurorProfile JurorProfile?
 
   @@map("users")
+}
+
+/// One row per provider per user, so a juror can attach both Apple and Google
+/// to the same record and keep one career.
+model AuthIdentity {
+  id         String       @id @default(cuid())
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider   AuthProvider
+  /// The provider's stable subject id. Never an email: Apple's private relay
+  /// address can change, the subject cannot.
+  subject    String
+  /// Only stored when the provider shares it and the player consents. Apple
+  /// gives this exactly once, at first authorisation.
+  email      String?
+  createdAt  DateTime     @default(now())
+
+  @@unique([provider, subject])
+  @@index([userId])
+  @@map("auth_identities")
+}
+
+/// An application to sit as a juror somewhere you are not from (GDD extension).
+/// Decided on the record: rank, trust, consistency, evidence alignment.
+model JurisdictionApplication {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  country     String            // ISO alpha-2 being applied to
+  tier        Tier
+  status      ApplicationStatus @default(pending)
+  /// The bench's written reasoning — the player reads a decision, not a score.
+  decisionText String?          @db.Text
+  /// Snapshot of what the record looked like when judged, so a later decision
+  /// can be explained honestly.
+  trustAtDecision Float?
+  rankAtDecision  Int?
+  decidedAt   DateTime?
+  createdAt   DateTime          @default(now())
+
+  @@index([userId, status])
+  @@map("jurisdiction_applications")
+}
+
+/// Missions are the reason to come back. Progress is per-period so a daily
+/// resets without destroying career-long objectives.
+model MissionProgress {
+  id         String      @id @default(cuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  key        String      // stable mission id, e.g. "hear_three"
+  kind       MissionKind
+  /// The period this instance belongs to: "2026-07-16" daily, "2026-W29"
+  /// weekly, "career" for career missions.
+  period     String
+  progress   Int         @default(0)
+  target     Int
+  claimed    Boolean     @default(false)
+  completedAt DateTime?
+
+  @@unique([userId, key, period])
+  @@index([userId, period])
+  @@map("mission_progress")
 }
 
 model CityState {
@@ -88,6 +221,13 @@ model Case {
   accent              String         // case mood colour (GDD 5.1)
   mood                String         // derived from city state at generation time
 
+  // ---- Where this case was heard ----
+  country             String         @default("NO") // ISO alpha-2
+  /// Real jurisdiction this sits in, e.g. "Oslo tingrett" / "Oslo politidistrikt".
+  /// The institution is real; every person in the case is not.
+  jurisdiction        String         @default("")
+  tier                Tier           @default(district)
+
   defendantName       String
   defendantAge        Int
   defendantOccupation String
@@ -95,6 +235,11 @@ model Case {
   /// Wealth band 0-100. Never shown to the player; used to score
   /// socioeconomic_bias and to pick the city effect.
   defendantWealth     Float          @default(50)
+  /// How sympathetic this defendant *looks* — 0 unsettling, 100 disarming.
+  /// Drives the 3D face and nothing else the player can read. Paired with the
+  /// verdict it measures appearance_bias: whether a face changed your mind.
+  /// Deliberately uncorrelated with guilt at generation time.
+  defendantAppearance Float          @default(50)
 
   evidence            Json           // Evidence[]
   witnesses           Json           // Witness[]
@@ -142,6 +287,16 @@ model VerdictRecord {
   outcomeText   String?  @db.Text
   outcomeSeen   Boolean  @default(false)
 
+  /// What this verdict will eventually do to your standing.
+  ///
+  /// Computed at verdict time but deliberately NOT applied then: trust that
+  /// moved the instant you tapped would tell you whether you were right, and
+  /// the game does not do that (GDD 2.6). It lands at the review break,
+  /// alongside the outcome that justifies it.
+  trustDelta    Float    @default(0)
+  trustApplied  Boolean  @default(false)
+  xpAwarded     Int      @default(0)
+
   createdAt     DateTime @default(now())
 
   @@index([userId, createdAt])
@@ -186,6 +341,9 @@ model JurorProfile {
   consistencyScore  Float    @default(0)
   pressureAccuracy  Float    @default(0)
   gutAccuracy       Float    @default(0)
+  /// The seventh measurement: do you acquit the ones who look harmless?
+  /// Positive = convicts unsettling-looking defendants more readily.
+  appearanceBias    Float    @default(0)
 
   totalCases        Int      @default(0)
   /// Groq-written prose profile (GDD 7.5). Regenerated at each review break.

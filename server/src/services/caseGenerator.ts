@@ -1,7 +1,9 @@
+import type { Tier } from '@prisma/client';
 import { ACCENTS, generatedCaseSchema, type GeneratedCase } from '../domain/case.js';
 import type { CityMetrics } from '../domain/city.js';
 import { GROQ_MODEL, groq } from '../lib/groq.js';
 import { caseQueueKey, redis } from '../lib/redis.js';
+import { districtFor, profileFor, tierLabel } from '../domain/jurisdiction.js';
 import { deriveCaseMood, deriveFactions } from './cityEffects.js';
 import { echoRolesFor, getEligibleCharacters, type PoolCharacter } from './characterPool.js';
 import { computeJurorStats, weakestBias } from './jurorProfile.js';
@@ -44,12 +46,26 @@ export function structureKeyFor(c: GeneratedCase): string {
   return `${c.accent}:${wealthBand}:${strengthBand}:${planted}:${c.correct_verdict}`;
 }
 
+/** Where this case is heard. Real institutions; fictional people. */
+export interface PlaceContext {
+  country: string;
+  countryName: string;
+  district: string;
+  court: string;
+  policeService: string;
+  currency: string;
+  nameRegister: string;
+  tier: Tier;
+  tierLabel: string;
+}
+
 interface GenerationContext {
   city: CityMetrics;
   jurorProfileSummary: string;
   weakestBias: string;
   characterPool: PoolCharacter[];
   caseNumber: number;
+  place: PlaceContext;
 }
 
 function buildSystemPrompt(ctx: GenerationContext): string {
@@ -67,10 +83,31 @@ function buildSystemPrompt(ctx: GenerationContext): string {
           )
           .join('\n');
 
+  const place = ctx.place;
+
   return `
-You are a case file generator for a legal drama mobile game set in Orun City, a
-fictional African city. No real legal system, real person, or real case is
-depicted.
+You are a case file generator for a legal drama mobile game. This case is heard
+in ${place.district}, ${place.countryName}, at ${place.court}, investigated by
+${place.policeService}.
+
+SETTING VS PEOPLE — the most important rule here:
+The place is real. ${place.district}, ${place.countryName}, ${place.court} and
+${place.policeService} are real institutions and should be depicted with real
+procedural and cultural texture — how a case actually moves in
+${place.countryName}, what the police are actually called, what the money is
+(${place.currency}), what the streets and jobs and pressures are.
+
+Every PERSON is fictional and must be invented. Never use the name of a real
+person — not a real officer, prosecutor, judge, politician, executive, or
+public figure, living or dead, and no thinly-veiled version of one. Do not
+reference a real criminal case, a real investigation, or a real scandal. If a
+name you are about to write belongs to someone who actually exists in
+${place.countryName}, choose a different name. Officers and officials are
+fictional individuals who happen to work for a real service.
+
+Names should read as ${place.nameRegister}, and reflect who actually lives in
+${place.district} — including immigrant and minority communities where that is
+true to the city.
 
 Generate morally ambiguous, never clear-cut cases. Every piece of evidence must
 have two valid readings — the prosecution reading and the defence reading must
@@ -82,7 +119,12 @@ situations, not genre clichés.
 Content policy: ordinary adult crime only — theft, fraud, assault, arson,
 corruption, negligence, drugs. No sexual violence. No crimes against children.
 No terrorism or mass atrocity. Violence may be referenced but never described
-graphically.
+graphically. Depict institutional failure as systemic and individual, never as
+an indictment of a real named person.
+
+Tier: this is a ${place.tierLabel}-level matter. A district case is a human
+argument between neighbours; a national or international one is a matter of
+law, precedent and states. Scale the stakes and the language to the rung.
 
 Current city state (0-100 each):
 - crime rate: ${Math.round(ctx.city.crimeRate)}
@@ -118,12 +160,19 @@ Generate a case that:
   defence, +1 fully favours the prosecution, 0 means truly balanced
 - Sets correct_verdict to "ambiguous" when the case genuinely has no right
   answer. In chapter 4 and 5, most cases should be ambiguous.
+- Sets "appearance" (0 unsettling, 100 disarming) INDEPENDENTLY of guilt. Do
+  not make guilty defendants look unsettling or innocent ones look harmless —
+  the game measures whether the player is swayed by a face, and that only
+  works if the face means nothing. Roll it as if blind to the verdict, and let
+  sympathetic people be guilty and frightening people be innocent as often as
+  not. Never describe the defendant's looks in "background"; the face is shown,
+  not narrated.
 
 Return ONLY valid JSON matching this exact schema, no prose, no markdown fence:
 {
   "title": "The State v. <name>",
   "charge": "string",
-  "defendant": { "name": "string", "age": number, "occupation": "string", "background": "string", "wealth": number },
+  "defendant": { "name": "string", "age": number, "occupation": "string", "background": "string", "wealth": number, "appearance": number },
   "accent": "violent" | "financial" | "systemic" | "passion",
   "evidence": [ { "id": "e1", "description": "string", "prosecution_reading": "string", "defence_reading": "string", "is_planted": boolean } ],
   "witnesses": [ { "name": "string", "role": "string", "testimony": "string", "lie": "string", "lie_tell": "string" } ],
@@ -171,7 +220,12 @@ async function generateOne(ctx: GenerationContext): Promise<GeneratedCase | null
   }
 }
 
-async function buildContext(userId: string, caseNumber: number, city: CityMetrics): Promise<GenerationContext> {
+async function buildContext(
+  userId: string,
+  caseNumber: number,
+  city: CityMetrics,
+  place: PlaceContext,
+): Promise<GenerationContext> {
   const stats = await computeJurorStats(userId);
   const characterPool = await getEligibleCharacters(userId, caseNumber);
 
@@ -186,20 +240,30 @@ async function buildContext(userId: string, caseNumber: number, city: CityMetric
     weakestBias: weakestBias(stats),
     characterPool,
     caseNumber,
+    place,
   };
 }
 
 /**
  * Keeps the player's buffer topped up (GDD 4.3). Called after every verdict and
  * never awaited on the request path — the player must never wait for Groq.
+ *
+ * The buffer is keyed per user and a user's place can change (promotion, an
+ * accepted foreign application), so the queue is dropped when the place moves
+ * rather than serving a player five cases from a bench they have left.
  */
-export async function refillCaseCache(userId: string, caseNumber: number, city: CityMetrics) {
+export async function refillCaseCache(
+  userId: string,
+  caseNumber: number,
+  city: CityMetrics,
+  place: PlaceContext,
+) {
   if (!groq) return; // seed docket needs no cache
 
   const cached = await redis.llen(caseQueueKey(userId));
   if (cached >= REFILL_BELOW) return;
 
-  const ctx = await buildContext(userId, caseNumber, city);
+  const ctx = await buildContext(userId, caseNumber, city, place);
   const wanted = BATCH_SIZE - cached;
 
   const results = await Promise.all(Array.from({ length: wanted }, () => generateOne(ctx)));
@@ -213,27 +277,28 @@ export async function refillCaseCache(userId: string, caseNumber: number, city: 
 /**
  * The next case, from the fastest source that has one.
  *
- * Order: hand-authored opening (chapters 1-2, fixed narrative) → Redis buffer →
- * a blocking generate → seed docket. The last hop means an unkeyed or
- * unreachable Groq degrades the game's writing, never its playability.
+ * Order: Redis buffer → a blocking generate → the authored docket.
+ *
+ * Note what changed when cases became localised to the player's real country:
+ * the authored docket is no longer the scripted opening the GDD describes
+ * (§12, "chapters 1-2 use hand-authored cases only"), because those six cases
+ * are Nigerian and set in a fictional city — handing them to a juror in Bergen
+ * would break the premise on case one. They are now purely the emergency
+ * buffer. A scripted opening per country is a content problem, not a code one.
  */
 export async function nextCase(
   userId: string,
   caseNumber: number,
   city: CityMetrics,
-): Promise<{ generated: GeneratedCase; source: 'authored' | 'cache' | 'live' | 'fallback' }> {
-  const authoredWindow = caseNumber <= SEED_CASES.length;
-  if (authoredWindow) {
-    return { generated: seedCaseFor(caseNumber), source: 'authored' };
-  }
-
+  place: PlaceContext,
+): Promise<{ generated: GeneratedCase; source: 'cache' | 'live' | 'fallback' }> {
   const cached = await redis.lpop(caseQueueKey(userId));
   if (cached) {
     const parsed = generatedCaseSchema.safeParse(JSON.parse(cached));
     if (parsed.success) return { generated: parsed.data, source: 'cache' };
   }
 
-  const ctx = await buildContext(userId, caseNumber, city);
+  const ctx = await buildContext(userId, caseNumber, city, place);
   const live = await generateOne(ctx);
   if (live) return { generated: live, source: 'live' };
 
@@ -241,3 +306,40 @@ export async function nextCase(
 }
 
 export const accentHexFor = (accent: GeneratedCase['accent']) => ACCENTS[accent];
+
+/**
+ * Where this juror currently sits, resolved to the real institutions a case
+ * should name.
+ */
+export function placeForUser(user: {
+  id: string;
+  homeCountry: string | null;
+  homeDistrict: string | null;
+  currentCountry: string | null;
+  currentTier: Tier;
+}): PlaceContext {
+  const country = (user.currentCountry ?? user.homeCountry ?? 'NO').toUpperCase();
+  const profile = profileFor(country);
+  const district = user.homeDistrict ?? districtFor(country, user.id);
+
+  return {
+    country,
+    countryName: profile.name,
+    district,
+    court: profile.courtName(user.currentTier, district),
+    policeService: profile.policeService(district),
+    currency: profile.currency,
+    nameRegister: profile.nameRegister,
+    tier: user.currentTier,
+    tierLabel: tierLabel(user.currentTier, country),
+  };
+}
+
+/**
+ * Drop the buffer. Called when a juror's bench changes — a promotion or an
+ * accepted foreign application — so they never receive five pre-generated
+ * cases from a court they no longer sit in.
+ */
+export async function invalidateCaseCache(userId: string) {
+  await redis.del(caseQueueKey(userId)).catch(() => {});
+}

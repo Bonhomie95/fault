@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Witness } from '../domain/case.js';
+import { xpForVerdict, trustForVerdict } from '../domain/progression.js';
 import { prisma } from '../lib/prisma.js';
 import { requireJuror } from '../middleware/requireJuror.js';
-import { refillCaseCache } from '../services/caseGenerator.js';
+import { placeForUser, refillCaseCache } from '../services/caseGenerator.js';
+import { awardXp } from '../services/progression.js';
+import { recordDocketDay, tickMissions } from '../services/missions.js';
 import { addToCharacterPool, type CharacterInput } from '../services/characterPool.js';
 import { applyCityEffect, deriveEffectKey } from '../services/cityEffects.js';
 import { getCityState, updateCityState } from '../services/cityState.js';
@@ -37,7 +40,7 @@ function themesFor(accent: string, charge: string): string[] {
 }
 
 verdictRouter.post('/', requireJuror, async (req, res) => {
-  const { userId } = req.juror;
+  const { userId, user } = req.juror;
 
   const parsed = submitSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -68,8 +71,25 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
   const verdict = parsed.data.verdict ?? (Math.random() < 0.5 ? 'guilty' : 'not_guilty');
   const wasHung = ranOut && !parsed.data.verdict;
 
-  // 1. Record the verdict.
+  // 1. Record the verdict, along with what it will eventually cost.
+  //
+  // trustDelta is computed now but NOT applied: applying it here would tell
+  // the player whether they were right the instant they tapped, which is the
+  // one thing this game refuses to do. It settles at the review break, next
+  // to the outcome that explains it (see progression.settleTrust).
   const outcomeText = await writeOutcome(caseData, verdict, wasHung);
+  const trustDelta = trustForVerdict({
+    verdict,
+    correctVerdict: caseData.correctVerdict,
+    wasHung,
+  });
+  const xpAwarded = xpForVerdict({
+    tier: caseData.tier,
+    wasHung,
+    timeRemaining: wasHung ? 0 : timeRemaining,
+    clockSeconds: user.clockSeconds,
+  });
+
   await prisma.verdictRecord.create({
     data: {
       userId,
@@ -78,8 +98,15 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
       timeRemaining: wasHung ? 0 : timeRemaining,
       wasHung,
       outcomeText,
+      trustDelta,
+      xpAwarded,
     },
   });
+
+  // XP is service, so it lands immediately and spoils nothing.
+  const { rank, promoted } = await awardXp(userId, xpAwarded);
+  await recordDocketDay(userId);
+  await tickMissions(userId, { verdict, wasHung, timeRemaining, clockSeconds: user.clockSeconds });
 
   // Community consensus counter for the "63% of players convicted" beat.
   await prisma.case.update({
@@ -132,8 +159,8 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
   );
 
   // 5. Top up the buffer. Never awaited — the player must never wait for Groq.
-  void refillCaseCache(userId, caseData.caseNumber + 1, updatedCity).catch((err: Error) =>
-    console.error('[refill]', err.message),
+  void refillCaseCache(userId, caseData.caseNumber + 1, updatedCity, placeForUser(user)).catch(
+    (err: Error) => console.error('[refill]', err.message),
   );
 
   // 6. Review break?
@@ -158,5 +185,10 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
       guiltyPercent: Math.round((guiltyVotes / totalVotes) * 100),
       sampleSize: totalVotes,
     },
+    // Service, shown immediately. Standing is not here on purpose — it lands
+    // at the review break with the outcome that earned it.
+    xpAwarded,
+    rank,
+    promoted,
   });
 });

@@ -3,11 +3,13 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { aiEnabled, env } from './lib/env.js';
 import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
+import { authRouter } from './routes/auth.js';
 import { caseRouter } from './routes/cases.js';
 import { cityRouter } from './routes/city.js';
 import { jurorRouter } from './routes/jurorProfile.js';
 import { reviewRouter } from './routes/review.js';
 import { sessionRouter } from './routes/session.js';
+import { standingRouter } from './routes/standing.js';
 import { verdictRouter } from './routes/verdict.js';
 
 const app = express();
@@ -32,7 +34,9 @@ app.get('/health', async (_req, res) => {
   res.status(ok ? 200 : 503).json({ ok, ...checks });
 });
 
+app.use('/api/auth', authRouter);
 app.use('/api/session', sessionRouter);
+app.use('/api/standing', standingRouter);
 app.use('/api/case', caseRouter);
 app.use('/api/verdict', verdictRouter);
 app.use('/api/city-state', cityRouter);

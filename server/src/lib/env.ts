@@ -9,6 +9,24 @@ const schema = z.object({
   GROQ_API_KEY: z.string().default(''),
   GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
   PORT: z.coerce.number().default(4000),
+  NODE_ENV: z.string().default('development'),
+
+  // ---- Identity ----
+  // Apple: the audience every identityToken must be minted for — your iOS
+  // bundle identifier.
+  APPLE_BUNDLE_ID: z.string().default(''),
+  // Google: comma-separated client ids (iOS, Android, and Web all differ).
+  // Every one of them is a valid audience for a token that belongs to us.
+  GOOGLE_CLIENT_IDS: z.string().default(''),
+  /**
+   * Lets the client authenticate with a device id instead of a provider.
+   * Development only — this trusts whoever is asking. Forced off in
+   * production regardless of what the env says (see services/auth.ts).
+   */
+  ALLOW_DEV_AUTH: z
+    .string()
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
 });
 
 const parsed = schema.safeParse(process.env);

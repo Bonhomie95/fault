@@ -8,6 +8,9 @@ export interface JurorStats {
   consistencyScore: number;
   pressureAccuracy: number;
   gutAccuracy: number;
+  /** Positive = convicts unsettling-looking defendants more readily than
+   *  disarming ones. The face is the only difference the game controls for. */
+  appearanceBias: number;
   totalCases: number;
   notablePatterns: string[];
 }
@@ -17,6 +20,9 @@ const GUT_THRESHOLD = 10;
 const PRESSURE_THRESHOLD = 20;
 const POOR_AT = 30;
 const WEALTHY_AT = 70;
+/** Faces below this read as unsettling; above it, as disarming. */
+const UNSETTLING_AT = 35;
+const DISARMING_AT = 65;
 
 const pct = (n: number, d: number) => (d === 0 ? 0 : (n / d) * 100);
 
@@ -51,6 +57,7 @@ export async function computeJurorStats(userId: string): Promise<JurorStats> {
       consistencyScore: 0,
       pressureAccuracy: 0,
       gutAccuracy: 0,
+      appearanceBias: 0,
       totalCases: 0,
       notablePatterns: [],
     };
@@ -77,6 +84,17 @@ export async function computeJurorStats(userId: string): Promise<JurorStats> {
   const wealthyConvictionRate = pct(wealthy.filter((v) => v.verdict === 'guilty').length, wealthy.length);
   const socioeconomicBias =
     poor.length === 0 || wealthy.length === 0 ? 0 : poorConvictionRate - wealthyConvictionRate;
+
+  // appearance_bias: the same measurement, run on the face instead of the
+  // bank balance. Appearance is uncorrelated with guilt at generation time,
+  // so any gap here is the juror, not the docket.
+  const unsettling = verdicts.filter((v) => v.case.defendantAppearance <= UNSETTLING_AT);
+  const disarming = verdicts.filter((v) => v.case.defendantAppearance >= DISARMING_AT);
+  const appearanceBias =
+    unsettling.length === 0 || disarming.length === 0
+      ? 0
+      : pct(unsettling.filter((v) => v.verdict === 'guilty').length, unsettling.length) -
+        pct(disarming.filter((v) => v.verdict === 'guilty').length, disarming.length);
 
   // consistency: same structure in, same verdict out (GDD 2.5).
   const byStructure = new Map<string, string[]>();
@@ -120,6 +138,10 @@ export async function computeJurorStats(userId: string): Promise<JurorStats> {
     notablePatterns.push(`left ${hung} verdict${hung === 1 ? '' : 's'} to the clock`);
   if (socioeconomicBias > 20) notablePatterns.push('convicts poor defendants more readily');
   if (socioeconomicBias < -20) notablePatterns.push('convicts wealthy defendants more readily');
+  if (appearanceBias > 20)
+    notablePatterns.push('convicts defendants they find unsettling to look at more readily');
+  if (appearanceBias < -20)
+    notablePatterns.push('acquits defendants they find unsettling to look at more readily');
   if (pairs > 0 && consistencyScore < 60)
     notablePatterns.push('gives different verdicts to structurally identical cases');
   const overall = accuracyOf(verdicts);
@@ -134,6 +156,7 @@ export async function computeJurorStats(userId: string): Promise<JurorStats> {
     consistencyScore,
     pressureAccuracy,
     gutAccuracy,
+    appearanceBias,
     totalCases: total,
     notablePatterns,
   };
@@ -145,6 +168,10 @@ export async function computeJurorStats(userId: string): Promise<JurorStats> {
  */
 export function weakestBias(stats: JurorStats): string {
   if (stats.totalCases < 3) return 'unknown — still reading this juror';
+  if (Math.abs(stats.appearanceBias) > 25)
+    return stats.appearanceBias > 0
+      ? 'is swayed by the defendant’s face — convicts those who look unsettling'
+      : 'is swayed by the defendant’s face — spares those who look unsettling';
   if (Math.abs(stats.socioeconomicBias) > 20)
     return stats.socioeconomicBias > 0
       ? 'convicts poor defendants more readily than wealthy ones'
@@ -169,6 +196,7 @@ export async function updateJurorProfile(userId: string) {
       consistencyScore: stats.consistencyScore,
       pressureAccuracy: stats.pressureAccuracy,
       gutAccuracy: stats.gutAccuracy,
+      appearanceBias: stats.appearanceBias,
       totalCases: stats.totalCases,
     },
     update: {
@@ -178,6 +206,7 @@ export async function updateJurorProfile(userId: string) {
       consistencyScore: stats.consistencyScore,
       pressureAccuracy: stats.pressureAccuracy,
       gutAccuracy: stats.gutAccuracy,
+      appearanceBias: stats.appearanceBias,
       totalCases: stats.totalCases,
     },
   });

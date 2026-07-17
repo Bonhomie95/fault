@@ -24,6 +24,7 @@ export const SEED_CASES: GeneratedCase[] = [
       background:
         'Eleven years at the depot without a written warning. Sole earner for a household of five. Her supervisor was dismissed last year for falsifying the same ledgers she is now accused of altering.',
       wealth: 22,
+      appearance: 28,
     },
     evidence: [
       {
@@ -91,6 +92,7 @@ export const SEED_CASES: GeneratedCase[] = [
       background:
         'Two prior cautions for public affray, both withdrawn. Known to the complainant for six years; they were once business partners in a failed transport union.',
       wealth: 18,
+      appearance: 45,
     },
     evidence: [
       {
@@ -159,6 +161,7 @@ export const SEED_CASES: GeneratedCase[] = [
       background:
         'Built four hundred units of low-cost housing in Ikorodu, then took deposits for six hundred more that were never built. Says the money went to a contractor who vanished. The contractor is real and has, in fact, vanished.',
       wealth: 84,
+      appearance: 82,
     },
     evidence: [
       {
@@ -227,6 +230,7 @@ export const SEED_CASES: GeneratedCase[] = [
       background:
         'Final-year student, no prior record. Stopped at a checkpoint on the Lekki road at 23:15. The officer who searched her vehicle is the subject of two pending complaints for evidence handling.',
       wealth: 45,
+      appearance: 72,
     },
     evidence: [
       {
@@ -296,6 +300,7 @@ export const SEED_CASES: GeneratedCase[] = [
       background:
         'Her stall burned three weeks after she insured it and two days after her husband filed for divorce. Nobody was hurt. The stall beside hers, owned by her husband’s sister, burned with it.',
       wealth: 52,
+      appearance: 35,
     },
     evidence: [
       {
@@ -364,6 +369,7 @@ export const SEED_CASES: GeneratedCase[] = [
       background:
         'Thirty years moving cement on the Orun-Kano corridor. Paid ₦300,000 to a roads official. Does not deny paying it. Says his trucks had been held at the depot for nineteen days and his drivers had not eaten.',
       wealth: 61,
+      appearance: 78,
     },
     evidence: [
       {
