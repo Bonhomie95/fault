@@ -9,141 +9,96 @@ import { Figure } from './Figure';
 export type DossierTab = 'defendant' | 'evidence' | 'witnesses' | 'arguments';
 
 /**
- * The room, from the twelfth seat.
+ * The room.
  *
- * You are the jury of one. The camera is your head, and this file now means it
- * literally: your head does not move. It is bolted to a seat in the jury box
- * and only your gaze travels.
+ * Third person, and the person on trial is the subject. The single most
+ * important thing this screen does is let you look at the human being you are
+ * about to judge — appearance bias is a measured mechanic, so if you cannot
+ * read their face the mechanic does not exist and the case is a wall of text.
  *
- * It used to claim the same thing and not do it. The old marks flew the camera
- * to 2.15m to look down at the exhibit table and slid it 1.85m sideways to face
- * the witness stand — a drone on a boom, not a person in a chair. Two things
- * were wrong with that. It broke the fiction the whole game rests on, and
- * translating a camera through a space is the single most reliable way to make
- * someone motion-sick on a handset, which is a strange thing to do to a player
- * you have asked to sit still and concentrate for 120 seconds.
+ * Two previous versions failed at that. The original flew a drone around the
+ * room. The one after it bolted the camera into a jury seat, which was
+ * technically first-person and put the defendant two and a half metres away in
+ * the dark, seen past a rail. Both were more interested in where the camera was
+ * than in what it was pointed at.
  *
- * So: one seat, four gazes. Turning to the witness is a turn of the head.
- * Reading the exhibits is looking down at the table in front of you. The room
- * is fixed and you are in it.
+ * So: no jury box, no rail, no first person, and no fog. The camera is a
+ * portrait lens on the accused, and the room behind them stays sharp — the
+ * people in a courtroom are the point of a courtroom, and blurring them to
+ * suggest depth just hides them.
  */
-
-/** The twelfth seat. Eye height of someone seated, and it does not change. */
-const HEAD: [number, number, number] = [0, 1.15, 1.75];
 
 /**
  * How far out counsel stand.
  *
- * Constrained by the lens, not by taste: at the arguments fov this frame is
- * ±11.6° wide, and anyone past that is simply not on screen.
+ * Constrained by the lens, not by taste. A frustum check caught them at ±21.6°
+ * against a frame only ±11.6° wide — both of them off screen, on the one tab
+ * that exists to show them, in every version of this scene ever shipped.
  */
 const COUNSEL_X = 0.58;
 
-interface Gaze {
-  /** Where you are looking. Never where you are. */
+interface Mark {
+  position: [number, number, number];
   target: [number, number, number];
-  /**
-   * Focal length, as attention.
-   *
-   * With the head fixed, this is what is left to express "lean in" and "take
-   * the room in" — and it is honest, because narrowing on a face is what your
-   * attention actually does. Kept in a narrow band: a big fov swing from a
-   * static camera is a dolly zoom, which is a horror-film effect and would
-   * read as the room lurching.
-   */
   fov: number;
 }
 
-const GAZES: Record<DossierTab, Gaze> = {
-  // Straight ahead at the accused, and narrowed — close enough to read them,
-  // which is the whole trap. You are meant to look at this person and feel
-  // something.
-  defendant: { target: [0, 1.02, -0.95], fov: 36 },
-  // Down at the table in front of you. You do not fly over it; the exhibit
-  // rises to meet you when you pick it up (see EvidenceObject).
-  evidence: { target: [0, 0.8, 0.15], fov: 46 },
-  // A turn of the head to the right, toward the stand.
-  witnesses: { target: [1.5, 1.05, -0.4], fov: 42 },
-  // Both counsel at once, so this is the widest the room ever gets. It cannot
-  // go wider: three.js fov is VERTICAL and this canvas is 0.461 aspect, so 48°
-  // vertical buys only ~23° horizontal. Framing anyone beyond ±11.6° means
-  // moving them, not the lens — see COUNSEL_X. Nobody is talking to you. They
-  // are talking past you.
-  arguments: { target: [0, 1.05, -1.6], fov: 48 },
+/**
+ * Where the camera stands for each tab.
+ *
+ * It moves now, deliberately. The reason not to move it was motion sickness,
+ * and that risk is real when a camera translates through a space at eye level
+ * for two minutes. These are cuts between framings, not a flight: the lerp is
+ * fast and the framings are far apart, so it reads as an edit rather than as
+ * being carried across the room.
+ *
+ * Every fov here is checked against the frame: this canvas is ~0.461 aspect and
+ * three.js fov is VERTICAL, so the horizontal view is roughly half what the
+ * number suggests. Anything wider than ±11° of centre is off screen.
+ */
+const MARKS: Record<DossierTab, Mark> = {
+  // A portrait. Close, slightly below eye line so they have a little height on
+  // you, framed head-and-shoulders. This is the shot the whole game is for.
+  defendant: { position: [0, 1.42, -0.02], target: [0, 1.34, -0.95], fov: 34 },
+  // Over the exhibit table, looking down at what you have been handed.
+  evidence: { position: [0, 1.72, 1.05], target: [0, 0.78, 0.15], fov: 44 },
+  // At the stand, level with the witness.
+  witnesses: { position: [1.5, 1.5, 0.72], target: [1.5, 1.42, -0.4], fov: 38 },
+  // Between the two of them, close enough that both are inside the frame.
+  arguments: { position: [0, 1.45, -0.35], target: [0, 1.28, -1.6], fov: 46 },
 };
 
 function CameraRig({ tab, reducedMotion }: { tab: DossierTab; reducedMotion: boolean }) {
   const { camera } = useThree();
-  const target = useRef(new Vector3(...GAZES.defendant.target));
-  const head = useMemo(() => new Vector3(...HEAD), []);
+  const target = useRef(new Vector3(...MARKS.defendant.target));
+  const pos = useRef(new Vector3(...MARKS.defendant.position));
 
   useFrame((state, delta) => {
-    const gaze = GAZES[tab];
-    // Slow enough to feel like turning your head rather than cutting to a
-    // camera. Frame-rate independent, so a 120Hz phone does not turn twice as
-    // fast as a 60Hz one.
-    const k = 1 - Math.exp(-delta * 2.6);
+    const mark = MARKS[tab];
+    // Frame-rate independent, so a 120Hz phone does not move twice as fast.
+    const k = 1 - Math.exp(-delta * 5.5);
 
-    camera.position.copy(head);
+    pos.current.lerp(new Vector3(...mark.position), k);
+    target.current.lerp(new Vector3(...mark.target), k);
 
+    camera.position.copy(pos.current);
     if (!reducedMotion) {
-      // Breathing. Six millimetres — far too small to notice and the only
-      // reason the room feels occupied rather than paused. A perfectly still
-      // camera reads as a screenshot.
+      // A hand-held breath. Millimetres — enough that the room is not a
+      // screenshot, small enough that nobody could point at it.
       const t = state.clock.elapsedTime;
-      camera.position.y += Math.sin(t * 0.62) * 0.006;
+      camera.position.y += Math.sin(t * 0.62) * 0.005;
       camera.position.x += Math.sin(t * 0.41) * 0.004;
     }
-
-    target.current.lerp(new Vector3(...gaze.target), k);
     camera.lookAt(target.current);
 
     const cam = camera as typeof camera & { fov: number; updateProjectionMatrix: () => void };
-    if (Math.abs(cam.fov - gaze.fov) > 0.01) {
-      cam.fov += (gaze.fov - cam.fov) * k;
+    if (Math.abs(cam.fov - mark.fov) > 0.01) {
+      cam.fov += (mark.fov - cam.fov) * k;
       cam.updateProjectionMatrix();
     }
   });
 
   return null;
-}
-
-/**
- * The rail of the jury box, at the bottom of your vision.
- *
- * The oldest trick in first-person: you believe you are somewhere when you can
- * see the edge of it. Without this the seat is an assertion; with it there is a
- * physical thing between you and the court, and you are behind it.
- *
- * Its height is not taste, it is arithmetic, and the first version got it wrong
- * — a frustum check said 0 of 4 sample points were on screen, because the rail
- * sat below the forward sightline and rendered nothing at all on three of the
- * four tabs.
- *
- * The band is narrow. Too low and it is off the bottom of the frame; too high
- * and it hides the exhibit table you look down at. At z=1.35 the window is
- * 1.000..1.062, so the top edge sits at 1.03: visible looking forward, and
- * still 3cm under the sightline to the evidence. Wide enough that the 6mm of
- * breathing cannot push it into either failure.
- */
-function JuryRail({ accent }: { accent: string }) {
-  return (
-    <group>
-      <mesh position={[0, 0.98, 1.35]} receiveShadow castShadow>
-        <boxGeometry args={[9, 0.1, 0.12]} />
-        <meshStandardMaterial color="#1A1A17" roughness={0.75} />
-      </mesh>
-      <mesh position={[0, 0.5, 1.37]} receiveShadow>
-        <boxGeometry args={[9, 0.86, 0.06]} />
-        <meshStandardMaterial color="#111110" roughness={0.95} />
-      </mesh>
-      {/* the case's colour catches the rail edge nearest you */}
-      <mesh position={[0, 1.031, 1.3]}>
-        <boxGeometry args={[9, 0.004, 0.02]} />
-        <meshBasicMaterial color={accent} transparent opacity={0.55} />
-      </mesh>
-    </group>
-  );
 }
 
 function Room({ accent }: { accent: string }) {
@@ -206,6 +161,58 @@ function Room({ accent }: { accent: string }) {
  * You never see the other eleven.
  */
 
+/**
+ * The public gallery.
+ *
+ * Somebody came to watch. The room had no audience at all — the eleven jurors
+ * were the only other bodies in it, and they were deleted for being invisible,
+ * which left a courtroom containing five people and a lot of empty floor.
+ *
+ * They sit behind and above the well so they are inside the frame on the wide
+ * tabs, and they are rendered sharp. `alive={false}` costs nothing per frame:
+ * they are set dressing, not performers.
+ */
+function Gallery({ accent }: { accent: string }) {
+  const seats = useMemo(
+    () =>
+      Array.from({ length: 10 }, (_, i) => {
+        const row = Math.floor(i / 5);
+        return {
+          seed: 700 + i,
+          x: -1.55 + (i % 5) * 0.78,
+          y: 0.34 + row * 0.34,
+          z: -3.0 - row * 0.62,
+        };
+      }),
+    [],
+  );
+
+  return (
+    <group>
+      {/* the benches they are sitting on */}
+      {[0, 1].map((row) => (
+        <mesh key={row} position={[0, 0.17 + row * 0.34, -3.0 - row * 0.62]} receiveShadow>
+          <boxGeometry args={[4.6, 0.34 + row * 0.34, 0.5]} />
+          <meshStandardMaterial color="#17171A" roughness={0.95} />
+        </mesh>
+      ))}
+      {seats.map((s) => (
+        <Figure
+          key={s.seed}
+          seed={s.seed}
+          appearance={appearanceForSeed(s.seed)}
+          posture="seated"
+          position={[s.x, s.y, s.z]}
+          rotation={[0, (s.x > 0 ? -1 : 1) * 0.08, 0]}
+          scale={0.86}
+          accent={accent}
+          alive={false}
+        />
+      ))}
+    </group>
+  );
+}
+
 interface SceneProps {
   activeCase: ClientCase;
   tab: DossierTab;
@@ -251,8 +258,25 @@ function Scene({
 
   return (
     <>
-      {/* Courtrooms are overhead-lit and unkind. */}
-      <ambientLight intensity={0.28} />
+      {/* Courtrooms are overhead-lit and unkind — but you still have to be able
+          to SEE the person. Ambient was 0.28, which is mood lighting for a face
+          you are asked to read for bias. Lifted until the face carries. */}
+      <ambientLight intensity={0.62} />
+      {/* Key light on the accused: the one thing in the room that is properly
+          lit is the human being on trial. */}
+      <spotLight
+        position={[0.9, 3.4, 1.6]}
+        angle={0.7}
+        penumbra={0.8}
+        intensity={2.6}
+        distance={12}
+        castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+      />
+      {/* Fill from the opposite side, so the unlit half of the face is still a
+          face and not a silhouette. */}
+      <pointLight position={[-2.2, 1.9, 1.4]} intensity={0.75} distance={9} color="#9FB4C7" />
       <directionalLight
         position={[2.5, 6, 3]}
         intensity={1.15}
@@ -261,12 +285,16 @@ function Scene({
         shadow-mapSize-height={1024}
       />
       {/* the accent as a practical light, not just a colour */}
-      <pointLight position={[0, 2.6, 0.4]} intensity={1.6} distance={7} color={accent} />
-      <fog attach="fog" args={['#0D0D0D', 4.5, 12]} />
+      {/* the accent as a practical light, not just a colour */}
+      <pointLight position={[0, 2.9, -2.2]} intensity={1.5} distance={8} color={accent} />
+      {/* No fog. It used to fade everything past 4.5m into the background,
+          which is a cheap way to suggest depth and an expensive way to hide the
+          people in the room. A courtroom is people; blurring them out to make a
+          mood defeats the point of rendering them at all. */}
 
       <CameraRig tab={tab} reducedMotion={reducedMotion} />
       <Room accent={accent} />
-      <JuryRail accent={accent} />
+      <Gallery accent={accent} />
 
       {/* The accused. Stands where the light is worst.
           `appearance` shapes this face and is uncorrelated with guilt — if it
@@ -349,7 +377,7 @@ export function CourtroomScene(props: SceneProps) {
   return (
     <Canvas
       shadows
-      camera={{ position: HEAD, fov: GAZES.defendant.fov, near: 0.1, far: 40 }}
+      camera={{ position: MARKS.defendant.position, fov: MARKS.defendant.fov, near: 0.1, far: 40 }}
       gl={{ antialias: true }}
       style={{ flex: 1 }}
     >

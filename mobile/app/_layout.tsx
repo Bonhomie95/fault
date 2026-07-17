@@ -1,3 +1,9 @@
+import { Anton_400Regular } from '@expo-google-fonts/anton';
+import {
+  Archivo_500Medium,
+  Archivo_600SemiBold,
+  Archivo_700Bold,
+} from '@expo-google-fonts/archivo';
 import {
   IBMPlexMono_400Regular,
   IBMPlexMono_600SemiBold,
@@ -26,7 +32,14 @@ export default function RootLayout() {
   const bootstrapping = useGame((s) => s.bootstrapping);
   const loadSettings = useSettings((s) => s.load);
 
+  // Every family named in constants/theme must be loaded here. The layout
+  // renders null until they are, so a face referenced but not loaded is not a
+  // fallback font — it is a black screen forever.
   const [fontsLoaded] = useFonts({
+    Anton_400Regular,
+    Archivo_500Medium,
+    Archivo_600SemiBold,
+    Archivo_700Bold,
     PlayfairDisplay_400Regular,
     PlayfairDisplay_700Bold,
     IBMPlexMono_400Regular,

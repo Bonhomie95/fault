@@ -1,12 +1,13 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
 import { CityScene } from '@/components/three/CityScene';
-import { Fonts, Palette } from '@/constants/theme';
+import { Button } from '@/components/Button';
+import { Accents, Elevation, Fonts, Palette, Radius, Space, Type } from '@/constants/theme';
 import { ApiError } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
@@ -71,35 +72,36 @@ export default function Lobby() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <Text style={styles.docket}>CASE DOCKET</Text>
+            <Text style={styles.docket}>CASE{'\n'}DOCKET</Text>
             {city && (
-              <Text style={styles.chapter}>
-                CHAPTER {city.chapter} · {city.casesHeard} HEARD
-              </Text>
+              <View style={styles.chapterRow}>
+                <View style={styles.chip}>
+                  <Text style={styles.chipText}>CHAPTER {city.chapter}</Text>
+                </View>
+                <Text style={styles.chapter}>{city.casesHeard} HEARD</Text>
+              </View>
             )}
           </View>
 
           {/* Who you are and where you sit — the record, on the way in. */}
           {standing && <StandingBar standing={standing} />}
 
-          <Pressable
-            style={styles.caseFile}
-            onPress={beginCase}
-            disabled={loading}
-            accessibilityRole="button"
-            accessibilityLabel="Open the next case file"
-          >
-            {loading ? (
-              <ActivityIndicator color={Palette.text} />
-            ) : (
-              <>
-                <Text style={styles.caseFileLabel}>CASE FILE</Text>
-                <Text style={styles.caseFileHint}>TAP TO BEGIN</Text>
-                {/* The clock starts on load. You are already in the room. */}
-                <Text style={styles.caseFileWarn}>THE CLOCK STARTS IMMEDIATELY</Text>
-              </>
-            )}
-          </Pressable>
+          {/* The one thing this screen is for. It is the only filled button on
+              the page, because it is the only action that matters. */}
+          <View style={styles.caseFile}>
+            <Text style={styles.caseFileEyebrow}>NEXT ON THE DOCKET</Text>
+            <Text style={styles.caseFileLabel}>A CASE FILE{'\n'}IS WAITING</Text>
+            <Button
+              label="Open the file"
+              onPress={beginCase}
+              variant="primary"
+              busy={loading}
+              accent={Accents.financial}
+              hint="The clock starts immediately"
+              accessibilityLabel="Open the next case file. The clock starts immediately."
+              style={styles.caseFileBtn}
+            />
+          </View>
 
           {gate && (
             <Animated.Text entering={FadeIn} style={styles.gate}>
@@ -110,12 +112,12 @@ export default function Lobby() {
           {city && (
             <View style={styles.pulse}>
               <Text style={styles.pulseTitle}>CITY PULSE</Text>
-              <PulseBar label="Crime" value={city.crimeRate} />
-              <PulseBar label="Trust" value={city.judicialTrust} />
-              <PulseBar label="Disparity" value={city.wealthDisparity} />
-              <PulseBar label="Syndicate" value={city.organizedCrimePower} />
-              <PulseBar label="Police" value={city.policeIntegrity} />
-              <PulseBar label="Press" value={city.mediaPressure} />
+              <PulseBar label="Crime" value={city.crimeRate} tint={Accents.violent} />
+              <PulseBar label="Trust" value={city.judicialTrust} tint={Accents.systemic} />
+              <PulseBar label="Disparity" value={city.wealthDisparity} tint={Accents.financial} />
+              <PulseBar label="Syndicate" value={city.organizedCrimePower} tint={Accents.passion} />
+              <PulseBar label="Police" value={city.policeIntegrity} tint={Accents.systemic} />
+              <PulseBar label="Press" value={city.mediaPressure} tint={Accents.financial} />
 
               {city.activeFactions.length > 0 && (
                 <Text style={styles.factions}>{city.activeFactions.join(' · ').toUpperCase()}</Text>
@@ -152,17 +154,30 @@ export default function Lobby() {
   );
 }
 
-/** GDD 6 — bars, blocky and unglamorous, like a printout. */
-function PulseBar({ label, value }: { label: string; value: number }) {
-  const filled = Math.round((value / 100) * 7);
+/**
+ * A city meter.
+ *
+ * This used to be `'█'.repeat(filled)` — a bar drawn out of block characters in
+ * a monospace font, quantised to seven steps, so a shift from 50 to 57 moved
+ * nothing at all. It is geometry now: real width, real colour, and the number
+ * in a tabular face so the column does not jitter as digits change.
+ *
+ * Colour is by role rather than by good/bad, because none of these are good or
+ * bad — a city with no crime and no trust is not a city anyone wants.
+ */
+function PulseBar({ label, value, tint }: { label: string; value: number; tint: string }) {
+  const pct = Math.max(0, Math.min(100, value));
   return (
-    <View style={styles.barRow}>
+    <View
+      style={styles.barRow}
+      accessibilityRole="progressbar"
+      accessibilityLabel={`${label}: ${Math.round(pct)} out of 100`}
+    >
       <Text style={styles.barLabel}>{label}</Text>
-      <Text style={styles.barTrack}>
-        {'█'.repeat(filled)}
-        <Text style={styles.barEmpty}>{'░'.repeat(7 - filled)}</Text>
-      </Text>
-      <Text style={styles.barValue}>{Math.round(value)}</Text>
+      <View style={styles.barTrack}>
+        <View style={[styles.barFill, { width: `${pct}%`, backgroundColor: tint }]} />
+      </View>
+      <Text style={styles.barValue}>{Math.round(pct)}</Text>
     </View>
   );
 }
@@ -178,17 +193,17 @@ function LobbyLink({
   locked?: boolean;
   lockedNote?: string;
 }) {
+  // `[ label ]` used to be the whole button. Square brackets around monospace
+  // text is a text-adventure convention, not an affordance: nothing looked
+  // pressable and nothing responded when it was pressed.
   return (
-    <Pressable
-      onPress={locked ? undefined : onPress}
+    <Button
+      label={label}
+      onPress={onPress}
+      variant="secondary"
       disabled={locked}
-      style={[styles.link, locked && styles.linkLocked]}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: locked }}
-    >
-      <Text style={[styles.linkText, locked && styles.linkTextLocked]}>[ {label} ]</Text>
-      {locked && lockedNote && <Text style={styles.linkNote}>{lockedNote}</Text>}
-    </Pressable>
+      hint={locked ? lockedNote : undefined}
+    />
   );
 }
 
@@ -199,117 +214,119 @@ const styles = StyleSheet.create({
   // Keeps the type legible over a moving city without hiding it.
   sceneScrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(13,13,13,0.55)',
+    backgroundColor: 'rgba(11,11,12,0.62)',
   },
   safe: { flex: 1 },
-  content: { padding: 22, gap: 22 },
-  header: { gap: 4 },
+  content: { padding: Space.xl, gap: Space.xl, paddingBottom: Space.xxxl },
+
+  header: { gap: Space.md, marginTop: Space.sm },
   docket: {
-    fontFamily: Fonts.display,
-    fontSize: 26,
-    letterSpacing: 1,
+    fontFamily: Fonts.impact,
+    fontSize: Type.hero,
+    lineHeight: Type.hero * 0.92,
+    letterSpacing: 0.5,
+    color: Palette.text,
+    textTransform: 'uppercase',
+  },
+  chapterRow: { flexDirection: 'row', alignItems: 'center', gap: Space.md },
+  chip: {
+    backgroundColor: Palette.surfaceHigh,
+    paddingHorizontal: Space.md,
+    paddingVertical: Space.xs + 1,
+    borderRadius: Radius.pill,
+  },
+  chipText: {
+    fontFamily: Fonts.uiBold,
+    fontSize: Type.micro,
+    letterSpacing: 1.4,
     color: Palette.text,
   },
   chapter: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
-    letterSpacing: 2,
+    fontSize: Type.micro,
+    letterSpacing: 1.8,
     color: Palette.textMuted,
   },
+
   caseFile: {
+    backgroundColor: Palette.surfaceRaised,
+    borderRadius: Radius.lg,
+    padding: Space.xl,
+    gap: Space.sm,
     borderWidth: 1,
-    borderColor: Palette.hairline,
-    borderStyle: 'dashed',
-    backgroundColor: 'rgba(28,28,25,0.86)',
-    paddingVertical: 30,
-    alignItems: 'center',
-    borderRadius: 2,
-    gap: 6,
+    borderColor: Palette.hairlineBright,
+    ...Elevation.raised,
+  },
+  caseFileEyebrow: {
+    fontFamily: Fonts.mono,
+    fontSize: Type.micro,
+    letterSpacing: 2.2,
+    color: Accents.financial,
   },
   caseFileLabel: {
-    fontFamily: Fonts.display,
-    fontSize: 20,
-    letterSpacing: 3,
+    fontFamily: Fonts.impact,
+    fontSize: Type.title,
+    lineHeight: Type.title * 0.94,
     color: Palette.text,
+    textTransform: 'uppercase',
   },
-  caseFileHint: {
-    fontFamily: Fonts.mono,
-    fontSize: 9,
-    letterSpacing: 2.4,
-    color: Palette.textMuted,
-  },
-  caseFileWarn: {
-    fontFamily: Fonts.mono,
-    fontSize: 8,
-    letterSpacing: 1.8,
-    color: '#C23B22',
-    marginTop: 6,
-  },
+  caseFileBtn: { marginTop: Space.lg },
+
   gate: {
-    fontFamily: Fonts.mono,
-    fontSize: 11,
-    lineHeight: 18,
-    color: '#D4860A',
+    fontFamily: Fonts.ui,
+    fontSize: Type.small,
+    lineHeight: 20,
+    color: Accents.financial,
     textAlign: 'center',
   },
+
   pulse: {
-    backgroundColor: 'rgba(21,21,19,0.88)',
+    backgroundColor: Palette.surface,
     borderWidth: 1,
     borderColor: Palette.hairline,
-    padding: 16,
-    borderRadius: 2,
-    gap: 7,
+    padding: Space.lg,
+    borderRadius: Radius.lg,
+    gap: Space.md,
+    ...Elevation.card,
   },
   pulseTitle: {
-    fontFamily: Fonts.mono,
-    fontSize: 9,
-    letterSpacing: 3,
+    fontFamily: Fonts.uiBold,
+    fontSize: Type.micro,
+    letterSpacing: 2.4,
     color: Palette.textMuted,
-    marginBottom: 4,
+    marginBottom: Space.xs,
   },
-  barRow: { flexDirection: 'row', alignItems: 'center' },
+  barRow: { flexDirection: 'row', alignItems: 'center', gap: Space.md },
   barLabel: {
-    fontFamily: Fonts.mono,
-    fontSize: 11,
-    color: Palette.textMuted,
-    width: 82,
+    fontFamily: Fonts.ui,
+    fontSize: Type.small,
+    color: Palette.text,
+    width: 78,
   },
   barTrack: {
-    fontFamily: Fonts.mono,
-    fontSize: 12,
-    color: Palette.text,
-    letterSpacing: -1,
     flex: 1,
+    height: 6,
+    borderRadius: Radius.pill,
+    backgroundColor: Palette.surfaceHigh,
+    overflow: 'hidden',
   },
-  barEmpty: { color: Palette.textFaint },
+  barFill: { height: '100%', borderRadius: Radius.pill },
   barValue: {
-    fontFamily: Fonts.mono,
-    fontSize: 11,
+    fontFamily: Fonts.monoBold,
+    fontSize: Type.small,
     color: Palette.text,
-    width: 26,
+    width: 28,
     textAlign: 'right',
+    // Digits must not shift the column as they change.
+    fontVariant: ['tabular-nums'],
   },
   factions: {
-    fontFamily: Fonts.mono,
-    fontSize: 8,
-    letterSpacing: 1.6,
-    color: '#6B4FBB',
-    marginTop: 8,
-  },
-  links: { gap: 2 },
-  link: { paddingVertical: 11 },
-  linkLocked: { opacity: 0.45 },
-  linkText: {
-    fontFamily: Fonts.mono,
-    fontSize: 13,
-    color: Palette.text,
-  },
-  linkTextLocked: { color: Palette.textFaint },
-  linkNote: {
-    fontFamily: Fonts.mono,
-    fontSize: 8,
+    fontFamily: Fonts.uiBold,
+    fontSize: Type.micro,
     letterSpacing: 1.4,
-    color: Palette.textFaint,
-    marginTop: 3,
+    color: Accents.passion,
+    marginTop: Space.sm,
   },
+
+  links: { gap: Space.md },
 });
