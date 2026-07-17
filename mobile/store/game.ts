@@ -150,7 +150,15 @@ export const useGame = create<GameState>((set, get) => ({
         timezone: deviceTimezone(),
       });
       await adoptSession(result);
-      set({ jurorId: result.userId, jurorName: result.jurorName, hasBriefed: true });
+      set({
+        jurorId: result.userId,
+        jurorName: result.jurorName,
+        // Same rule as bootstrap: the letter is owed to anyone who has never
+        // heard a case. This used to assume that signing in meant having read
+        // it, so a juror who swore in, quit on the letter and came back was
+        // dropped straight into the lobby having been told nothing.
+        hasBriefed: (result.casesHeard ?? 0) > 0,
+      });
       await get().refreshStanding();
       await get().refreshWallet();
       return true;

@@ -359,6 +359,12 @@ export interface SignInResult {
   userId: string;
   jurorName: string;
   returning: boolean;
+  /**
+   * Verdicts on the record. Absent for a juror the court has just met.
+   * `returning` is about the identity; this is about the service — a juror can
+   * be returning and still owed the letter.
+   */
+  casesHeard?: number;
   homeCountry?: string;
   homeDistrict?: string;
   /** 30-minute bearer. */

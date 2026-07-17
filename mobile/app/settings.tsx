@@ -216,7 +216,7 @@ export default function Settings() {
             </View>
             <Text style={[styles.sectionNote, { fontSize: 11 * textScale, lineHeight: 18 * textScale }]}>
               The dossier will read at this size. No case can be finished in the time given — that is
-              the design — but it should never be the type's fault.
+              the design — but it should never be the type&apos;s fault.
             </Text>
           </View>
 

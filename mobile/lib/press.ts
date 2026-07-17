@@ -47,7 +47,20 @@ export function localNewspaper(): string {
   return newspaperFor(district ?? null);
 }
 
-/** The city a juror answers to, for the letter that swears them in. */
+/**
+ * The city a juror answers to, for the letter that swears them in.
+ *
+ * The fallback used to be the literal string 'the city', which signed the Chief
+ * Justice's letter "Chief Justice, the city" — lowercase, ungrammatical, and
+ * visibly a placeholder in the most formal object in the game. It only appears
+ * when standing has not arrived yet, which is exactly when a brand-new juror is
+ * reading it.
+ *
+ * The device's own region is a better guess than an apology, and it is the same
+ * guess the masthead above already makes.
+ */
 export function courtCityFor(district: string | null | undefined): string {
-  return district ?? 'the city';
+  if (district) return district;
+  const code = countryFromLocale();
+  return (code ? PRIMARY_DISTRICT[code.toUpperCase()] : null) ?? 'the City';
 }

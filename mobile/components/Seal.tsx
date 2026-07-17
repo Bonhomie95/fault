@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts } from '@/constants/theme';
 import type { Entitlement } from '@/lib/api';
 
 /**

@@ -85,7 +85,7 @@ export default function Store() {
     <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.header}>
-          <Text style={styles.title}>THE CLERK'S OFFICE</Text>
+          <Text style={styles.title}>THE CLERK&apos;S OFFICE</Text>
           <Text style={styles.merit}>{view ? `${view.merit} MERIT` : ''}</Text>
         </View>
         <Text style={styles.creed}>

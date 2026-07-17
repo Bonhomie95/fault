@@ -96,7 +96,7 @@ export function Interstitial({ onDone }: { onDone: () => void }) {
       {phase === 'showing' && (
         <>
           <Animated.View entering={FadeIn.duration(200)} style={styles.card}>
-            <Text style={styles.label}>A WORD FROM THE COURT'S SPONSORS</Text>
+            <Text style={styles.label}>A WORD FROM THE COURT&apos;S SPONSORS</Text>
             <Text style={styles.body}>
               This is where an advertisement would run. No ad network is connected yet.
             </Text>

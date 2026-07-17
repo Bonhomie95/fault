@@ -1,10 +1,11 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Fonts, Palette } from '@/constants/theme';
 import { courtCityFor } from '@/lib/press';
 import { useGame } from '@/store/game';
+import { useSettings } from '@/store/settings';
 
 /**
  * GDD 6, Screen 2 — Briefing, first launch only.
@@ -15,6 +16,10 @@ export default function Briefing() {
   const jurorName = useGame((s) => s.jurorName);
   const district = useGame((s) => s.standing?.district);
   const markBriefed = useGame((s) => s.markBriefed);
+  // The longest prose in the game and the first thing anyone reads. If the
+  // text-size setting does not reach the letter, it does not reach the moment
+  // the player most needs it.
+  const textScale = useSettings((s) => s.textScale);
   const [canDismiss, setCanDismiss] = useState(false);
 
   // Five seconds before you are allowed to look away.
@@ -30,16 +35,34 @@ export default function Briefing() {
   };
 
   return (
-    <Pressable style={styles.root} onPress={dismiss} accessibilityRole="button">
+    // Scrollable, though it rarely needs to scroll. The letter is centred and
+    // fixed-height, so at Larger text on a small phone the signature — and the
+    // TAP TO CONTINUE that tells you what to do — would simply be off-screen
+    // with no way to reach them. A player who cannot read small type is exactly
+    // the player who would hit that.
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={styles.scroll}
+      showsVerticalScrollIndicator={false}
+    >
+    <Pressable onPress={dismiss} accessibilityRole="button">
       <Animated.View entering={FadeIn.duration(1200)} style={styles.letter}>
         <Text style={styles.crest}>◆</Text>
         <Text style={styles.from}>OFFICE OF THE CHIEF JUSTICE</Text>
         <View style={styles.rule} />
 
-        <Text style={styles.salutation}>{jurorName ? `${jurorName},` : 'Juror,'}</Text>
+        <Text style={[styles.salutation, { fontSize: 19 * textScale }]}>
+          {jurorName ? `${jurorName},` : 'Juror,'}
+        </Text>
 
-        <Animated.Text entering={FadeIn.duration(1400).delay(700)} style={styles.body}>
+        <Animated.Text
+          entering={FadeIn.duration(1400).delay(700)}
+          style={[styles.body, { fontSize: 15 * textScale, lineHeight: 26 * textScale }]}
+        >
           Your role is singular. You will hear evidence. You will decide.
+          {'\n\n'}
+          You are allowed two minutes for each case. The court does not grant
+          extensions, and silence is itself a verdict.
           {'\n\n'}
           The city will remember.
         </Animated.Text>
@@ -57,6 +80,7 @@ export default function Briefing() {
         </Animated.Text>
       )}
     </Pressable>
+    </ScrollView>
   );
 }
 
@@ -64,8 +88,14 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: Palette.bg,
+  },
+  scroll: {
+    // flexGrow, not flex: the letter stays vertically centred when it fits and
+    // becomes scrollable when it does not.
+    flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: 30,
+    paddingVertical: 30,
   },
   letter: {
     backgroundColor: Palette.paper,

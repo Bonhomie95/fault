@@ -80,6 +80,12 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
       userId: existing.userId,
       jurorName: existing.user.jurorName,
       returning: true,
+      // "Returning" means the court has met this identity, NOT that they have
+      // ever heard a case. Someone who swore in, closed the app on the Chief
+      // Justice's letter and reinstalled is returning and has read nothing —
+      // the client needs the count to tell those apart, and without it the
+      // letter was skipped forever for anyone who quit before their first case.
+      casesHeard: await prisma.verdictRecord.count({ where: { userId: existing.userId } }),
       ...(await issueTokens(existing.userId)),
     });
     return;

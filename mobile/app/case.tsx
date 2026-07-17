@@ -74,6 +74,10 @@ export default function CaseFile() {
     play('open');
     startBed('room');
     return () => stopAllBeds();
+    // Keyed on the id, not the object, and deliberately so: activeCase is
+    // replaced on every tick of local state, and depending on it would tear the
+    // room down and restart it mid-case — an audible stutter every second.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCase?.id]);
 
   // GDD 2.2 — the tension tone begins at fifteen seconds and does not stop.

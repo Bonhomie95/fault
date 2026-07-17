@@ -6,6 +6,7 @@ import { Fonts, Palette } from '@/constants/theme';
 import { api, type ReviewEntry } from '@/lib/api';
 import { newspaperFor } from '@/lib/press';
 import { useGame } from '@/store/game';
+import { useSettings } from '@/store/settings';
 
 /**
  * GDD 6, Screen 6 — Dossier Review, every 10 cases.
@@ -17,6 +18,7 @@ export default function Review() {
   const jurorId = useGame((s) => s.jurorId);
   // The paper of the city they actually sit in.
   const district = useGame((s) => s.standing?.district);
+  const textScale = useSettings((s) => s.textScale);
   const [entries, setEntries] = useState<ReviewEntry[] | null>(null);
 
   useEffect(() => {
@@ -61,7 +63,17 @@ export default function Review() {
               </Text>
 
               {/* Just facts. What you do with them is your business. */}
-              <Text style={styles.outcome}>{e.outcome}</Text>
+              <Text
+                style={[
+                  styles.outcome,
+                  // Same rule as the case screen: prose scales, the mono labels
+                  // and rules around it do not. A text-size setting that only
+                  // worked on one screen was a setting that half-worked.
+                  { fontSize: 12.5 * textScale, lineHeight: 21 * textScale },
+                ]}
+              >
+                {e.outcome}
+              </Text>
             </View>
           ))}
         </ScrollView>
