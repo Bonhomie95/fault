@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useCallback } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
@@ -10,6 +9,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Fonts, Palette } from '@/constants/theme';
+import * as haptic from '@/lib/haptics';
 
 /**
  * GDD 6, Screen 4 — hold to confirm.
@@ -33,13 +33,14 @@ export function VerdictButton({ label, accent, disabled = false, onConfirm }: Ve
   const fill = useSharedValue(0);
 
   const fire = useCallback(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    haptic.delivered();
     onConfirm();
   }, [onConfirm]);
 
   const onPressIn = useCallback(() => {
     if (disabled) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    // The moment you commit. Light, because the gavel is what is heavy.
+    haptic.tapLight();
     fill.value = withTiming(1, { duration: HOLD_MS, easing: Easing.linear }, (finished) => {
       if (finished) runOnJS(fire)();
     });

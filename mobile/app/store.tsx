@@ -3,7 +3,10 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Busy } from '@/components/Busy';
 import { Fonts, Palette } from '@/constants/theme';
+import * as haptic from '@/lib/haptics';
+import { play } from '@/lib/sound';
 import { api, type StoreItem, type StoreView } from '@/lib/api';
 import { useGame } from '@/store/game';
 
@@ -48,10 +51,13 @@ export default function Store() {
       setNotice(null);
       try {
         await api.buyWithMerit(item.id);
+        play('stamp');
+        haptic.stamped();
         setNotice(`${item.title} is yours.`);
         await load();
         await refreshWallet();
       } catch (err) {
+        haptic.refused();
         setNotice((err as Error).message ?? 'That did not go through.');
       } finally {
         setBusy(false);
@@ -154,6 +160,11 @@ export default function Store() {
           </Pressable>
         </View>
       </SafeAreaView>
+
+      {/* A purchase in flight locks the shelf. Two taps must never be two
+          charges — the server is idempotent, but the player should not have to
+          rely on that to feel safe. */}
+      {busy && <Busy label="THE CLERK IS WRITING IT DOWN" />}
     </View>
   );
 }

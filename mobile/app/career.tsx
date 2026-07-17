@@ -3,9 +3,12 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
 import { Fonts, Palette } from '@/constants/theme';
 import { ApiError, api, type JurisdictionsView, type Mission, type Tier } from '@/lib/api';
+import * as haptic from '@/lib/haptics';
+import { play } from '@/lib/sound';
 import { useGame } from '@/store/game';
 
 /**
@@ -67,9 +70,12 @@ export default function Career() {
     setNotice(null);
     try {
       const r = await api.promote();
+      play('stamp');
+      haptic.stamped();
       setNotice(`You now sit at ${r.standing.tierLabel}.`);
       await load();
     } catch (err) {
+      haptic.refused();
       setNotice(
         err instanceof ApiError && Array.isArray((err as never)['blockedBy'])
           ? 'The bench declined.'
@@ -86,6 +92,8 @@ export default function Career() {
       setBusy(true);
       try {
         await api.claimMission(key);
+        play('stamp');
+        haptic.stamped();
         await load();
       } finally {
         setBusy(false);
@@ -101,9 +109,13 @@ export default function Career() {
       setNotice(null);
       try {
         const r = await api.applyToJurisdiction({ country, tier: 'district' });
+        play(r.accepted ? 'stamp' : 'paper');
+        if (r.accepted) haptic.stamped();
+        else haptic.refused();
         setNotice(r.decisionText);
         await load();
       } catch {
+        haptic.refused();
         setNotice('That application could not be filed.');
       } finally {
         setBusy(false);
@@ -234,6 +246,9 @@ export default function Career() {
           </Pressable>
         </View>
       </SafeAreaView>
+
+      {/* An application is filed once. Two taps must not be two applications. */}
+      {busy && <Busy label="THE BENCH IS CONSIDERING" />}
     </View>
   );
 }

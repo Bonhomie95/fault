@@ -15,13 +15,16 @@ import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { Palette } from '@/constants/theme';
+import { initSound } from '@/lib/sound';
 import { useGame } from '@/store/game';
+import { useSettings } from '@/store/settings';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
   const bootstrap = useGame((s) => s.bootstrap);
   const bootstrapping = useGame((s) => s.bootstrapping);
+  const loadSettings = useSettings((s) => s.load);
 
   const [fontsLoaded] = useFonts({
     PlayfairDisplay_400Regular,
@@ -34,7 +37,11 @@ export default function RootLayout() {
 
   useEffect(() => {
     void bootstrap();
-  }, [bootstrap]);
+    // Preferences before audio: the players read the volume when they are
+    // created, and a bed that starts at the default and corrects itself a
+    // frame later is a bed the player hears jump.
+    void loadSettings().then(() => initSound());
+  }, [bootstrap, loadSettings]);
 
   useEffect(() => {
     if (fontsLoaded && !bootstrapping) SplashScreen.hideAsync().catch(() => {});

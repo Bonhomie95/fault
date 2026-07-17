@@ -3,10 +3,13 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
 import { CityScene } from '@/components/three/CityScene';
 import { Fonts, Palette } from '@/constants/theme';
 import { ApiError } from '@/lib/api';
+import * as haptic from '@/lib/haptics';
+import { play } from '@/lib/sound';
 import { useGame } from '@/store/game';
 
 /**
@@ -33,9 +36,14 @@ export default function Lobby() {
   );
 
   const beginCase = useCallback(async () => {
+    // Guarded three ways: this check, the disabled prop, and the Busy scrim.
+    // Opening a case costs a Groq generation and starts a 120-second clock —
+    // a double-tap here is the most expensive accident available.
     if (loading) return;
     setLoading(true);
     setGate(null);
+    play('paper');
+    haptic.tapLight();
     try {
       await loadCase();
       router.push('/case');
@@ -137,6 +145,9 @@ export default function Lobby() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* Nothing on this screen is tappable while the docket is being fetched. */}
+      {loading && <Busy label="THE CLERK IS FETCHING THE FILE" />}
     </View>
   );
 }

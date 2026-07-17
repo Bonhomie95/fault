@@ -50,7 +50,8 @@
         {
           "locationWhenInUsePermission": "FAULT uses your location once, to learn which country's courts you will sit in. Only the country is kept — your coordinates are never stored or sent."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,

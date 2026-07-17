@@ -1,15 +1,18 @@
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Busy } from '@/components/Busy';
 import { TimerRing } from '@/components/TimerRing';
 import { VerdictButton } from '@/components/VerdictButton';
 import { CourtroomScene, type DossierTab } from '@/components/three/CourtroomScene';
 import { Clock, Fonts, Palette } from '@/constants/theme';
 import type { ClientCase } from '@/lib/api';
+import * as haptic from '@/lib/haptics';
+import { play, startBed, stopAllBeds, stopBed } from '@/lib/sound';
 import { useGame } from '@/store/game';
+import { useSettings } from '@/store/settings';
 
 const TABS: { key: DossierTab; label: string }[] = [
   { key: 'defendant', label: 'DEFENDANT' },
@@ -63,6 +66,23 @@ export default function CaseFile() {
     if (!activeCase) router.replace('/lobby');
   }, [activeCase]);
 
+  // The room runs under the whole case and stops when you leave it, however
+  // you leave it — a bed still playing over the verdict screen would be worse
+  // than no bed at all.
+  useEffect(() => {
+    if (!activeCase) return;
+    play('open');
+    startBed('room');
+    return () => stopAllBeds();
+  }, [activeCase?.id]);
+
+  // GDD 2.2 — the tension tone begins at fifteen seconds and does not stop.
+  useEffect(() => {
+    if (delivering) return;
+    if (remaining <= Clock.tensionAt && remaining > 0) startBed('tension');
+    else stopBed('tension');
+  }, [remaining, delivering]);
+
   // The countdown.
   //
   // This is a DISPLAY of the server's clock, not the clock. `clockSeconds` is
@@ -80,14 +100,16 @@ export default function CaseFile() {
       const left = Math.max(0, total - elapsed);
       setRemaining(left);
 
-      // GDD 2.2 — the last five seconds are felt, once per second.
+      // GDD 2.2 — the last five seconds are felt and heard, once per second.
       if (left <= Clock.hapticAt && left > 0) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+        haptic.tick();
+        play('tick');
       }
 
       if (left === 0) {
         clearInterval(id);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+        stopAllBeds();
+        haptic.clockRanOut();
         // Forced verdict. The server flips the coin and records it as hung —
         // and would do so anyway on lateness, whatever we sent.
         void submit(null);
@@ -147,7 +169,12 @@ export default function CaseFile() {
             {TABS.map((t) => (
               <Pressable
                 key={t.key}
-                onPress={() => setTab(t.key)}
+                onPress={() => {
+                  if (t.key === tab) return;
+                  play('paper');
+                  haptic.tapLight();
+                  setTab(t.key);
+                }}
                 style={[styles.tab, tab === t.key && { borderBottomColor: accent }]}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: tab === t.key }}
@@ -201,11 +228,19 @@ export default function CaseFile() {
           />
         </View>
       </SafeAreaView>
+
+      {/* The verdict is in flight and cannot be taken back. Freeze the room —
+          the clock is still running on the server, and a second tap here would
+          be a second verdict on a case that already has one. */}
+      {delivering && <Busy label="DELIVERING THE VERDICT" patienceMs={0} />}
     </View>
   );
 }
 
 function DefendantTab({ activeCase, accent }: { activeCase: ClientCase; accent: string }) {
+  // GDD 8's first setting, finally connected. It scales the prose and nothing
+  // else: labels and tags stay put, so the layout does not come apart at 1.3.
+  const scale = useSettings((s) => s.textScale);
   const d = activeCase.defendant;
   // GDD 12 — the defendant tab is always short. A player who reads only this
   // still has enough to make an educated guess.
@@ -216,7 +251,9 @@ function DefendantTab({ activeCase, accent }: { activeCase: ClientCase; accent: 
       <Text style={styles.meta}>
         {d.age} · {d.occupation}
       </Text>
-      <Text style={styles.body}>{d.background}</Text>
+      <Text style={[styles.body, { fontSize: 12.5 * scale, lineHeight: 20 * scale }]}>
+        {d.background}
+      </Text>
 
       {activeCase.returningCharacters.length > 0 && (
         // The Echo System never announces itself (GDD 2.4). This is a filing
@@ -245,6 +282,7 @@ function EvidenceTab({
   examined: string | null;
   onExamine: (id: string | null) => void;
 }) {
+  const scale = useSettings((s) => s.textScale);
   return (
     <Animated.View entering={FadeIn.duration(200)} style={styles.stack}>
       {activeCase.evidence.map((e, i) => {
@@ -252,24 +290,34 @@ function EvidenceTab({
         return (
           <Pressable
             key={e.id}
-            onPress={() => onExamine(open ? null : e.id)}
+            onPress={() => {
+              play('exhibit');
+              haptic.tapLight();
+              onExamine(open ? null : e.id);
+            }}
             style={[styles.card, open && { borderColor: accent }]}
             accessibilityRole="button"
             accessibilityState={{ expanded: open }}
           >
             <Text style={[styles.cardTag, { color: accent }]}>EXHIBIT {i + 1}</Text>
-            <Text style={styles.body}>{e.description}</Text>
+            <Text style={[styles.body, { fontSize: 12.5 * scale, lineHeight: 20 * scale }]}>
+              {e.description}
+            </Text>
 
             {open && (
               <Animated.View entering={FadeIn.duration(180)} style={styles.readings}>
                 {/* Both readings are valid. That is the whole game. */}
                 <View style={styles.reading}>
                   <Text style={styles.readingLabel}>PROSECUTION READS IT</Text>
-                  <Text style={styles.readingText}>{e.prosecution_reading}</Text>
+                  <Text style={[styles.readingText, { fontSize: 12 * scale, lineHeight: 19 * scale }]}>
+                    {e.prosecution_reading}
+                  </Text>
                 </View>
                 <View style={styles.reading}>
                   <Text style={styles.readingLabel}>DEFENCE READS IT</Text>
-                  <Text style={styles.readingText}>{e.defence_reading}</Text>
+                  <Text style={[styles.readingText, { fontSize: 12 * scale, lineHeight: 19 * scale }]}>
+                    {e.defence_reading}
+                  </Text>
                 </View>
               </Animated.View>
             )}
@@ -292,12 +340,18 @@ function WitnessesTab({
   focused: number;
   onFocus: (i: number) => void;
 }) {
+  // The most text-heavy tab in the game, and the one this setting is for.
+  const scale = useSettings((s) => s.textScale);
   return (
     <Animated.View entering={FadeIn.duration(200)} style={styles.stack}>
       {activeCase.witnesses.map((w, i) => (
         <Pressable
           key={w.name}
-          onPress={() => onFocus(i)}
+          onPress={() => {
+            play('paper');
+            haptic.tapLight();
+            onFocus(i);
+          }}
           style={[styles.card, focused === i && { borderColor: accent }]}
           accessibilityRole="button"
         >
@@ -305,7 +359,9 @@ function WitnessesTab({
           <Text style={styles.name}>{w.name}</Text>
           {w.role.length > 0 && <Text style={styles.meta}>{w.role}</Text>}
           {/* The most text-heavy section. You will not finish it. */}
-          <Text style={styles.testimony}>“{w.testimony}”</Text>
+          <Text style={[styles.testimony, { fontSize: 12.5 * scale, lineHeight: 21 * scale }]}>
+            “{w.testimony}”
+          </Text>
         </Pressable>
       ))}
     </Animated.View>
@@ -313,15 +369,20 @@ function WitnessesTab({
 }
 
 function ArgumentsTab({ activeCase, accent }: { activeCase: ClientCase; accent: string }) {
+  const scale = useSettings((s) => s.textScale);
   return (
     <Animated.View entering={FadeIn.duration(200)} style={styles.stack}>
       <View style={styles.card}>
         <Text style={[styles.cardTag, { color: accent }]}>PROSECUTION</Text>
-        <Text style={styles.argument}>{activeCase.prosecutionArgument}</Text>
+        <Text style={[styles.argument, { fontSize: 15 * scale, lineHeight: 23 * scale }]}>
+          {activeCase.prosecutionArgument}
+        </Text>
       </View>
       <View style={styles.card}>
         <Text style={[styles.cardTag, { color: accent }]}>DEFENCE</Text>
-        <Text style={styles.argument}>{activeCase.defenceArgument}</Text>
+        <Text style={[styles.argument, { fontSize: 15 * scale, lineHeight: 23 * scale }]}>
+          {activeCase.defenceArgument}
+        </Text>
       </View>
     </Animated.View>
   );

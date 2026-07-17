@@ -5,6 +5,8 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Interstitial } from '@/components/Interstitial';
 import { Fonts, Palette } from '@/constants/theme';
+import * as haptic from '@/lib/haptics';
+import { play } from '@/lib/sound';
 import { useGame } from '@/store/game';
 
 /**
@@ -23,6 +25,10 @@ export default function VerdictDelivered() {
       router.replace('/lobby');
       return;
     }
+    // The gavel lands with the flash, not before it.
+    play('gavel');
+    haptic.gavel();
+
     // Two seconds to sit with it before the room tells you what happened.
     const id = setTimeout(() => setPhase('aftermath'), 2000);
     return () => clearTimeout(id);
