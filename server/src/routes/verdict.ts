@@ -7,6 +7,7 @@ import { meritForStreak, meritForVerdict } from '../domain/store.js';
 import { prisma } from '../lib/prisma.js';
 import { requireJuror } from '../middleware/requireJuror.js';
 import { grantMerit } from '../services/economy.js';
+import { noteCaseHeard } from '../services/ads.js';
 import { placeForUser, refillCaseCache } from '../services/caseGenerator.js';
 import { awardXp } from '../services/progression.js';
 import { recordDocketDay, tickMissions } from '../services/missions.js';
@@ -208,6 +209,10 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
   const totalVotes = caseData.consensusGuilty + caseData.consensusNotGuilty + 1;
   const guiltyVotes = caseData.consensusGuilty + (verdict === 'guilty' ? 1 : 0);
 
+  // Whether an ad is due, decided here and never by the client. Comes after
+  // the verdict, never during the case.
+  const ad = await noteCaseHeard(userId);
+
   res.json({
     verdict,
     wasHung,
@@ -231,5 +236,8 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
     promoted,
     meritAwarded,
     merit,
+    // The verdict screen shows the aftermath first; the interstitial belongs
+    // between this case and the next one, not on top of the consequence.
+    showInterstitial: ad.showInterstitial,
   });
 });

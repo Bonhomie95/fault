@@ -32,7 +32,7 @@ export interface Sku {
   grants: Entitlement | null;
   /** Merit granted on purchase, for the bundles. */
   meritGranted?: number;
-  kind: 'unlock' | 'pack' | 'currency';
+  kind: 'unlock' | 'pack' | 'currency' | 'cosmetic' | 'support';
 }
 
 export const CAMPAIGN_TRIAL_CASES = 10;
@@ -109,6 +109,89 @@ export const SKUS: Sku[] = [
     grants: null,
     meritGranted: 7000,
     kind: 'currency',
+  },
+
+  // ---- Cosmetics ----
+  //
+  // The honest way to widen revenue in a game about integrity: sell how the
+  // room looks, never what happens in it. All of them are earnable, and priced
+  // low enough in Merit that a player who never pays still collects them —
+  // a cosmetic nobody can earn is just a paywall with better art.
+  {
+    id: 'seal_brass',
+    title: 'Brass Seal',
+    blurb: 'Your mark on the record and beside your name on the registry. Struck in brass.',
+    priceMinor: 199,
+    meritPrice: 900,
+    grants: 'seal_brass',
+    kind: 'cosmetic',
+  },
+  {
+    id: 'seal_obsidian',
+    title: 'Obsidian Seal',
+    blurb: 'Black glass. Reads as a threat, which some jurors enjoy.',
+    priceMinor: 199,
+    meritPrice: 900,
+    grants: 'seal_obsidian',
+    kind: 'cosmetic',
+  },
+  {
+    id: 'seal_ivory',
+    title: 'Ivory Seal',
+    blurb: 'Pale, old, and slightly disapproving.',
+    priceMinor: 199,
+    meritPrice: 900,
+    grants: 'seal_ivory',
+    kind: 'cosmetic',
+  },
+  {
+    id: 'room_oak',
+    title: 'The Oak Room',
+    blurb: 'Panelled walls and warm lamps. The room feels older than the charge.',
+    priceMinor: 299,
+    meritPrice: 1800,
+    grants: 'room_oak',
+    kind: 'cosmetic',
+  },
+  {
+    id: 'room_concrete',
+    title: 'The Concrete Room',
+    blurb: 'Strip lights and bare walls. Nothing here has ever been comfortable.',
+    priceMinor: 299,
+    meritPrice: 1800,
+    grants: 'room_concrete',
+    kind: 'cosmetic',
+  },
+  {
+    id: 'stock_onionskin',
+    title: 'Onionskin Dossiers',
+    blurb: 'Thin, translucent case files. You can almost read the next page through this one.',
+    priceMinor: 199,
+    meritPrice: 1200,
+    grants: 'stock_onionskin',
+    kind: 'cosmetic',
+  },
+  {
+    id: 'stock_vellum',
+    title: 'Vellum Dossiers',
+    blurb: 'Heavy stock. The kind of paper that expects to be kept.',
+    priceMinor: 199,
+    meritPrice: 1200,
+    grants: 'stock_vellum',
+    kind: 'cosmetic',
+  },
+
+  // ---- Support ----
+  {
+    id: 'patron',
+    title: 'Patron of the Court',
+    blurb:
+      'For people who want the game to keep existing. A seal, a line in the credits, and nothing else — no advantage, because there is nothing here worth having an advantage in.',
+    priceMinor: 1999,
+    // Not earnable, and not pretending to be: this is a donation with a badge.
+    meritPrice: null,
+    grants: 'patron',
+    kind: 'support',
   },
 ];
 

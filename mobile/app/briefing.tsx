@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Fonts, Palette } from '@/constants/theme';
+import { courtCityFor } from '@/lib/press';
 import { useGame } from '@/store/game';
 
 /**
@@ -12,6 +13,7 @@ import { useGame } from '@/store/game';
  */
 export default function Briefing() {
   const jurorName = useGame((s) => s.jurorName);
+  const district = useGame((s) => s.standing?.district);
   const markBriefed = useGame((s) => s.markBriefed);
   const [canDismiss, setCanDismiss] = useState(false);
 
@@ -45,7 +47,7 @@ export default function Briefing() {
         <Animated.View entering={FadeIn.duration(1000).delay(1800)} style={styles.signature}>
           <View style={styles.rule} />
           <Text style={styles.signatureName}>A. Oyelaran</Text>
-          <Text style={styles.signatureTitle}>Chief Justice, Orun City</Text>
+          <Text style={styles.signatureTitle}>Chief Justice, {courtCityFor(district)}</Text>
         </Animated.View>
       </Animated.View>
 

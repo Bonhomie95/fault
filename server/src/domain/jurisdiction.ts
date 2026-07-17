@@ -50,6 +50,23 @@ export interface CountryTexture {
   money: { small: string; mid: string; large: string; huge: string };
 }
 
+/**
+ * The local paper, by district.
+ *
+ * FICTIONAL, deliberately, and this is not the same call as the courts.
+ * A police district is a public institution and depicting one in fiction is
+ * ordinary; a newspaper is a private company, and printing invented stories
+ * under a real masthead is straightforwardly defamatory in a way "Oslo
+ * politidistrikt investigated a fictional theft" is not. So the city is real
+ * and the paper is ours.
+ *
+ * "Herald" reads as a paper in every English-speaking market and is generic
+ * enough not to collide with a real title in the others.
+ */
+export function newspaperFor(district: string): string {
+  return `THE ${district.toUpperCase()} HERALD`;
+}
+
 export interface CountryProfile {
   /** ISO 3166-1 alpha-2 */
   code: string;

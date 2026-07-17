@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Fonts, Palette } from '@/constants/theme';
 import { api, type ReviewEntry } from '@/lib/api';
+import { newspaperFor } from '@/lib/press';
 import { useGame } from '@/store/game';
 
 /**
@@ -14,6 +15,8 @@ import { useGame } from '@/store/game';
  */
 export default function Review() {
   const jurorId = useGame((s) => s.jurorId);
+  // The paper of the city they actually sit in.
+  const district = useGame((s) => s.standing?.district);
   const [entries, setEntries] = useState<ReviewEntry[] | null>(null);
 
   useEffect(() => {
@@ -32,7 +35,7 @@ export default function Review() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.masthead}>
-            <Text style={styles.mastheadName}>THE ORUN HERALD</Text>
+            <Text style={styles.mastheadName}>{newspaperFor(district)}</Text>
             <View style={styles.rule} />
             <Text style={styles.headline}>WHAT HAPPENED NEXT</Text>
             <View style={styles.rule} />

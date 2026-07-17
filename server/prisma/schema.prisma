@@ -78,11 +78,28 @@ enum MissionKind {
 /// Things a juror can own. Deliberately small, and deliberately none of them
 /// touch rank, trust, verdicts or the clock — see domain/store.ts.
 enum Entitlement {
+  // ---- content: more game ----
   campaign      // the full docket, past the 10-case trial
-  no_ads        // forever
   pack_corporate
   pack_cold_case
   pack_political
+
+  // ---- convenience: less friction ----
+  no_ads        // forever
+
+  // ---- cosmetic: nothing but how it looks ----
+  // These exist because they are the only honest way to take more money from
+  // a game about integrity. They change the room, never the verdict.
+  seal_brass    // the juror's seal on the record and the boards
+  seal_obsidian
+  seal_ivory
+  room_oak      // the courtroom's wood and light
+  room_concrete
+  stock_onionskin // the dossier's paper
+  stock_vellum
+
+  // ---- support ----
+  patron        // named in the credits; a seal and a line, nothing more
 }
 
 enum PurchaseSource {
@@ -150,6 +167,14 @@ model User {
   currentStreak Int     @default(0)
   longestStreak Int     @default(0)
   lastDocketDay String? // YYYY-MM-DD in the player's own day, for streaks
+
+  // ---- Advertising ----
+  // Cases heard since the last interstitial, and how many this stretch will
+  // take (2 or 3, rolled fresh each time). Both live here rather than in the
+  // client because an ad cadence the client owns is an ad cadence the client
+  // skips — and because the roll must not be re-rollable by reopening the app.
+  casesSinceAd  Int     @default(0)
+  adEveryNCases Int     @default(3)
 
   identities   AuthIdentity[]
   refreshTokens RefreshToken[]

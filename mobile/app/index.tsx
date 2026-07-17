@@ -22,9 +22,17 @@ import {
   signInWithGoogle,
   type ProviderToken,
 } from '@/lib/auth';
+import { localNewspaper } from '@/lib/press';
 import { useGame } from '@/store/game';
 
 const HEADLINE = 'CITY COURT SEEKS JUROR';
+
+/**
+ * Nobody is sworn in yet, so there is no assigned district — this is the
+ * paper for wherever the phone thinks it is. Once the player signs in, every
+ * other screen uses their real one, which may not be this.
+ */
+const MASTHEAD = localNewspaper();
 
 /**
  * GDD 6, Screen 1 — Cold Open.
@@ -119,7 +127,7 @@ export default function ColdOpen() {
         style={styles.overlay}
       >
         <View style={styles.masthead}>
-          <Text style={styles.mastheadText}>THE ORUN HERALD</Text>
+          <Text style={styles.mastheadText}>{MASTHEAD}</Text>
           <Text style={styles.mastheadRule}>ESTABLISHED 1961 · CITY EDITION</Text>
         </View>
 

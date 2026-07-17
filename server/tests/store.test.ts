@@ -10,14 +10,51 @@ import {
 } from '../src/domain/store.js';
 
 describe('the store cannot sell an advantage', () => {
-  it('grants only content or the absence of ads', () => {
-    // The design rule, asserted: if a sku ever grants standing, a verdict, or
+  it('grants only content, convenience, cosmetics or a badge', () => {
+    // The design rule, asserted. If a sku ever grants standing, a verdict, or
     // time on the clock, FAULT stops being a game about judgement and becomes
-    // a game about spending. This test is the tripwire.
-    const allowed = ['campaign', 'no_ads', 'pack_corporate', 'pack_cold_case', 'pack_political'];
+    // a game about spending.
+    //
+    // This list is deliberately explicit rather than derived: adding an
+    // entitlement should force whoever adds it to come here, read this, and
+    // decide on purpose which column it belongs in. A test that computed the
+    // answer would let a `skip_timer` through on the day someone was in a
+    // hurry.
+    const allowed = [
+      // more game
+      'campaign',
+      'pack_corporate',
+      'pack_cold_case',
+      'pack_political',
+      // less friction
+      'no_ads',
+      // how the room looks, and nothing else
+      'seal_brass',
+      'seal_obsidian',
+      'seal_ivory',
+      'room_oak',
+      'room_concrete',
+      'stock_onionskin',
+      'stock_vellum',
+      // a thank-you
+      'patron',
+    ];
+
     for (const sku of SKUS) {
       if (sku.grants === null) continue;
-      assert.ok(allowed.includes(sku.grants), `${sku.id} grants "${sku.grants}"`);
+      assert.ok(
+        allowed.includes(sku.grants),
+        `${sku.id} grants "${sku.grants}" — if that is an advantage, it does not belong in the store; if it is not, add it to this list on purpose.`,
+      );
+    }
+  });
+
+  it('keeps every cosmetic earnable', () => {
+    // A cosmetic nobody can earn is a paywall with better art. The player who
+    // never pays should still end up with a shelf of seals.
+    for (const sku of SKUS.filter((s) => s.kind === 'cosmetic')) {
+      assert.ok(sku.meritPrice !== null, `${sku.id} is money-only`);
+      assert.ok(sku.meritPrice! <= 2000, `${sku.id} costs ${sku.meritPrice} — that is not earnable, it is a wall`);
     }
   });
 

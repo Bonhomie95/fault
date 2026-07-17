@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Fonts, Palette } from '@/constants/theme';
 import { api, type JurorRecord } from '@/lib/api';
+import { newspaperFor } from '@/lib/press';
 import { useGame } from '@/store/game';
 
 /**
@@ -14,6 +15,7 @@ import { useGame } from '@/store/game';
  */
 export default function Record() {
   const jurorId = useGame((s) => s.jurorId);
+  const district = useGame((s) => s.standing?.district);
   const [record, setRecord] = useState<JurorRecord | null>(null);
   const [locked, setLocked] = useState(false);
 
@@ -32,7 +34,7 @@ export default function Record() {
     <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <Text style={styles.kicker}>THE ORUN HERALD · CITY DESK</Text>
+          <Text style={styles.kicker}>{newspaperFor(district)} · CITY DESK</Text>
           <Text style={styles.headline}>THE JUROR</Text>
 
           {!record && !locked && <ActivityIndicator color={Palette.text} style={styles.spinner} />}
