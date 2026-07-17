@@ -22,8 +22,9 @@ interface CameraMark {
 }
 
 const MARKS: Record<DossierTab, CameraMark> = {
-  // Face to face with the accused.
-  defendant: { position: [0, 1.35, 2.5], target: [0, 0.95, 0] },
+  // Face to face with the accused — close enough to read them, which is the
+  // whole trap. You are meant to look at this person and feel something.
+  defendant: { position: [0, 1.12, 1.5], target: [0, 1.02, -0.6] },
   // Over the exhibit table, looking down at what you have been given.
   evidence: { position: [0, 2.15, 1.45], target: [0, 0.75, 0.15] },
   // Turned toward the stand.
@@ -110,6 +111,7 @@ function JuryBox({ accent }: { accent: string }) {
         <Figure
           key={s.seed}
           seed={s.seed}
+          appearance={appearanceForSeed(s.seed)}
           posture="seated"
           position={[s.x, 0.64, s.z]}
           rotation={[0, 0.35, 0]}
@@ -139,6 +141,18 @@ function hashName(name: string): number {
   return Math.abs(h % 200);
 }
 
+/**
+ * Faces for everyone who is not on trial.
+ *
+ * Derived from the seed rather than sent by the server: only the defendant's
+ * appearance is a measured variable. Everyone else just needs to not be a
+ * clone of the person beside them.
+ */
+function appearanceForSeed(seed: number): number {
+  const x = Math.sin(seed * 57.13) * 9371.7;
+  return (x - Math.floor(x)) * 100;
+}
+
 function Scene({ activeCase, tab, examinedEvidence, onSelectEvidence, focusedWitness }: SceneProps) {
   const accent = activeCase.accent;
 
@@ -161,9 +175,12 @@ function Scene({ activeCase, tab, examinedEvidence, onSelectEvidence, focusedWit
       <Room accent={accent} />
       <JuryBox accent={accent} />
 
-      {/* The accused. Stands where the light is worst. */}
+      {/* The accused. Stands where the light is worst.
+          `appearance` shapes this face and is uncorrelated with guilt — if it
+          moves your verdict, appearance_bias is already counting. */}
       <Figure
         seed={activeCase.defendant.portraitSeed}
+        appearance={activeCase.defendant.appearance}
         posture="accused"
         position={[0, 0, -0.95]}
         accent={accent}
@@ -175,6 +192,7 @@ function Scene({ activeCase, tab, examinedEvidence, onSelectEvidence, focusedWit
         <Figure
           key={w.name}
           seed={hashName(w.name)}
+          appearance={appearanceForSeed(hashName(w.name))}
           posture={i === focusedWitness ? 'testifying' : 'standing'}
           position={i === focusedWitness ? [1.5, 0.9, -0.4] : [2.6, 0, 0.6]}
           rotation={[0, i === focusedWitness ? -0.5 : -0.9, 0]}
@@ -187,6 +205,7 @@ function Scene({ activeCase, tab, examinedEvidence, onSelectEvidence, focusedWit
       {/* Prosecution and defence, facing each other across you. */}
       <Figure
         seed={hashName(`${activeCase.id}-prosecution`)}
+        appearance={appearanceForSeed(hashName(`${activeCase.id}-prosecution`))}
         posture="arguing"
         position={[-1.15, 0, -1.15]}
         rotation={[0, 0.45, 0]}
@@ -195,6 +214,7 @@ function Scene({ activeCase, tab, examinedEvidence, onSelectEvidence, focusedWit
       />
       <Figure
         seed={hashName(`${activeCase.id}-defence`)}
+        appearance={appearanceForSeed(hashName(`${activeCase.id}-defence`))}
         posture="arguing"
         position={[1.15, 0, -1.15]}
         rotation={[0, -0.45, 0]}

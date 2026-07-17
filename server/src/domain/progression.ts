@@ -148,12 +148,20 @@ export function trustForVerdict(opts: {
 
 export const clampTrust = (n: number) => Math.max(0, Math.min(100, n));
 
-/** How the bench describes your standing. Never a number, in the fiction. */
+/**
+ * How the bench describes your standing. Never a number, in the fiction.
+ *
+ * The bands are set so that the starting value of 50 reads as "Sound": a juror
+ * who has not yet heard a case has done nothing wrong, and opening their
+ * career by calling them "Questioned" would be the game accusing them of
+ * something before they had the chance to do it. You fall from sound; you do
+ * not climb to it.
+ */
 export function trustLabel(trust: number): string {
   if (trust >= 85) return 'Unimpeachable';
   if (trust >= 70) return 'Well regarded';
-  if (trust >= 55) return 'Sound';
-  if (trust >= 40) return 'Questioned';
-  if (trust >= 25) return 'Under review';
+  if (trust >= 50) return 'Sound';
+  if (trust >= 35) return 'Questioned';
+  if (trust >= 20) return 'Under review';
   return 'Discredited';
 }

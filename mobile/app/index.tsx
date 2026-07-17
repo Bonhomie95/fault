@@ -1,3 +1,4 @@
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -13,6 +14,14 @@ import {
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { NewspaperScene } from '@/components/three/NewspaperScene';
 import { Fonts, Palette } from '@/constants/theme';
+import {
+  googleClientId,
+  isAppleAvailable,
+  signInWithApple,
+  signInWithDevice,
+  signInWithGoogle,
+  type ProviderToken,
+} from '@/lib/auth';
 import { useGame } from '@/store/game';
 
 const HEADLINE = 'CITY COURT SEEKS JUROR';
@@ -23,17 +32,25 @@ const HEADLINE = 'CITY COURT SEEKS JUROR';
  */
 export default function ColdOpen() {
   const jurorId = useGame((s) => s.jurorId);
-  const swearIn = useGame((s) => s.swearIn);
+  const swearInWith = useGame((s) => s.swearInWith);
+  const signInExisting = useGame((s) => s.signInExisting);
 
   const [typed, setTyped] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [appleReady, setAppleReady] = useState(false);
+  /** Held while we ask the player to name themselves. */
+  const [pending, setPending] = useState<ProviderToken | null>(null);
 
   // A returning juror is already sworn in. Send them to the docket.
   useEffect(() => {
     if (jurorId) router.replace('/lobby');
   }, [jurorId]);
+
+  useEffect(() => {
+    void isAppleAvailable().then(setAppleReady);
+  }, []);
 
   // The headline types itself out (GDD 6, Screen 1).
   useEffect(() => {
@@ -46,19 +63,50 @@ export default function ColdOpen() {
     return () => clearInterval(id);
   }, []);
 
+  /**
+   * Sign in with a provider. If the court already knows this identity we go
+   * straight through; if not, we hold the token and ask for a name — because
+   * the juror name is the player's to choose, never the one Apple or Google
+   * happens to have on file.
+   */
+  const authenticate = useCallback(
+    async (get: () => Promise<ProviderToken>) => {
+      if (busy) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const token = await get();
+        const known = await signInExisting(token);
+        if (known) {
+          router.replace('/lobby');
+          return;
+        }
+        setPending(token);
+        if (token.suggestedName) setName(token.suggestedName);
+      } catch (err) {
+        const message = (err as Error).message ?? '';
+        // A cancelled sign-in is not an error worth shouting about.
+        if (!/cancel/i.test(message)) setError('That sign-in did not go through.');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, signInExisting],
+  );
+
   const onSwearIn = useCallback(async () => {
     const trimmed = name.trim();
-    if (!trimmed || busy) return;
+    if (!trimmed || busy || !pending) return;
     setBusy(true);
     setError(null);
     try {
-      await swearIn(trimmed);
+      await swearInWith(pending, trimmed);
       router.replace('/briefing');
     } catch {
       setError('The court could not be reached.');
       setBusy(false);
     }
-  }, [name, busy, swearIn]);
+  }, [name, busy, pending, swearInWith]);
 
   return (
     <View style={styles.root}>
@@ -82,8 +130,53 @@ export default function ColdOpen() {
           </Text>
         </View>
 
-        {typed.length === HEADLINE.length && (
+        {typed.length === HEADLINE.length && !pending && (
           <Animated.View entering={FadeIn.duration(700).delay(300)} style={styles.entry}>
+            <Text style={styles.label}>REPORT FOR SERVICE</Text>
+
+            {appleReady && (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={2}
+                style={styles.appleButton}
+                onPress={() => authenticate(signInWithApple)}
+              />
+            )}
+
+            {googleClientId() && (
+              <Pressable
+                onPress={() => authenticate(signInWithGoogle)}
+                disabled={busy}
+                style={[styles.provider, busy && styles.acceptDisabled]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.providerText}>CONTINUE WITH GOOGLE</Text>
+              </Pressable>
+            )}
+
+            {/* Expo Go has no Apple Sign In and there may be no Google client
+                id yet. The server refuses this in production. */}
+            {(!appleReady || !googleClientId()) && (
+              <Pressable
+                onPress={() => authenticate(signInWithDevice)}
+                disabled={busy}
+                style={[styles.provider, styles.providerGhost, busy && styles.acceptDisabled]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.providerGhostText}>CONTINUE ON THIS DEVICE</Text>
+              </Pressable>
+            )}
+
+            {busy && <ActivityIndicator color={Palette.bg} style={styles.busy} />}
+            {error && <Text style={styles.error}>{error}</Text>}
+          </Animated.View>
+        )}
+
+        {/* The court has an identity; now it wants a name. Yours, not your
+            account's. */}
+        {pending && (
+          <Animated.View entering={FadeIn.duration(500)} style={styles.entry}>
             <Text style={styles.label}>JUROR:</Text>
             <TextInput
               value={name}
@@ -98,6 +191,9 @@ export default function ColdOpen() {
               editable={!busy}
               accessibilityLabel="Your name as juror"
             />
+            <Text style={styles.note}>
+              This is the name the city will remember. It need not be your own.
+            </Text>
 
             <Pressable
               onPress={onSwearIn}
@@ -184,6 +280,43 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 2.4,
     color: Palette.text,
+  },
+  appleButton: { width: 250, height: 46, marginTop: 4 },
+  provider: {
+    marginTop: 10,
+    width: 250,
+    height: 46,
+    backgroundColor: Palette.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 2,
+  },
+  providerGhost: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#6B6558',
+  },
+  providerText: {
+    fontFamily: Fonts.uiBold,
+    fontSize: 11,
+    letterSpacing: 2,
+    color: Palette.text,
+  },
+  providerGhostText: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1.6,
+    color: '#4A4A45',
+  },
+  busy: { marginTop: 16 },
+  note: {
+    fontFamily: Fonts.mono,
+    fontSize: 9,
+    lineHeight: 15,
+    color: '#6B6558',
+    textAlign: 'center',
+    marginTop: 12,
+    maxWidth: 250,
   },
   error: {
     fontFamily: Fonts.mono,

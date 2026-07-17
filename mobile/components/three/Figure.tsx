@@ -1,40 +1,48 @@
 import { useMemo, useRef } from 'react';
 import type { Group } from 'three';
 import { useFrame } from '@/lib/r3f';
+import { Head } from './Head';
 
 /**
  * A person in the room.
  *
- * GDD 5.2 — stylised, never photorealistic. No faces: a face invites the
- * uncanny valley and implies a real likeness. What identifies someone here is
- * silhouette and posture, with one feature exaggerated, derived
- * deterministically from their portrait seed. The same person is always the
- * same shape, so a returning name is a returning body.
+ * The GDD called for faceless silhouettes (5.2). That has been overturned:
+ * jurors are swayed by how a defendant looks, and a game about noticing your
+ * own bias cannot hide the thing you are biased by. See Head.tsx.
+ *
+ * Everything here is deterministic from the seed, so a person who returns
+ * years later is recognisably the same person — which is the Echo System's
+ * whole payload. `appearance` shapes the face and the bearing; it is
+ * generated independently of guilt, so it is information about nothing.
  */
 
 export type Posture = 'standing' | 'accused' | 'testifying' | 'arguing' | 'seated';
 
 interface FigureProps {
   seed: number;
+  /** 0 unsettling .. 100 disarming. Only meaningful for people you judge. */
+  appearance?: number;
   posture?: Posture;
   accent?: string;
-  /** Highlights the figure — used for whoever the camera is about. */
   focused?: boolean;
   position?: [number, number, number];
   rotation?: [number, number, number];
   scale?: number;
-  /** Breathing gives the room a pulse. Disabled for background jurors. */
   alive?: boolean;
 }
 
-/** Deterministic pseudo-random in [0,1) from a seed and a channel. */
 function rand(seed: number, channel: number): number {
   const x = Math.sin(seed * 127.1 + channel * 311.7) * 43758.5453;
   return x - Math.floor(x);
 }
 
+/** Ordinary clothes. Nobody in this room is dressed like a villain. */
+const CLOTHES = ['#2E3440', '#3B3A36', '#243B33', '#40323C', '#1F2933', '#4A3B2A', '#31353B'];
+const SHIRTS = ['#D8D2C6', '#B9C2C8', '#C9BFA8', '#A8B2A6', '#CFC3B8'];
+
 export function Figure({
   seed,
+  appearance = 50,
   posture = 'standing',
   accent = '#888880',
   focused = false,
@@ -45,33 +53,30 @@ export function Figure({
 }: FigureProps) {
   const group = useRef<Group>(null);
 
-  // One exaggerated identifying feature per person (GDD 5.2).
-  const traits = useMemo(() => {
-    const height = 0.85 + rand(seed, 1) * 0.3;
-    const width = 0.8 + rand(seed, 2) * 0.45;
-    const headSize = 0.9 + rand(seed, 3) * 0.25;
-    const lean = (rand(seed, 4) - 0.5) * 0.28;
-    const shoulderDrop = rand(seed, 5) * 0.12;
-    // Which trait is pushed past normal — the thing you'd remember.
-    const exaggerated = Math.floor(rand(seed, 6) * 4);
+  const t = useMemo(() => {
+    const a = Math.max(0, Math.min(100, appearance)) / 100;
     return {
-      height: exaggerated === 0 ? height * 1.18 : height,
-      width: exaggerated === 1 ? width * 1.3 : width,
-      headSize: exaggerated === 2 ? headSize * 1.2 : headSize,
-      lean: exaggerated === 3 ? lean * 2.1 : lean,
-      shoulderDrop,
-      phase: rand(seed, 7) * Math.PI * 2,
+      height: 0.92 + rand(seed, 1) * 0.16,
+      // Build reads before the face does, at courtroom distance.
+      build: 0.86 + rand(seed, 2) * 0.3 + (1 - a) * 0.08,
+      shoulder: 0.9 + rand(seed, 3) * 0.24 + (1 - a) * 0.1,
+      /** Disarming people stand straighter; hard men hunch. Bearing is bias too. */
+      slouch: (1 - a) * 0.1 + rand(seed, 4) * 0.03,
+      lean: (rand(seed, 5) - 0.5) * 0.1,
+      coat: CLOTHES[Math.floor(rand(seed, 6) * CLOTHES.length)]!,
+      shirt: SHIRTS[Math.floor(rand(seed, 7) * SHIRTS.length)]!,
+      phase: rand(seed, 8) * Math.PI * 2,
     };
-  }, [seed]);
+  }, [seed, appearance]);
 
-  const postureTilt = useMemo(() => {
+  const tilt = useMemo(() => {
     switch (posture) {
       case 'accused':
-        return { body: 0.06, head: -0.14 }; // shoulders forward, chin down
+        return { body: 0.05, head: -0.12 }; // shoulders forward, chin down
       case 'testifying':
-        return { body: -0.05, head: 0.1 }; // upright, addressing the room
+        return { body: -0.04, head: 0.08 };
       case 'arguing':
-        return { body: -0.1, head: 0.05 }; // leaning in
+        return { body: -0.08, head: 0.04 };
       case 'seated':
         return { body: 0.02, head: 0 };
       default:
@@ -81,64 +86,74 @@ export function Figure({
 
   useFrame((state) => {
     if (!group.current || !alive) return;
-    // Breath — barely there, but the room is never quite still.
-    const t = state.clock.elapsedTime;
-    const breath = Math.sin(t * 0.8 + traits.phase) * 0.006;
+    const time = state.clock.elapsedTime;
+    // Breath. Barely there, but the room is never quite still.
+    const breath = Math.sin(time * 0.8 + t.phase) * 0.005;
     group.current.position.y = position[1] + breath;
-    if (focused) {
-      group.current.rotation.y = rotation[1] + Math.sin(t * 0.3 + traits.phase) * 0.04;
-    }
+    // A slight weight shift — standing for a long time is uncomfortable.
+    group.current.rotation.y = rotation[1] + Math.sin(time * 0.19 + t.phase) * 0.03;
   });
 
-  const bodyColor = focused ? accent : '#262622';
-  const emissive = focused ? accent : '#000000';
-  const seatedOffset = posture === 'seated' ? -0.22 : 0;
+  const seated = posture === 'seated' ? -0.2 : 0;
+  const h = t.height;
 
   return (
     <group ref={group} position={position} rotation={rotation} scale={scale}>
-      <group rotation={[postureTilt.body + traits.lean * 0.3, 0, traits.lean]}>
-        {/* torso */}
-        <mesh position={[0, 0.55 * traits.height + seatedOffset, 0]} castShadow>
-          <capsuleGeometry args={[0.17 * traits.width, 0.52 * traits.height, 4, 12]} />
-          <meshStandardMaterial
-            color={bodyColor}
-            emissive={emissive}
-            emissiveIntensity={focused ? 0.22 : 0}
-            roughness={0.85}
-          />
+      <group rotation={[tilt.body + t.slouch, 0, t.lean]}>
+        {/* torso — a coat, not a capsule */}
+        <mesh position={[0, 0.56 * h + seated, 0]} castShadow>
+          <capsuleGeometry args={[0.155 * t.build, 0.46 * h, 6, 14]} />
+          <meshStandardMaterial color={t.coat} roughness={0.88} />
         </mesh>
 
-        {/* shoulders — the width that reads at silhouette distance */}
-        <mesh position={[0, 0.82 * traits.height - traits.shoulderDrop + seatedOffset, 0]} castShadow>
-          <capsuleGeometry args={[0.1, 0.34 * traits.width, 4, 8]} />
-          <meshStandardMaterial color={bodyColor} roughness={0.9} />
+        {/* the shirt showing at the collar */}
+        <mesh position={[0, 0.79 * h + seated, 0.022]} castShadow>
+          <cylinderGeometry args={[0.055, 0.075, 0.07, 12]} />
+          <meshStandardMaterial color={t.shirt} roughness={0.8} />
         </mesh>
 
-        {/* head — no face, on purpose */}
-        <mesh
-          position={[0, 1.02 * traits.height + seatedOffset, 0]}
-          rotation={[postureTilt.head, 0, 0]}
-          castShadow
-        >
-          <sphereGeometry args={[0.12 * traits.headSize, 16, 16]} />
-          <meshStandardMaterial
-            color={bodyColor}
-            emissive={emissive}
-            emissiveIntensity={focused ? 0.3 : 0}
-            roughness={0.8}
-          />
+        {/* shoulders — the capsule lies across the body, so the mesh turns,
+            not the geometry */}
+        <mesh position={[0, 0.8 * h + seated, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
+          <capsuleGeometry args={[0.085, 0.3 * t.shoulder, 4, 10]} />
+          <meshStandardMaterial color={t.coat} roughness={0.9} />
         </mesh>
 
-        {/* legs / plinth — figures stand on a base, like exhibits */}
-        {posture !== 'seated' && (
-          <mesh position={[0, 0.14 * traits.height, 0]} castShadow>
-            <capsuleGeometry args={[0.13 * traits.width, 0.3 * traits.height, 4, 8]} />
-            <meshStandardMaterial color="#1A1A17" roughness={0.95} />
+        {/* arms, hanging */}
+        {[-1, 1].map((side) => (
+          <mesh
+            key={side}
+            position={[side * 0.17 * t.shoulder, 0.56 * h + seated, 0.01]}
+            rotation={[0, 0, side * 0.06]}
+            castShadow
+          >
+            <capsuleGeometry args={[0.042, 0.38 * h, 4, 8]} />
+            <meshStandardMaterial color={t.coat} roughness={0.9} />
           </mesh>
-        )}
+        ))}
+
+        {/* neck */}
+        <mesh position={[0, 0.87 * h + seated, 0]}>
+          <cylinderGeometry args={[0.032, 0.038, 0.06, 10]} />
+          <meshStandardMaterial color="#C68B5E" roughness={0.75} />
+        </mesh>
+
+        {/* the face */}
+        <group position={[0, 1.0 * h + seated, 0]}>
+          <Head seed={seed} appearance={appearance} accent={accent} focused={focused} tilt={tilt.head} />
+        </group>
+
+        {/* legs */}
+        {posture !== 'seated' &&
+          [-1, 1].map((side) => (
+            <mesh key={side} position={[side * 0.06, 0.16 * h, 0]} castShadow>
+              <capsuleGeometry args={[0.055 * t.build, 0.3 * h, 4, 8]} />
+              <meshStandardMaterial color="#1A1A17" roughness={0.95} />
+            </mesh>
+          ))}
       </group>
 
-      {/* the accent pool a focused figure stands in */}
+      {/* the pool of light a focused figure stands in */}
       {focused && (
         <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <circleGeometry args={[0.42, 32]} />

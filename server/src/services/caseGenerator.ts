@@ -11,6 +11,7 @@ import { seedCaseFor, SEED_CASES } from './seedCases.js';
 
 const BATCH_SIZE = 5;
 const REFILL_BELOW = 3;
+const MAX_ATTEMPTS = 3;
 
 /** GDD 12 — cases are human drama. This is the coarse net; the system prompt
  *  is the fine one. Anything caught here is dropped, never shown. */
@@ -172,21 +173,45 @@ Return ONLY valid JSON matching this exact schema, no prose, no markdown fence:
 {
   "title": "The State v. <name>",
   "charge": "string",
-  "defendant": { "name": "string", "age": number, "occupation": "string", "background": "string", "wealth": number, "appearance": number },
+  "defendant": {
+    "name": "string",
+    "age": number (18-95),
+    "occupation": "string",
+    "background": "string",
+    "wealth": number (0-100 BAND, NOT an amount of money — 0 destitute, 50 ordinary, 100 untouchable),
+    "appearance": number (0-100 BAND — 0 unsettling to look at, 50 unremarkable, 100 disarming)
+  },
   "accent": "violent" | "financial" | "systemic" | "passion",
   "evidence": [ { "id": "e1", "description": "string", "prosecution_reading": "string", "defence_reading": "string", "is_planted": boolean } ],
   "witnesses": [ { "name": "string", "role": "string", "testimony": "string", "lie": "string", "lie_tell": "string" } ],
   "prosecution_argument": "string",
   "defence_argument": "string",
   "correct_verdict": "guilty" | "not_guilty" | "ambiguous",
-  "evidence_strength": number,
+  "evidence_strength": number (-1.0 to 1.0),
   "character_pool_additions": [ { "name": "string", "role": "defendant" | "witness" | "prosecutor" | "defender" | "victim", "themes": ["string"] } ]
 }
 Exactly 3 evidence items and exactly 2 witnesses.
 `.trim();
 }
 
-async function generateOne(ctx: GenerationContext): Promise<GeneratedCase | null> {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Groq's 429 carries "try again in 1.75s". Believe it. */
+function retryAfterMs(message: string): number | null {
+  const m = /try again in ([\d.]+)s/i.exec(message);
+  if (m?.[1]) return Math.ceil(Number(m[1]) * 1000) + 250;
+  return /rate.?limit|429/i.test(message) ? 2000 : null;
+}
+
+/**
+ * One case, with patience for rate limits.
+ *
+ * Falling back on a 429 is worse than waiting two seconds: the fallback docket
+ * is set in a fictional city and denominated in naira, so serving it to a
+ * juror in Oslo breaks the premise far more than a short wait does. Generation
+ * happens in the background buffer anyway, where nobody is watching a clock.
+ */
+async function generateOne(ctx: GenerationContext, attempt = 0): Promise<GeneratedCase | null> {
   if (!groq) return null;
 
   try {
@@ -207,15 +232,24 @@ async function generateOne(ctx: GenerationContext): Promise<GeneratedCase | null
     const parsed = generatedCaseSchema.safeParse(JSON.parse(raw));
     if (!parsed.success) {
       console.warn('[caseGenerator] schema reject:', parsed.error.issues[0]?.message);
-      return null;
+      // A malformed case is usually a bad roll, not a broken prompt.
+      return attempt < MAX_ATTEMPTS ? generateOne(ctx, attempt + 1) : null;
     }
     if (violatesPolicy(parsed.data)) {
       console.warn('[caseGenerator] content filter rejected a case');
-      return null;
+      return attempt < MAX_ATTEMPTS ? generateOne(ctx, attempt + 1) : null;
     }
     return parsed.data;
   } catch (err) {
-    console.error('[caseGenerator] groq error:', (err as Error).message);
+    const message = (err as Error).message ?? '';
+    const wait = retryAfterMs(message);
+
+    if (wait !== null && attempt < MAX_ATTEMPTS) {
+      await sleep(wait * (attempt + 1)); // linear backoff
+      return generateOne(ctx, attempt + 1);
+    }
+
+    console.error('[caseGenerator] groq error:', message.slice(0, 160));
     return null;
   }
 }

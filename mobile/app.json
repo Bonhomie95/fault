@@ -10,7 +10,8 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "inc.bonhomie.fault"
+      "bundleIdentifier": "inc.bonhomie.fault",
+      "usesAppleSignIn": true
     },
     "android": {
       "package": "inc.bonhomie.fault",
@@ -42,7 +43,14 @@
         }
       ],
       "expo-asset",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-localization",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FAULT uses your location once, to learn which country's courts you will sit in. Only the country is kept — your coordinates are never stored or sent."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

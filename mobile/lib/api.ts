@@ -63,12 +63,21 @@ export interface ClientCase {
   accent: string;
   mood: string;
   clockSeconds: number;
+  /** Real place, real court, real police service. Every person is invented. */
+  place: {
+    country: string;
+    jurisdiction: string;
+    tier: string;
+    tierLabel: string;
+  };
   defendant: {
     name: string;
     age: number;
     occupation: string;
     background: string;
     portraitSeed: number;
+    /** 0 unsettling .. 100 disarming. Shapes the face and means nothing. */
+    appearance: number;
   };
   evidence: {
     id: string;
@@ -131,7 +140,121 @@ export interface Session {
   casesHeard?: number;
 }
 
+export type Tier = 'district' | 'state' | 'national' | 'supranational' | 'international' | 'world';
+
+export interface Standing {
+  jurorName: string;
+  rank: number;
+  rankTitle: string;
+  xp: number;
+  xpIntoRank: number;
+  xpForNextRank: number | null;
+  nextRankTitle: string | null;
+  trust: number;
+  trustLabel: string;
+  tier: Tier;
+  tierLabel: string;
+  country: string | null;
+  district: string | null;
+  court: string | null;
+  casesHeard: number;
+  currentStreak: number;
+  longestStreak: number;
+  promotion: {
+    tier: Tier;
+    tierLabel: string;
+    requiredRank: number;
+    requiredTrust: number;
+    eligible: boolean;
+    blockedBy: string[];
+  } | null;
+  unlocks: { caseArchive: boolean; jurorRecord: boolean; foreignApplications: boolean };
+}
+
+export interface Mission {
+  key: string;
+  kind: 'daily' | 'weekly' | 'career';
+  title: string;
+  description: string;
+  target: number;
+  xp: number;
+  progress: number;
+  complete: boolean;
+  claimed: boolean;
+}
+
+export interface JurisdictionsView {
+  countries: { code: string; name: string; ladder: Tier[] }[];
+  applications: {
+    id: string;
+    country: string;
+    tier: Tier;
+    status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+    decisionText: string | null;
+    decidedAt: string | null;
+  }[];
+}
+
+export interface SignInResult {
+  userId: string;
+  jurorName: string;
+  returning: boolean;
+  homeCountry?: string;
+  homeDistrict?: string;
+}
+
 export const api = {
+  /**
+   * Sign in or swear in. The provider token is verified server-side — the
+   * client never asserts who it is, only hands over what the provider signed.
+   * `jurorName` is the player's own choice and is required on first sign-in;
+   * a 409 juror_name_required means the court needs a name before proceeding.
+   */
+  signIn: (body: {
+    provider: 'apple' | 'google' | 'device';
+    token: string;
+    jurorName?: string;
+    country?: string;
+  }) => request<SignInResult>('/api/auth/sign-in', { method: 'POST', body }),
+
+  countries: () =>
+    request<{ countries: { code: string; name: string; districts: string[] }[] }>(
+      '/api/auth/countries',
+    ),
+
+  standing: (jurorId: string) => request<Standing>('/api/standing', { jurorId }),
+
+  ladder: (jurorId: string) =>
+    request<{ country: string; current: Tier; rungs: { tier: Tier; label: string; reached: boolean }[] }>(
+      '/api/standing/ladder',
+      { jurorId },
+    ),
+
+  promote: (jurorId: string) =>
+    request<{ promoted: Tier; standing: Standing }>('/api/standing/promote', {
+      method: 'POST',
+      jurorId,
+    }),
+
+  missions: (jurorId: string) =>
+    request<{ missions: Mission[] }>('/api/standing/missions', { jurorId }),
+
+  claimMission: (jurorId: string, key: string) =>
+    request<{ xp: number; rank: number }>('/api/standing/missions/claim', {
+      method: 'POST',
+      body: { key },
+      jurorId,
+    }),
+
+  jurisdictions: (jurorId: string) =>
+    request<JurisdictionsView>('/api/standing/jurisdictions', { jurorId }),
+
+  applyToJurisdiction: (jurorId: string, body: { country: string; tier: Tier }) =>
+    request<{ accepted: boolean; decisionText: string; standing: Standing }>(
+      '/api/standing/jurisdictions/apply',
+      { method: 'POST', body, jurorId },
+    ),
+
   createSession: (jurorName: string) =>
     request<Session>('/api/session', { method: 'POST', body: { jurorName } }),
 
