@@ -1,7 +1,28 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { generatedCaseSchema, structureKeyFor } from '../src/domain/case.js';
+import { profileFor } from '../src/domain/jurisdiction.js';
+import { localizeCase } from '../src/services/localizeCase.js';
 import { SEED_CASES, seedCaseFor } from '../src/services/seedCases.js';
+
+/**
+ * The docket is TEMPLATES, not cases: names are slots like {D_FULL} and
+ * {W1_FULL}, and a slot is not a name — {W1_FULL} contains a digit, which the
+ * name guard rightly refuses. So the schema is asserted against what a player
+ * actually receives, which is always the localised output. Testing the raw
+ * template would be testing a thing that is never served.
+ */
+const localized = (i: number) => {
+  const profile = profileFor('NO');
+  const district = profile.districts[0]!;
+  return localizeCase(SEED_CASES[i]!, {
+    profile,
+    district,
+    court: profile.courtName('district', district),
+    policeService: profile.policeService(district),
+    seed: 11 + i,
+  });
+};
 
 /**
  * The hand-authored docket ships in the app and is the fallback whenever Groq
@@ -13,9 +34,10 @@ describe('the authored docket', () => {
     assert.ok(SEED_CASES.length > 0);
   });
 
-  for (const c of SEED_CASES) {
-    describe(c.title, () => {
-      it('satisfies the generated-case schema', () => {
+  SEED_CASES.forEach((template, i) => {
+    const c = localized(i);
+    describe(template.title, () => {
+      it('satisfies the generated-case schema once localised', () => {
         const parsed = generatedCaseSchema.safeParse(c);
         assert.equal(
           parsed.success,
@@ -54,12 +76,12 @@ describe('the authored docket', () => {
         if (c.correct_verdict === 'not_guilty') assert.ok(c.evidence_strength < 0.4);
       });
     });
-  }
+  });
 
   it('names every character it adds to the pool', () => {
     // The pool name and the witness name are the same identity key. If they
     // drift apart, the Echo System stops recognising people it has already met.
-    for (const c of SEED_CASES) {
+    for (const c of SEED_CASES.map((_, i) => localized(i))) {
       const names = c.character_pool_additions.map((p) => p.name);
       assert.ok(names.includes(c.defendant.name), `${c.title} omits its own defendant`);
       for (const w of c.witnesses) {
@@ -72,7 +94,7 @@ describe('the authored docket', () => {
     // "Sergeant Musa Danjuma" and "Musa Danjuma" are one person; only one of
     // those strings can be the key, and it has to be the bare name.
     const offenders: string[] = [];
-    for (const c of SEED_CASES) {
+    for (const c of SEED_CASES.map((_, i) => localized(i))) {
       const people = [c.defendant.name, ...c.witnesses.map((w) => w.name)];
       for (const name of people) {
         if (name.includes(',')) offenders.push(`${name} (descriptor in name)`);

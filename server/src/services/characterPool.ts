@@ -7,6 +7,13 @@ import { prisma } from '../lib/prisma.js';
  * is just a repeated name; it has to be forgotten first to land.
  */
 export const ECHO_START_CASE = 15;
+/**
+ * Kept for reference: the GDD's "pool seeding begins at case 5". It is no
+ * longer a gate on recording — see addToCharacterPool — because who may
+ * RETURN is decided by ECHO_START_CASE and the cooldown, while who is
+ * REMEMBERED must be everyone, or the generator hands their name to a
+ * stranger.
+ */
 export const POOL_SEED_START_CASE = 5;
 /** Minimum cases between a character's origin and their return. */
 const ECHO_COOLDOWN = 8;
@@ -114,7 +121,18 @@ export async function addToCharacterPool(
   defendantFate: CharacterFate,
   defendantName: string,
 ) {
-  if (originCaseNumber < POOL_SEED_START_CASE) return;
+  // Everyone is recorded from case one.
+  //
+  // This used to skip anybody met before POOL_SEED_START_CASE, on the theory
+  // that early characters should not echo. That is true, but it is enforced in
+  // getEligibleCharacters — which already refuses to return anyone before
+  // ECHO_START_CASE and inside the cooldown. Gating the *recording* as well
+  // did nothing for echoes and quietly broke naming: the generator draws new
+  // names by excluding everyone in this table, so four cases' worth of people
+  // were invisible and got handed out again. A fresh juror met the same six
+  // strangers across six cases.
+  //
+  // Record everyone; decide who may return later.
 
   for (const person of people) {
     const fate: CharacterFate = person.name === defendantName ? defendantFate : 'untried';

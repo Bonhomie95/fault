@@ -12,6 +12,44 @@ export type AccentKey = keyof typeof ACCENTS;
 
 const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 
+/**
+ * A name has to look like a name.
+ *
+ * This is not pedantry — it is a real failure mode. Once the prompt started
+ * telling the model which names were already taken, it began narrating the
+ * decision into the field: a witness came back called
+ * "Lena Jensen is taken, using: Cecilie Foss". The schema accepted it, because
+ * `name` was `z.string()` and that string is a string.
+ *
+ * A name is also the Echo System's identity key, so a field full of the
+ * model's reasoning is not just ugly on screen — it becomes a character in the
+ * pool who can never be recognised again.
+ *
+ * Deliberately permissive about *scripts*: Ingrid Solberg, 李伟, Ngozi
+ * Okonkwo-Bello and Jean-Luc D'Arcy are all fine. What it rejects is prose.
+ */
+export const personName = z
+  .string()
+  .trim()
+  .min(2)
+  .max(48)
+  .refine((s) => wordCount(s) <= 4, { message: 'a name, not a sentence' })
+  .refine((s) => !/[:;,]|\d/.test(s), { message: 'names carry no punctuation or digits' })
+  .refine((s) => !/\b(is|are|was|using|taken|instead|already|unavailable|name)\b/i.test(s), {
+    message: 'the model narrated instead of naming',
+  })
+  // No titles. This is the identity-key bug that already bit the authored
+  // docket once: "Sergeant Musa Danjuma" and "Musa Danjuma" are one person and
+  // two keys, so the Echo System never recognises him on the way back. The
+  // rank belongs in `role`, which exists for exactly this.
+  .refine(
+    (s) =>
+      !/^(dr|mr|mrs|ms|miss|prof|professor|sgt|sergeant|insp|inspector|officer|constable|detective|judge|justice|capt|captain|lt|lieutenant)\b\.?/i.test(
+        s,
+      ),
+    { message: 'the title belongs in role, not in the name' },
+  );
+
 /** Both arguments are capped at 40 words (GDD 2.1). */
 const argument = z
   .string()
@@ -35,7 +73,7 @@ export const witnessSchema = z.object({
    * the silhouette. A descriptor baked in here makes the same human a
    * different person on their second appearance.
    */
-  name: z.string(),
+  name: personName,
   /** How they come to be testifying: "gate security", "the estranged husband". */
   role: z.string().default(''),
   testimony: z.string(),
@@ -45,7 +83,7 @@ export const witnessSchema = z.object({
 });
 
 export const characterAdditionSchema = z.object({
-  name: z.string(),
+  name: personName,
   role: z.enum(['defendant', 'witness', 'prosecutor', 'defender', 'victim']),
   themes: z.array(z.string()).default([]),
 });
@@ -54,7 +92,7 @@ export const generatedCaseSchema = z.object({
   title: z.string(),
   charge: z.string(),
   defendant: z.object({
-    name: z.string(),
+    name: personName,
     age: z.number().int().min(18).max(95),
     occupation: z.string(),
     background: z.string(),
@@ -82,6 +120,15 @@ export const generatedCaseSchema = z.object({
 export type GeneratedCase = z.infer<typeof generatedCaseSchema>;
 export type Evidence = z.infer<typeof evidenceSchema>;
 export type Witness = z.infer<typeof witnessSchema>;
+
+/**
+ * GDD 2.5 — how far apart a case and its structural twin sit.
+ *
+ * Lives here with structureKeyFor for the same reason: both are pure, and
+ * caseGenerator opens a Redis connection at import time. A test that wants to
+ * assert the gap should not have to start a database client to do it.
+ */
+export const TWIN_GAP = 20;
 
 /**
  * A structural fingerprint, deliberately blind to names and specifics.

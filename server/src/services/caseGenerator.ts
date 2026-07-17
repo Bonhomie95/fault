@@ -1,7 +1,8 @@
 import type { Tier } from '@prisma/client';
-import { ACCENTS, generatedCaseSchema, structureKeyFor, type GeneratedCase } from '../domain/case.js';
+import { ACCENTS, generatedCaseSchema, structureKeyFor, TWIN_GAP, type GeneratedCase } from '../domain/case.js';
 import type { CityMetrics } from '../domain/city.js';
 import { aiEnabled, availableCount, classifyError, GROQ_MODEL, leaseKey } from '../lib/groq.js';
+import { prisma } from '../lib/prisma.js';
 import { caseQueueKey, redis } from '../lib/redis.js';
 import { districtFor, profileFor, tierLabel } from '../domain/jurisdiction.js';
 import { deriveCaseMood, deriveFactions } from './cityEffects.js';
@@ -12,7 +13,7 @@ import { seedCaseFor, SEED_CASES } from './seedCases.js';
 
 // Re-exported for existing callers; it lives in domain/case now because it is
 // a pure function and this module dials Redis on import.
-export { structureKeyFor };
+export { structureKeyFor, TWIN_GAP };
 
 /**
  * Buffer sizing, against two real limits.
@@ -80,7 +81,51 @@ interface GenerationContext {
   /** Whether THIS case is allowed to be unanswerable. Decided here, not by
    *  the model — see ambiguityTargetFor. */
   wantAmbiguous: boolean;
+  /**
+   * A specific person who must appear in this case, or null.
+   *
+   * The GDD calls the Echo System the game's biggest emotional hook, and until
+   * now it was a suggestion in a prompt that nothing checked — echoes fired
+   * whenever the model felt like it. If this is set, the returned case is
+   * rejected unless it actually contains them.
+   */
+  mustEcho: PoolCharacter | null;
+  /**
+   * Names this juror has already met, which must not be reused by accident.
+   *
+   * A name IS the Echo System's identity key, so a coincidental collision is
+   * not cosmetic: two unrelated defendants called Kjetil Jensen become one
+   * person in the character pool, their fates merge, and the dossier tells the
+   * player "PREVIOUSLY BEFORE YOU" about a stranger. Left to itself the model
+   * reaches for the same handful of names out of a small register — it gave us
+   * four Kjetil Jensens in five cases.
+   */
+  usedNames: string[];
+  /**
+   * The exact names this case must use, supplied rather than requested.
+   *
+   * Banning names did not work. The model's name register inside one country
+   * is small, it fixates, and it ignored a 12-name ban list four retries in a
+   * row — every case came back with the same defendant. Worse, being told
+   * which names were taken made it narrate the problem into the name field.
+   *
+   * So the server picks. This is the same move that fixed the all-ambiguous
+   * docket: where the model reliably will not comply, take the decision away
+   * from it rather than asking louder.
+   */
+  castNames: { defendant: string; witnesses: [string, string] };
+  /**
+   * A structural fingerprint this case must match, or null.
+   *
+   * GDD 2.5 promises two structurally identical cases twenty apart, to see
+   * whether you answer the same way. We were scoring that test without ever
+   * setting it.
+   */
+  twinOf: { structureKey: string; ofCaseNumber: number } | null;
 }
+
+/** How often a returning face should walk back in, once echoes are possible. */
+const ECHO_CHANCE = 0.35;
 
 /**
  * How often a case should have no right answer, by chapter.
@@ -126,6 +171,55 @@ function buildSystemPrompt(ctx: GenerationContext): string {
               `- ${c.name} (${c.role}, ${c.fate}, from case ${c.originCaseNumber}). May return as: ${echoRolesFor(c.fate).join('; ')}`,
           )
           .join('\n');
+
+  // An echo is now an instruction, not a hope. The check after generation
+  // enforces it.
+  const echoText = ctx.mustEcho
+    ? `
+THIS CASE MUST BRING SOMEONE BACK.
+
+${ctx.mustEcho.name} — ${ctx.mustEcho.role}, ${ctx.mustEcho.fate} in case
+${ctx.mustEcho.originCaseNumber} — MUST appear in this case, by that exact name,
+spelled exactly that way. They may return as: ${echoRolesFor(ctx.mustEcho.fate).join('; ')}.
+
+Write them in matter-of-factly, the way a court record would. The file should
+reference their past as established fact and offer no commentary on it — do not
+have anyone say "you may remember" or explain the connection. The juror either
+recognises the name or they do not, and the game must not do that work for
+them. That recognition is the whole point.
+`
+    : '';
+
+  // Names are assigned, not requested. See castNames.
+  const cast = ctx.castNames;
+  const usedText = `
+THE CAST OF THIS CASE — USE THESE NAMES EXACTLY, AND NO OTHERS:
+
+  defendant  : ${ctx.mustEcho ? ctx.mustEcho.name : cast.defendant}
+  witness 1  : ${cast.witnesses[0]}
+  witness 2  : ${cast.witnesses[1]}
+
+Copy them character for character into the "name" fields and into
+character_pool_additions. Do not invent names, do not substitute, do not add a
+title, and do not write anything in a "name" field except the name itself.
+Every other person in the story stays unnamed — refer to them by their role.
+`;
+
+  const twinText = ctx.twinOf
+    ? `
+STRUCTURAL REQUIREMENT.
+
+This case must have the same SHAPE as an earlier one the juror already decided
+(case ${ctx.twinOf.ofCaseNumber}) while sharing none of its specifics:
+  ${ctx.twinOf.structureKey}
+
+That key reads: accent : defendant wealth band : which side the evidence
+favours : whether evidence was planted : the true verdict. Match every part of
+it. Change everything else — the people, the city, the crime, the details.
+Nobody should recognise it as the same case; it should only feel familiar in a
+way they cannot place.
+`
+    : '';
 
   const place = ctx.place;
 
@@ -186,6 +280,7 @@ Probe this bias: ${ctx.weakestBias}
 
 Characters available from previous cases:
 ${poolText}
+${echoText}${twinText}${usedText}
 
 Naming: "name" is the person's name alone — "Tunde Balogun", never "Tunde
 Balogun, gate security" and never "Inspector Tunde Balogun". Their standing goes
@@ -340,6 +435,18 @@ async function generateOne(ctx: GenerationContext, attempt = 0): Promise<Generat
     if (isAmbiguous !== ctx.wantAmbiguous && attempt < MAX_ATTEMPTS) {
       return generateOne(ctx, attempt + 1);
     }
+
+    // The names are ours, not the model's — see enforceCast. This also
+    // guarantees the echo is present, because the echo IS the defendant name
+    // when one is due.
+    const cast = enforceCast(parsed.data, ctx.castNames, ctx.mustEcho);
+
+    // The twin must actually be a twin, or the consistency probe is measuring
+    // two unrelated cases and calling the juror inconsistent for noticing.
+    if (ctx.twinOf && structureKeyFor(parsed.data) !== ctx.twinOf.structureKey) {
+      if (attempt < MAX_ATTEMPTS) return generateOne(ctx, attempt + 1);
+      console.warn('[caseGenerator] twin did not match; shipping as an ordinary case');
+    }
     if (isAmbiguous !== ctx.wantAmbiguous) {
       // Out of retries: rather than ship a case that lies about its own
       // answer, take the verdict the evidence actually points at.
@@ -379,9 +486,51 @@ async function buildContext(
   caseNumber: number,
   city: CityMetrics,
   place: PlaceContext,
+  /**
+   * Names already spoken for by earlier cases in the same refill batch.
+   *
+   * The batch generates three cases before the player has delivered a single
+   * verdict, so none of them are in the character pool yet and each would draw
+   * its cast as though the others did not exist — two cases in one buffer came
+   * back with an identical cast. The pool cannot know about people who have
+   * not been judged yet, so the batch has to carry them itself.
+   */
+  reserved: string[] = [],
 ): Promise<GenerationContext> {
   const stats = await computeJurorStats(userId);
-  const characterPool = await getEligibleCharacters(userId, caseNumber);
+
+  // Themes are passed now. They never were, which made the thematic-resonance
+  // filter in characterPool unreachable code — the pool came back in
+  // relevance order and the model picked whoever it liked.
+  const themes = themesForCity(city);
+  const characterPool = await getEligibleCharacters(userId, caseNumber, themes);
+
+  // Roll the echo here rather than leaving it to the model's mood.
+  const mustEcho =
+    characterPool.length > 0 && Math.random() < ECHO_CHANCE
+      ? characterPool[Math.floor(Math.random() * characterPool.length)]!
+      : null;
+
+  const twinOf = await findTwinTarget(userId, caseNumber);
+
+  // Everyone already in this juror's record.
+  const known = await prisma.character.findMany({
+    where: { userId },
+    select: { name: true },
+    take: 200,
+  });
+  const usedNames = [...known.map((k) => k.name), ...reserved].filter(
+    (n) => n !== mustEcho?.name,
+  );
+  // The echo's name must be excluded too. It is filtered OUT of usedNames (so
+  // the model is allowed to use it), which meant pickCast could hand the same
+  // name to a witness — producing a case where the defendant and a witness
+  // were the same person: "Kari Fjell | Kari Fjell, Maja Vik".
+  const castNames = pickCast(
+    place.country,
+    mustEcho ? [...usedNames, mustEcho.name] : usedNames,
+    `${userId}:${caseNumber}`,
+  );
 
   const summary =
     stats.totalCases === 0
@@ -395,8 +544,188 @@ async function buildContext(
     characterPool,
     caseNumber,
     place,
-    wantAmbiguous: Math.random() < ambiguityTargetFor(caseNumber),
+    wantAmbiguous: twinOf ? false : Math.random() < ambiguityTargetFor(caseNumber),
+    mustEcho,
+    twinOf,
+    usedNames,
+    castNames,
   };
+}
+
+/**
+ * Three names this juror has never seen, from their own country's register.
+ *
+ * Deterministic per case, so a retry does not reshuffle the cast — and drawn
+ * from the same texture pools the offline docket uses, so the AI path and the
+ * fallback path name people the same way.
+ *
+ * If the register is exhausted (a very long career), a middle name is added
+ * rather than colliding: "Ingrid Solberg" becomes "Ingrid Marte Solberg". A
+ * new person, still plausibly local, still unique.
+ */
+function pickCast(
+  country: string,
+  used: string[],
+  seed: string,
+): { defendant: string; witnesses: [string, string] } {
+  const t = profileFor(country).texture;
+  const taken = new Set(used);
+  const chosen: string[] = [];
+  let h = hashSeed(seed);
+
+  const roll = () => {
+    h = (h * 1103515245 + 12345) & 0x7fffffff;
+    return h;
+  };
+
+  const next = (): string => {
+    // Pass 1: an ordinary name. 10 given x 10 surnames is 100 people per
+    // country, which sounds like plenty and is not: three names a case means a
+    // career runs out of strangers in 33 cases.
+    for (let i = 0; i < 250; i++) {
+      const r = roll();
+      const name = `${t.givenNames[r % t.givenNames.length]} ${t.surnames[(r >> 7) % t.surnames.length]}`;
+      if (!taken.has(name) && !chosen.includes(name)) return name;
+    }
+
+    // Pass 2: a second surname rather than a middle given name.
+    //
+    // The first attempt at this inserted another given name and produced
+    // "Kari Kari Vik" — nobody is called that. A double-barrelled surname is
+    // plausible in every register here (Solberg-Vik, Okonkwo-Bello,
+    // Silva-Ferreira) and multiplies the pool by ten to ~1,100 people, which
+    // outlasts any real career.
+    for (let i = 0; i < 250; i++) {
+      const r = roll();
+      const first = t.givenNames[r % t.givenNames.length]!;
+      const a = t.surnames[(r >> 7) % t.surnames.length]!;
+      const b = t.surnames[(r >> 13) % t.surnames.length]!;
+      if (a === b) continue;
+      const name = `${first} ${a}-${b}`;
+      if (!taken.has(name) && !chosen.includes(name)) return name;
+    }
+
+    // Pass 3 does not exist. A juror who has met 1,100 people has earned a
+    // repeat, and a repeat is better than a hang.
+    const r = roll();
+    return `${t.givenNames[r % t.givenNames.length]} ${t.surnames[(r >> 7) % t.surnames.length]}`;
+  };
+
+  for (let i = 0; i < 3; i++) chosen.push(next());
+  return { defendant: chosen[0]!, witnesses: [chosen[1]!, chosen[2]!] };
+}
+
+/**
+ * Make the cast the cast, whatever the model decided.
+ *
+ * Three escalating attempts to get unique names failed in turn: asking for
+ * variety (four Kjetil Jensens), banning used names (ignored, and it started
+ * narrating the ban into the name field), and assigning names outright
+ * ("Astrid Nytun" — a surname that does not exist in our register at all).
+ * The model simply will not take naming instructions.
+ *
+ * So the names are rewritten here instead of requested. The story does not
+ * care what its people are called; the Echo System cares enormously, because
+ * the name IS the identity key. Substitution is textual and global — the
+ * surname goes too, since testimony says "Nwosu's code" and half-renaming a
+ * person is worse than not renaming them.
+ *
+ * This is the localizeCase trick applied to the AI path: let the model write
+ * the drama, and let the server own the facts the systems depend on.
+ */
+function enforceCast(
+  c: GeneratedCase,
+  cast: { defendant: string; witnesses: [string, string] },
+  mustEcho: PoolCharacter | null,
+): GeneratedCase {
+  const want = [mustEcho?.name ?? cast.defendant, cast.witnesses[0], cast.witnesses[1]];
+  const got = [c.defendant.name, c.witnesses[0]?.name, c.witnesses[1]?.name];
+
+  let blob = JSON.stringify(c);
+
+  for (let i = 0; i < 3; i++) {
+    const from = got[i];
+    const to = want[i];
+    if (!from || !to || from === to) continue;
+
+    // Longest first: replacing the surname before the full name would leave
+    // the given name orphaned against a new surname.
+    blob = blob.split(from).join(to);
+
+    const fromLast = from.trim().split(/\s+/).pop();
+    const toLast = to.trim().split(/\s+/).pop();
+    // Only swap a bare surname if it is distinctive enough to be safe — a
+    // three-letter surname would rewrite words inside ordinary prose.
+    if (fromLast && toLast && fromLast !== toLast && fromLast.length >= 4) {
+      blob = blob.split(fromLast).join(toLast);
+    }
+  }
+
+  const rewritten = JSON.parse(blob) as GeneratedCase;
+
+  // The pool additions must name the final cast, or the echo breaks at the
+  // exact point it is supposed to work.
+  rewritten.defendant.name = want[0]!;
+  if (rewritten.witnesses[0]) rewritten.witnesses[0].name = want[1]!;
+  if (rewritten.witnesses[1]) rewritten.witnesses[1].name = want[2]!;
+  rewritten.character_pool_additions = [
+    { name: want[0]!, role: 'defendant', themes: [] },
+    { name: want[1]!, role: 'witness', themes: [] },
+    { name: want[2]!, role: 'witness', themes: [] },
+  ];
+
+  return rewritten;
+}
+
+/** Does this case actually contain that person, by name? */
+function mentions(c: GeneratedCase, name: string): boolean {
+  if (c.defendant.name === name) return true;
+  if (c.witnesses.some((w) => w.name === name)) return true;
+  if (c.character_pool_additions.some((p) => p.name === name)) return true;
+  // A mention anywhere in the prose counts: an echo can be someone spoken
+  // about rather than someone present.
+  return JSON.stringify(c).includes(name);
+}
+
+/**
+ * Is a twin due?
+ *
+ * GDD 2.5: the same structure, twenty cases later, to see whether the juror
+ * answers the same way. We look back exactly TWIN_GAP cases and, if that case
+ * has a fingerprint and has not already been twinned, ask for a match.
+ */
+async function findTwinTarget(
+  userId: string,
+  caseNumber: number,
+): Promise<{ structureKey: string; ofCaseNumber: number } | null> {
+  const targetNumber = caseNumber - TWIN_GAP;
+  if (targetNumber < 1) return null;
+
+  const original = await prisma.case.findFirst({
+    where: { userId, caseNumber: targetNumber, structureKey: { not: null } },
+    select: { structureKey: true, caseNumber: true },
+  });
+  if (!original?.structureKey) return null;
+
+  // Only once: a fingerprint that keeps recurring stops being a probe and
+  // starts being a rut.
+  const alreadyTwinned = await prisma.case.count({
+    where: { userId, structureKey: original.structureKey, caseNumber: { gt: targetNumber } },
+  });
+  if (alreadyTwinned > 0) return null;
+
+  return { structureKey: original.structureKey, ofCaseNumber: original.caseNumber };
+}
+
+/** What this city is currently about, for choosing who can plausibly return. */
+function themesForCity(city: CityMetrics): string[] {
+  const themes: string[] = [];
+  if (city.organizedCrimePower > 60) themes.push('corruption', 'violence');
+  if (city.policeIntegrity < 40) themes.push('police', 'systemic');
+  if (city.wealthDisparity > 65) themes.push('class', 'fraud', 'housing');
+  if (city.crimeRate > 60) themes.push('theft', 'violence');
+  if (city.mediaPressure > 60) themes.push('systemic');
+  return themes;
 }
 
 /**
@@ -438,7 +767,6 @@ async function doRefill(userId: string, caseNumber: number, city: CityMetrics, p
   const cached = await redis.llen(caseQueueKey(userId));
   if (cached >= REFILL_BELOW) return;
 
-  const ctx = await buildContext(userId, caseNumber, city, place);
   const wanted = BATCH_SIZE - cached;
 
   // Sequentially, not Promise.all.
@@ -450,15 +778,27 @@ async function doRefill(userId: string, caseNumber: number, city: CityMetrics, p
   // spending a few seconds here costs the player nothing and costs the buffer
   // everything if we skip it.
   //
-  // Each case rolls its own answerability, or a whole buffer comes back the
-  // same shape.
+  // A fresh context per case, not one context reused three times.
+  //
+  // Each case rolls its own answerability, its own echo and its own twin
+  // target — sharing a context would echo the same person into all three and
+  // give them one twin between them, which is a buffer of the same case with
+  // different names. The extra queries are free here: this loop already waits
+  // 21 seconds between calls and nobody is watching it.
+  // Names claimed so far in this batch, so case three does not reuse case
+  // one's cast — neither has been judged yet, so the pool has never heard of
+  // either of them.
+  const reserved: string[] = [];
+
   for (let i = 0; i < wanted; i++) {
-    const generated = await generateOne({
-      ...ctx,
-      wantAmbiguous: Math.random() < ambiguityTargetFor(caseNumber + i),
-    });
+    const ctx = await buildContext(userId, caseNumber + i, city, place, reserved);
+    const generated = await generateOne(ctx);
 
     if (generated) {
+      reserved.push(
+        generated.defendant.name,
+        ...generated.witnesses.map((w) => w.name),
+      );
       await redis.rpush(caseQueueKey(userId), JSON.stringify(generated));
     }
     // Breathe between calls so a full refill does not trip the limiter.
