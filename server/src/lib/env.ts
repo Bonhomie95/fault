@@ -7,6 +7,12 @@ const schema = z.object({
   // Absent key is a supported mode, not an error: the server falls back to the
   // hand-authored docket (GDD 12, "emergency buffer").
   GROQ_API_KEY: z.string().default(''),
+  /**
+   * A comma-separated pool of Groq keys, rotated (see lib/groq.ts). Each free
+   * key is ~100k tokens/day ≈ 33 cases, so the pool size is the daily docket
+   * size. GROQ_API_KEY is folded in automatically if set.
+   */
+  GROQ_API_KEYS: z.string().default(''),
   GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
   PORT: z.coerce.number().default(4000),
   NODE_ENV: z.string().default('development'),
@@ -37,6 +43,3 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
-
-/** Whether AI generation is live. When false, every case comes from seedCases. */
-export const aiEnabled = env.GROQ_API_KEY.length > 0;

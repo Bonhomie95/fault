@@ -23,12 +23,40 @@ export const TIER_ORDER: Tier[] = [
   'world',
 ];
 
+/**
+ * The texture a fallback case needs to belong somewhere.
+ *
+ * The AI gets all of this implicitly from the country name. The authored
+ * docket does not — it is fixed prose — so anything culture-specific in it has
+ * to be a slot that this fills. Without these, the offline docket hands a
+ * juror in Bergen a case about a danfo driver priced in naira.
+ */
+export interface CountryTexture {
+  givenNames: string[];
+  surnames: string[];
+  /** A big public market, by its real name where there is an obvious one. */
+  market: string;
+  /** Ordinary working neighbourhoods. */
+  neighbourhoods: string[];
+  /** What driving for a living is called here. */
+  transportJob: string;
+  /** A goods depot or freight yard. */
+  depot: string;
+  /**
+   * Sums that mean the same thing in each economy — a modest theft, a serious
+   * one, a life's savings. Not conversions: ₦400,000 and NOK 40,000 are
+   * nothing alike numerically and identical dramatically.
+   */
+  money: { small: string; mid: string; large: string; huge: string };
+}
+
 export interface CountryProfile {
   /** ISO 3166-1 alpha-2 */
   code: string;
   name: string;
   localeTag: string;
   currency: string;
+  texture: CountryTexture;
   /** What the second rung is actually called here. */
   stateNoun: string;
   /** The supranational bench this country answers to, if any. */
@@ -57,6 +85,15 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     name: 'Norway',
     localeTag: 'nb-NO',
     currency: 'NOK',
+    texture: {
+      givenNames: ['Ingrid', 'Lars', 'Kari', 'Sindre', 'Astrid', 'Kjetil', 'Maja', 'Håkon', 'Amina', 'Emil'],
+      surnames: ['Solberg', 'Haugen', 'Jensen', 'Pedersen', 'Fjell', 'Dahl', 'Berg', 'Osman', 'Lund', 'Vik'],
+      market: 'Torvet market hall',
+      neighbourhoods: ['Grønland', 'Tøyen', 'Holmlia', 'Bjørvika'],
+      transportJob: 'delivery driver',
+      depot: 'the harbour freight depot',
+      money: { small: 'NOK 40,000', mid: 'NOK 250,000', large: 'NOK 1.8 million', huge: 'NOK 40 million' },
+    },
     stateNoun: 'fylke',
     supranational: 'European Economic Area / EFTA Court',
     districts: ['Oslo', 'Bergen', 'Trondheim', 'Stavanger', 'Tromsø'],
@@ -74,6 +111,15 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     name: 'the United States',
     localeTag: 'en-US',
     currency: 'USD',
+    texture: {
+      givenNames: ['Marcus', 'Dana', 'Luis', 'Tasha', 'Ray', 'Nicole', 'Andre', 'Beth', 'Hector', 'Shauna'],
+      surnames: ['Whitaker', 'Delgado', 'Brennan', 'Okafor', 'Vance', 'Rios', 'Coleman', 'Nowak', 'Pike', 'Halloran'],
+      market: 'the Eastside public market',
+      neighbourhoods: ['Southside', 'Riverbend', 'the Flats', 'Lincoln Heights'],
+      transportJob: 'rideshare driver',
+      depot: 'the Canal Street distribution depot',
+      money: { small: '$4,000', mid: '$26,000', large: '$180,000', huge: '$4 million' },
+    },
     stateNoun: 'state',
     supranational: null, // no supranational bench; the ladder skips a rung
     districts: ['Chicago', 'Baltimore', 'Oakland', 'Phoenix', 'Detroit'],
@@ -91,6 +137,15 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     name: 'the United Kingdom',
     localeTag: 'en-GB',
     currency: 'GBP',
+    texture: {
+      givenNames: ['Aisha', 'Callum', 'Nadia', 'Gareth', 'Priya', 'Dean', 'Roisin', 'Marcus', 'Chloe', 'Tomasz'],
+      surnames: ['Whitfield', 'Ahmed', 'Doherty', 'Okonkwo', 'Bradshaw', 'Kaur', 'Nowak', 'Fenton', 'Adeyemi', 'Crowe'],
+      market: 'the Arndale market',
+      neighbourhoods: ['Moss Side', 'Salford Quays', 'Longsight', 'Ancoats'],
+      transportJob: 'private hire driver',
+      depot: 'the Trafford Park depot',
+      money: { small: '£3,000', mid: '£22,000', large: '£150,000', huge: '£3.4 million' },
+    },
     stateNoun: 'region',
     supranational: 'European Court of Human Rights',
     districts: ['Manchester', 'Birmingham', 'Glasgow', 'Leeds', 'Bristol'],
@@ -108,6 +163,15 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     name: 'Nigeria',
     localeTag: 'en-NG',
     currency: 'NGN',
+    texture: {
+      givenNames: ['Adaeze', 'Emeka', 'Folake', 'Ibrahim', 'Chinelo', 'Yemi', 'Hauwa', 'Tunde', 'Ngozi', 'Bashir'],
+      surnames: ['Nwosu', 'Obi', 'Adebayo', 'Sule', 'Eze', 'Balogun', 'Chukwu', 'Lawal', 'Okafor', 'Danjuma'],
+      market: 'Balogun Market',
+      neighbourhoods: ['Ikorodu', 'Ojuelegba', 'Surulere', 'Mushin'],
+      transportJob: 'danfo driver',
+      depot: 'the Apapa container depot',
+      money: { small: '₦400,000', mid: '₦2,000,000', large: '₦18,000,000', huge: '₦180 million' },
+    },
     stateNoun: 'state',
     supranational: au,
     districts: ['Lagos', 'Abuja', 'Kano', 'Port Harcourt', 'Ibadan'],
@@ -125,6 +189,15 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     name: 'Kenya',
     localeTag: 'en-KE',
     currency: 'KES',
+    texture: {
+      givenNames: ['Wanjiru', 'Otieno', 'Amina', 'Kipchoge', 'Njeri', 'Musa', 'Achieng', 'Brian', 'Fatuma', 'Kamau'],
+      surnames: ['Mwangi', 'Ochieng', 'Kariuki', 'Wekesa', 'Njoroge', 'Abdi', 'Omondi', 'Chebet', 'Mutiso', 'Were'],
+      market: 'Gikomba market',
+      neighbourhoods: ['Eastleigh', 'Kibera', 'Kasarani', 'Umoja'],
+      transportJob: 'matatu driver',
+      depot: 'the Industrial Area goods depot',
+      money: { small: 'KSh 90,000', mid: 'KSh 600,000', large: 'KSh 4,500,000', huge: 'KSh 90 million' },
+    },
     stateNoun: 'county',
     supranational: au,
     districts: ['Nairobi', 'Mombasa', 'Kisumu', 'Nakuru', 'Eldoret'],
@@ -142,6 +215,15 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     name: 'Germany',
     localeTag: 'de-DE',
     currency: 'EUR',
+    texture: {
+      givenNames: ['Lena', 'Jonas', 'Fatma', 'Stefan', 'Aylin', 'Matthias', 'Katrin', 'Mehmet', 'Sofia', 'Bernd'],
+      surnames: ['Kraus', 'Yilmaz', 'Hoffmann', 'Schuster', 'Öztürk', 'Brandt', 'Weiß', 'Nowak', 'Richter', 'Behrens'],
+      market: 'the Markthalle',
+      neighbourhoods: ['Neukölln', 'Wedding', 'Marzahn', 'Kreuzberg'],
+      transportJob: 'delivery driver',
+      depot: 'the Westhafen freight depot',
+      money: { small: '€3,500', mid: '€24,000', large: '€160,000', huge: '€3.8 million' },
+    },
     stateNoun: 'Land',
     supranational: eu,
     districts: ['Berlin', 'Hamburg', 'München', 'Köln', 'Leipzig'],
@@ -159,6 +241,15 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     name: 'France',
     localeTag: 'fr-FR',
     currency: 'EUR',
+    texture: {
+      givenNames: ['Camille', 'Karim', 'Élodie', 'Thomas', 'Aïcha', 'Julien', 'Sofia', 'Mathieu', 'Fanta', 'Bruno'],
+      surnames: ['Marchand', 'Benali', 'Lefèvre', 'Traoré', 'Rousseau', 'Diallo', 'Girard', 'Nguyen', 'Perrin', 'Sow'],
+      market: 'the marché couvert',
+      neighbourhoods: ['Barbès', 'Saint-Denis', 'Belleville', 'La Courneuve'],
+      transportJob: 'delivery driver',
+      depot: 'the Bercy freight depot',
+      money: { small: '€3,500', mid: '€24,000', large: '€160,000', huge: '€3.8 million' },
+    },
     stateNoun: 'région',
     supranational: eu,
     districts: ['Paris', 'Marseille', 'Lyon', 'Toulouse', 'Lille'],
@@ -176,6 +267,15 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     name: 'India',
     localeTag: 'en-IN',
     currency: 'INR',
+    texture: {
+      givenNames: ['Priya', 'Rohit', 'Meera', 'Arjun', 'Fatima', 'Vikram', 'Ananya', 'Sameer', 'Lakshmi', 'Imran'],
+      surnames: ['Sharma', 'Iyer', 'Khan', 'Reddy', 'Desai', 'Banerjee', 'Pillai', 'Chauhan', 'Fernandes', 'Nair'],
+      market: 'Crawford Market',
+      neighbourhoods: ['Dharavi', 'Andheri', 'Byculla', 'Malad'],
+      transportJob: 'auto-rickshaw driver',
+      depot: 'the Sewri goods depot',
+      money: { small: '₹3,00,000', mid: '₹18,00,000', large: '₹1.4 crore', huge: '₹32 crore' },
+    },
     stateNoun: 'state',
     supranational: null,
     districts: ['Mumbai', 'Delhi', 'Bengaluru', 'Kolkata', 'Chennai'],
@@ -193,6 +293,15 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     name: 'Brazil',
     localeTag: 'pt-BR',
     currency: 'BRL',
+    texture: {
+      givenNames: ['Camila', 'Rafael', 'Luana', 'Thiago', 'Beatriz', 'Marcos', 'Juliana', 'Everton', 'Nara', 'Caio'],
+      surnames: ['Oliveira', 'Ferreira', 'Nascimento', 'Barbosa', 'Cardoso', 'Ramos', 'Teixeira', 'Moreira', 'Pinto', 'Vasconcelos'],
+      market: 'the Mercadão',
+      neighbourhoods: ['Brás', 'Capão Redondo', 'Cidade Tiradentes', 'Grajaú'],
+      transportJob: 'app driver',
+      depot: 'the Barra Funda freight depot',
+      money: { small: 'R$ 18,000', mid: 'R$ 120,000', large: 'R$ 900,000', huge: 'R$ 20 million' },
+    },
     stateNoun: 'estado',
     supranational: 'Mercosur / Inter-American Court of Human Rights',
     districts: ['São Paulo', 'Rio de Janeiro', 'Salvador', 'Recife', 'Porto Alegre'],
@@ -210,6 +319,15 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     name: 'South Africa',
     localeTag: 'en-ZA',
     currency: 'ZAR',
+    texture: {
+      givenNames: ['Thandiwe', 'Sipho', 'Lerato', 'Pieter', 'Nomsa', 'Riaan', 'Zanele', 'Ayanda', 'Fatima', 'Bongani'],
+      surnames: ['Dlamini', 'Van Wyk', 'Mokoena', 'Naidoo', 'Botha', 'Nkosi', 'Petersen', 'Khumalo', 'Adams', 'Sithole'],
+      market: 'the Yeoville market',
+      neighbourhoods: ['Soweto', 'Alexandra', 'Hillbrow', 'Mitchells Plain'],
+      transportJob: 'minibus taxi driver',
+      depot: 'the City Deep container depot',
+      money: { small: 'R 45,000', mid: 'R 300,000', large: 'R 2,200,000', huge: 'R 48 million' },
+    },
     stateNoun: 'province',
     supranational: au,
     districts: ['Johannesburg', 'Cape Town', 'Durban', 'Pretoria', 'Gqeberha'],
@@ -235,6 +353,23 @@ export function genericProfile(code: string, displayName?: string): CountryProfi
     name,
     localeTag: 'en',
     currency: 'local currency',
+    // Deliberately placeless. An unlisted country gets prose that avoids
+    // claiming a culture we have not actually localised, rather than borrowing
+    // someone else's.
+    texture: {
+      givenNames: ['Alex', 'Sam', 'Jo', 'Nadia', 'Chris', 'Toma', 'Rea', 'Nour', 'Dani', 'Kim'],
+      surnames: ['Marek', 'Ferreira', 'Haddad', 'Novak', 'Silva', 'Adler', 'Costa', 'Ivanov', 'Farah', 'Ross'],
+      market: 'the central market',
+      neighbourhoods: ['the old quarter', 'the east side', 'the river district', 'the north end'],
+      transportJob: 'delivery driver',
+      depot: 'the central goods depot',
+      money: {
+        small: 'a few thousand',
+        mid: 'twenty-odd thousand',
+        large: 'a hundred and fifty thousand',
+        huge: 'several million',
+      },
+    },
     stateNoun: 'region',
     supranational: null,
     districts: ['the capital district'],

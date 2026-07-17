@@ -1,12 +1,14 @@
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { aiEnabled, env } from './lib/env.js';
+import { env } from './lib/env.js';
+import { aiEnabled, availableCount, keyCount } from './lib/groq.js';
 import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
 import { authRouter } from './routes/auth.js';
 import { caseRouter } from './routes/cases.js';
 import { cityRouter } from './routes/city.js';
 import { jurorRouter } from './routes/jurorProfile.js';
+import { leaderboardRouter } from './routes/leaderboard.js';
 import { reviewRouter } from './routes/review.js';
 import { sessionRouter } from './routes/session.js';
 import { standingRouter } from './routes/standing.js';
@@ -18,7 +20,15 @@ app.use(cors());
 app.use(express.json({ limit: '256kb' }));
 
 app.get('/health', async (_req, res) => {
-  const checks = { postgres: false, redis: false, groq: aiEnabled };
+  // Key availability is operational truth: when it reaches 0 every juror on
+  // the server is quietly playing the fallback docket.
+  const checks = {
+    postgres: false,
+    redis: false,
+    groq: aiEnabled,
+    groqKeys: keyCount,
+    groqKeysAvailable: availableCount(),
+  };
   try {
     await prisma.$queryRaw`SELECT 1`;
     checks.postgres = true;
@@ -42,6 +52,7 @@ app.use('/api/verdict', verdictRouter);
 app.use('/api/city-state', cityRouter);
 app.use('/api/review', reviewRouter);
 app.use('/api/juror-profile', jurorRouter);
+app.use('/api/leaderboard', leaderboardRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'not found' });
@@ -56,8 +67,8 @@ const server = app.listen(env.PORT, () => {
   console.log(`FAULT api listening on :${env.PORT}`);
   console.log(
     aiEnabled
-      ? `Case generation: Groq (${env.GROQ_MODEL})`
-      : 'Case generation: hand-authored docket (no GROQ_API_KEY set)',
+      ? `Case generation: Groq (${env.GROQ_MODEL}) — ${keyCount} key${keyCount === 1 ? '' : 's'} in rotation, ~${keyCount * 33} cases/day`
+      : 'Case generation: hand-authored docket (no Groq keys set)',
   );
 });
 

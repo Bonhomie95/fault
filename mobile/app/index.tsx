@@ -191,8 +191,11 @@ export default function ColdOpen() {
               editable={!busy}
               accessibilityLabel="Your name as juror"
             />
+            {/* Said before they choose, not after: this name goes on a public
+                board next to the state of their city. */}
             <Text style={styles.note}>
-              This is the name the city will remember. It need not be your own.
+              This is the name the city will remember, and the name other jurors will see on the
+              public registry. It need not be your own.
             </Text>
 
             <Pressable

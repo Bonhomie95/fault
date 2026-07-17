@@ -62,6 +62,7 @@ export default function RootLayout() {
         <Stack.Screen name="review" />
         <Stack.Screen name="record" />
         <Stack.Screen name="career" />
+        <Stack.Screen name="boards" />
         <Stack.Screen name="settings" options={{ presentation: 'modal', gestureEnabled: true }} />
       </Stack>
     </GestureHandlerRootView>

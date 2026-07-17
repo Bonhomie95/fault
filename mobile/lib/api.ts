@@ -195,6 +195,27 @@ export interface JurisdictionsView {
   }[];
 }
 
+export type Board = 'peaceful' | 'lawless';
+
+export interface BoardEntry {
+  rank: number;
+  jurorName: string;
+  country: string | null;
+  peaceIndex: number;
+  verdict: string;
+  casesHeard: number;
+  you?: boolean;
+}
+
+export interface BoardView {
+  board: Board;
+  top: BoardEntry[];
+  /** Always present once the player qualifies — even outside the top 100. */
+  you: (BoardEntry & { inTop: boolean }) | null;
+  ranked: number;
+  qualifyAt: number;
+}
+
 export interface SignInResult {
   userId: string;
   jurorName: string;
@@ -223,6 +244,9 @@ export const api = {
     ),
 
   standing: (jurorId: string) => request<Standing>('/api/standing', { jurorId }),
+
+  leaderboard: (jurorId: string, board: Board) =>
+    request<BoardView>(`/api/leaderboard?board=${board}`, { jurorId }),
 
   ladder: (jurorId: string) =>
     request<{ country: string; current: Tier; rungs: { tier: Tier; label: string; reached: boolean }[] }>(

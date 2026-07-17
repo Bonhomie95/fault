@@ -1,10 +1,11 @@
 import type { Tier } from '@prisma/client';
 import { ACCENTS, generatedCaseSchema, type GeneratedCase } from '../domain/case.js';
 import type { CityMetrics } from '../domain/city.js';
-import { GROQ_MODEL, groq } from '../lib/groq.js';
+import { aiEnabled, availableCount, classifyError, GROQ_MODEL, leaseKey } from '../lib/groq.js';
 import { caseQueueKey, redis } from '../lib/redis.js';
 import { districtFor, profileFor, tierLabel } from '../domain/jurisdiction.js';
 import { deriveCaseMood, deriveFactions } from './cityEffects.js';
+import { localizeCase } from './localizeCase.js';
 import { echoRolesFor, getEligibleCharacters, type PoolCharacter } from './characterPool.js';
 import { computeJurorStats, weakestBias } from './jurorProfile.js';
 import { seedCaseFor, SEED_CASES } from './seedCases.js';
@@ -257,6 +258,16 @@ Exactly 3 evidence items and exactly 2 witnesses.
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Stable 32-bit hash — same juror and case, same fallback cast, forever. */
+function hashSeed(input: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h);
+}
+
 /**
  * Whether a 429 is worth waiting out.
  *
@@ -288,10 +299,18 @@ function retryAfterMs(message: string): number | null {
  * happens in the background buffer anyway, where nobody is watching a clock.
  */
 async function generateOne(ctx: GenerationContext, attempt = 0): Promise<GeneratedCase | null> {
-  if (!groq) return null;
+  if (!aiEnabled) return null;
+
+  // A key per attempt: a retry after a rate limit should land on a *different*
+  // key, or it is not a retry, it is the same wall twice.
+  const lease = leaseKey();
+  if (!lease) {
+    // Every key parked. The pool is spent; waiting will not help.
+    return null;
+  }
 
   try {
-    const response = await groq.chat.completions.create({
+    const response = await lease.client.chat.completions.create({
       model: GROQ_MODEL,
       messages: [
         { role: 'system', content: buildSystemPrompt(ctx) },
@@ -303,6 +322,10 @@ async function generateOne(ctx: GenerationContext, attempt = 0): Promise<Generat
       max_tokens: 2000,
       response_format: { type: 'json_object' },
     });
+
+    // The call itself succeeded, so the key is healthy whatever the content
+    // turns out to be. Say so before any content check can return early.
+    lease.release('ok');
 
     const raw = response.choices[0]?.message?.content;
     if (!raw) return null;
@@ -338,14 +361,24 @@ async function generateOne(ctx: GenerationContext, attempt = 0): Promise<Generat
     return parsed.data;
   } catch (err) {
     const message = (err as Error).message ?? '';
-    const wait = retryAfterMs(message);
+    const kind = classifyError(message);
+    lease.release(kind);
 
-    if (wait !== null && attempt < MAX_ATTEMPTS) {
-      await sleep(wait * (attempt + 1)); // linear backoff
-      return generateOne(ctx, attempt + 1);
+    if (attempt < MAX_ATTEMPTS) {
+      // A spent key is not a reason to wait — it is a reason to use another
+      // one. Only pause when the whole pool is busy at the minute level.
+      if (kind === 'day-limit') return generateOne(ctx, attempt + 1);
+
+      const wait = retryAfterMs(message);
+      if (wait !== null) {
+        // With keys to spare, hop straight to the next rather than sleeping.
+        if (availableCount() > 0) return generateOne(ctx, attempt + 1);
+        await sleep(wait * (attempt + 1));
+        return generateOne(ctx, attempt + 1);
+      }
     }
 
-    console.error("[caseGenerator] groq error:", message.slice(0, 400));
+    console.error('[caseGenerator] groq error:', message.slice(0, 300));
     return null;
   }
 }
@@ -389,7 +422,7 @@ export async function refillCaseCache(
   city: CityMetrics,
   place: PlaceContext,
 ) {
-  if (!groq) return; // seed docket needs no cache
+  if (!aiEnabled) return; // seed docket needs no cache
 
   // One refill per juror at a time.
   //
@@ -469,6 +502,22 @@ export async function nextCase(
   const ctx = await buildContext(userId, caseNumber, city, place);
   const live = await generateOne(ctx);
   if (live) return { generated: live, source: 'live' };
+
+  // Everything AI is spent or broken. The authored docket, moved to wherever
+  // this juror actually lives — see localizeCase.
+  const profile = profileFor(place.country);
+  return {
+    generated: localizeCase(seedCaseFor(caseNumber), {
+      profile,
+      district: place.district,
+      court: place.court,
+      policeService: place.policeService,
+      // Per juror and per case: two players see different casts, and one
+      // player revisiting a case sees the same one.
+      seed: hashSeed(`${userId}:${caseNumber}`),
+    }),
+    source: 'fallback',
+  };
 
   return { generated: seedCaseFor(caseNumber), source: 'fallback' };
 }

@@ -117,6 +117,7 @@ export default function Lobby() {
 
           <View style={styles.links}>
             <LobbyLink label="The career" onPress={() => router.push('/career')} />
+            <LobbyLink label="The cities" onPress={() => router.push('/boards')} />
             {/* GDD Screen 3 — gated on rank, not on being right. */}
             <LobbyLink
               label="Review past cases"
