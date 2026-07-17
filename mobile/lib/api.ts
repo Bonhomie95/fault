@@ -184,12 +184,24 @@ export interface CityState {
 export interface VerdictResult {
   verdict: 'guilty' | 'not_guilty';
   wasHung: boolean;
+  /** Measured by the server from when it served the case, not claimed by us. */
   timeRemaining: number;
   aftermath: string;
   city: CityState;
   triggerReview: boolean;
   casesHeard: number;
   consensus: { guiltyPercent: number; sampleSize: number };
+  /** Service, paid immediately — neither can see whether the verdict was right. */
+  xpAwarded: number;
+  rank: number;
+  promoted: boolean;
+  meritAwarded: number;
+  merit: number;
+  /**
+   * Whether an interstitial is due, decided server-side on a 2-3 case cadence
+   * the client cannot see, skip, or re-roll by force-quitting.
+   */
+  showInterstitial: boolean;
 }
 
 export interface ReviewEntry {
@@ -210,12 +222,26 @@ export interface JurorRecord {
   cityTrajectory: Record<string, number>;
 }
 
+/** Mirrors the Entitlement enum in the Prisma schema. */
 export type Entitlement =
+  // more game
   | 'campaign'
-  | 'no_ads'
   | 'pack_corporate'
   | 'pack_cold_case'
-  | 'pack_political';
+  | 'pack_political'
+  // less friction
+  | 'no_ads'
+  // how it looks, and nothing else
+  | 'seal_brass'
+  | 'seal_obsidian'
+  | 'seal_ivory'
+  // reserved: in the schema, not yet for sale — nothing renders them
+  | 'room_oak'
+  | 'room_concrete'
+  | 'stock_onionskin'
+  | 'stock_vellum'
+  // a thank-you
+  | 'patron';
 
 export interface Session {
   userId: string;

@@ -1,6 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Fonts, Palette } from '@/constants/theme';
 import type { Standing } from '@/lib/api';
+import { Seal, sealFrom } from '@/components/Seal';
+import { useGame } from '@/store/game';
 
 /**
  * Who you are, at a glance.
@@ -17,6 +19,9 @@ import type { Standing } from '@/lib/api';
  */
 
 export function StandingBar({ standing }: { standing: Standing }) {
+  // The seal is the one thing in this bar the player chose rather than earned.
+  const seal = sealFrom(useGame((s) => s.entitlements));
+
   const pct =
     standing.xpForNextRank === null
       ? 1
@@ -26,7 +31,10 @@ export function StandingBar({ standing }: { standing: Standing }) {
     <View style={styles.root}>
       <View style={styles.row}>
         <View style={styles.left}>
-          <Text style={styles.rank}>{standing.rankTitle}</Text>
+          <View style={styles.rankRow}>
+            <Seal kind={seal} size={16} />
+            <Text style={styles.rank}>{standing.rankTitle}</Text>
+          </View>
           <Text style={styles.where}>
             {standing.court ?? standing.tierLabel}
             {standing.district ? ` · ${standing.district}` : ''}
@@ -79,6 +87,7 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   left: { flex: 1, gap: 3 },
+  rankRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   right: { alignItems: 'flex-end', gap: 2 },
   rank: {
     fontFamily: Fonts.display,

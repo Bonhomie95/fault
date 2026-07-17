@@ -117,6 +117,12 @@ export const SKUS: Sku[] = [
   // room looks, never what happens in it. All of them are earnable, and priced
   // low enough in Merit that a player who never pays still collects them —
   // a cosmetic nobody can earn is just a paywall with better art.
+  //
+  // Only the seals are here, because only the seals are DRAWN. The courtroom
+  // finishes and dossier stocks exist in the Entitlement enum and are not for
+  // sale: selling a cosmetic nothing renders is taking money for a promise,
+  // and the whole point of this catalogue is that it does not do that. They
+  // come back the day the room can actually change.
   {
     id: 'seal_brass',
     title: 'Brass Seal',
@@ -142,42 +148,6 @@ export const SKUS: Sku[] = [
     priceMinor: 199,
     meritPrice: 900,
     grants: 'seal_ivory',
-    kind: 'cosmetic',
-  },
-  {
-    id: 'room_oak',
-    title: 'The Oak Room',
-    blurb: 'Panelled walls and warm lamps. The room feels older than the charge.',
-    priceMinor: 299,
-    meritPrice: 1800,
-    grants: 'room_oak',
-    kind: 'cosmetic',
-  },
-  {
-    id: 'room_concrete',
-    title: 'The Concrete Room',
-    blurb: 'Strip lights and bare walls. Nothing here has ever been comfortable.',
-    priceMinor: 299,
-    meritPrice: 1800,
-    grants: 'room_concrete',
-    kind: 'cosmetic',
-  },
-  {
-    id: 'stock_onionskin',
-    title: 'Onionskin Dossiers',
-    blurb: 'Thin, translucent case files. You can almost read the next page through this one.',
-    priceMinor: 199,
-    meritPrice: 1200,
-    grants: 'stock_onionskin',
-    kind: 'cosmetic',
-  },
-  {
-    id: 'stock_vellum',
-    title: 'Vellum Dossiers',
-    blurb: 'Heavy stock. The kind of paper that expects to be kept.',
-    priceMinor: 199,
-    meritPrice: 1200,
-    grants: 'stock_vellum',
     kind: 'cosmetic',
   },
 

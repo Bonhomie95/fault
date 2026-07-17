@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Interstitial } from '@/components/Interstitial';
 import { Fonts, Palette } from '@/constants/theme';
 import { useGame } from '@/store/game';
 
@@ -14,6 +15,8 @@ export default function VerdictDelivered() {
   const result = useGame((s) => s.lastResult);
   const lastAccent = useGame((s) => s.lastAccent);
   const [phase, setPhase] = useState<'flash' | 'aftermath'>('flash');
+  /** Shown after the player has read the aftermath and asked to move on. */
+  const [showingAd, setShowingAd] = useState(false);
 
   useEffect(() => {
     if (!result) {
@@ -30,9 +33,20 @@ export default function VerdictDelivered() {
   const accent = lastAccent ?? '#C23B22';
   const label = result.verdict === 'guilty' ? 'GUILTY' : 'NOT GUILTY';
 
-  const onNext = () => {
+  const leave = () => {
     if (result.triggerReview) router.replace('/review');
     else router.replace('/lobby');
+  };
+
+  /**
+   * The ad, if the server said one is due, goes here — after the aftermath has
+   * been read and the player has chosen to move on. Never before it: the
+   * consequence of a verdict is the payload of this screen, and an advert on
+   * top of it would be selling the moment the game exists to deliver.
+   */
+  const onNext = () => {
+    if (result.showInterstitial) setShowingAd(true);
+    else leave();
   };
 
   return (
@@ -60,7 +74,9 @@ export default function VerdictDelivered() {
             <Animated.View entering={FadeIn.duration(900)} style={styles.aftermathBlock}>
               <Text style={styles.aftermath}>{result.aftermath}</Text>
 
-              {/* GDD 11.4 — instant debate starter. */}
+              {/* GDD 11.4 — instant debate starter.
+                  Currently unreachable: cases are per-player, so sampleSize is
+                  always 1. It needs the shared daily docket. */}
               {result.consensus.sampleSize > 1 && (
                 <Text style={styles.consensus}>
                   {result.consensus.guiltyPercent}% of jurors convicted.
@@ -69,6 +85,12 @@ export default function VerdictDelivered() {
                     : ' You did not.'}
                 </Text>
               )}
+
+              {/* Service, paid on the spot. Standing is deliberately absent —
+                  it lands at the review with the outcome that earned it. */}
+              <Text style={styles.earned}>
+                +{result.meritAwarded} MERIT{result.promoted ? '  ·  PROMOTED' : ''}
+              </Text>
             </Animated.View>
           )}
         </View>
@@ -83,6 +105,8 @@ export default function VerdictDelivered() {
           </Animated.View>
         )}
       </SafeAreaView>
+
+      {showingAd && <Interstitial onDone={leave} />}
     </View>
   );
 }
@@ -118,6 +142,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 18,
     color: Palette.textMuted,
+    textAlign: 'center',
+  },
+  earned: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1.8,
+    color: '#D4860A',
     textAlign: 'center',
   },
   footer: { paddingHorizontal: 22, paddingBottom: 12 },

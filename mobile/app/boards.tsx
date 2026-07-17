@@ -12,6 +12,7 @@ import {
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Fonts, Palette } from '@/constants/theme';
+import { Seal, sealFrom } from '@/components/Seal';
 import { api, type Board, type BoardView } from '@/lib/api';
 import { useGame } from '@/store/game';
 
@@ -28,6 +29,7 @@ import { useGame } from '@/store/game';
  */
 export default function Boards() {
   const jurorId = useGame((s) => s.jurorId);
+  const mySeal = sealFrom(useGame((s) => s.entitlements));
   const [board, setBoard] = useState<Board>('peaceful');
   const [view, setView] = useState<BoardView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -144,9 +146,12 @@ export default function Boards() {
                 <>
                   <Text style={styles.youRank}>#{view.you.rank}</Text>
                   <View style={styles.rowMain}>
-                    <Text style={styles.youName} numberOfLines={1}>
-                      {view.you.jurorName}
-                    </Text>
+                    <View style={styles.youNameRow}>
+                      <Seal kind={mySeal} size={13} />
+                      <Text style={styles.youName} numberOfLines={1}>
+                        {view.you.jurorName}
+                      </Text>
+                    </View>
                     <Text style={styles.meta}>
                       {view.you.verdict} · of {view.ranked}
                       {view.you.inTop ? ' · tap to find yourself' : ' · outside the top 100'}
@@ -264,6 +269,7 @@ const styles = StyleSheet.create({
   },
   youRank: { fontFamily: Fonts.monoBold, fontSize: 13, color: '#D4860A' },
   youName: { fontFamily: Fonts.monoBold, fontSize: 13, color: Palette.text },
+  youNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   youIndex: { fontFamily: Fonts.monoBold, fontSize: 13, color: '#D4860A' },
   unranked: {
     flex: 1,
