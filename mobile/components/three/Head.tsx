@@ -197,7 +197,11 @@ export function Head({ seed, appearance, accent, focused, tilt = 0 }: HeadProps)
         [-1, 1].map((side) => (
           <mesh key={side} position={[side * 0.028, -0.04, 0.096]} rotation={[0, 0, side * 0.4]}>
             <boxGeometry args={[0.004, 0.03, 0.004]} />
-            <meshStandardMaterial color="#00000022" transparent opacity={0.25} roughness={1} />
+            {/* #RRGGBBAA is a CSS notion; THREE.Color takes six digits and
+                silently warns on eight. The alpha was being expressed twice —
+                once in digits three.js discarded, once in the opacity prop
+                beside it, which is the one that was doing the work. */}
+            <meshStandardMaterial color="#000000" transparent opacity={0.25} roughness={1} />
           </mesh>
         ))}
 

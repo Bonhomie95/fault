@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import { Vector3 } from 'three';
 import type { ClientCase } from '@/lib/api';
 import { useReducedMotion } from '@/lib/motion';
@@ -207,6 +207,8 @@ function Gallery({ accent }: { accent: string }) {
           scale={0.86}
           accent={accent}
           alive={false}
+          // Shapes, not faces. See Figure's `simple`.
+          simple
         />
       ))}
     </group>
@@ -277,13 +279,10 @@ function Scene({
       {/* Fill from the opposite side, so the unlit half of the face is still a
           face and not a silhouette. */}
       <pointLight position={[-2.2, 1.9, 1.4]} intensity={0.75} distance={9} color="#9FB4C7" />
-      <directionalLight
-        position={[2.5, 6, 3]}
-        intensity={1.15}
-        castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
-      />
+      {/* No castShadow here on purpose. Two shadow-casting lights means two
+          full shadow passes over every mesh in the room, every frame, and the
+          spot on the accused is the only one anybody would ever notice. */}
+      <directionalLight position={[2.5, 6, 3]} intensity={1.0} />
       {/* the accent as a practical light, not just a colour */}
       {/* the accent as a practical light, not just a colour */}
       <pointLight position={[0, 2.9, -2.2]} intensity={1.5} distance={8} color={accent} />
@@ -369,7 +368,27 @@ function Scene({
   );
 }
 
-export function CourtroomScene(props: SceneProps) {
+/**
+ * THE reason the game froze.
+ *
+ * This is memoised, and it is not an optimisation — it is the fix for a
+ * game-breaking bug. The case screen holds `remaining` in state and ticks it
+ * once a second, and this component was rendered from that same component. So
+ * every single second React re-rendered the entire courtroom and r3f
+ * reconciled the whole tree: hundreds of meshes, on the JS thread, forever.
+ *
+ * The symptom was taps on the tab bar doing nothing and the clock appearing to
+ * freeze and then jump thirty seconds. The clock was never wrong — it derives
+ * from Date.now(), so it was the one honest thing on screen. It looked frozen
+ * because the thread was too busy rebuilding a room that had not changed to run
+ * the interval, and when it came up for air the real time had moved on. The
+ * player lost a quarter of their 120 seconds to a re-render.
+ *
+ * Every prop here is already stable across a tick — activeCase is the same
+ * object, onSelectEvidence is a useState setter — so the memo holds and the
+ * room is rebuilt only when something about the room actually changes.
+ */
+export const CourtroomScene = memo(function CourtroomScene(props: SceneProps) {
   // Read outside the Canvas: hooks inside r3f's tree run on its own renderer,
   // and this is a React Native accessibility API, not a three.js concern.
   const reducedMotion = useReducedMotion();
@@ -385,4 +404,4 @@ export function CourtroomScene(props: SceneProps) {
       <Scene {...props} reducedMotion={reducedMotion} />
     </Canvas>
   );
-}
+});

@@ -29,6 +29,19 @@ interface FigureProps {
   rotation?: [number, number, number];
   scale?: number;
   alive?: boolean;
+  /**
+   * Draw a cheap version: a body and a suggestion of a head, no face.
+   *
+   * A person in this scene costs ~39 meshes, 26 of them in the face — brow
+   * ridges, jaw, the works. That is the right price for the defendant, whose
+   * face is a game mechanic you are asked to read for bias. It is an absurd
+   * price for someone sitting in the tenth row of the public gallery, whose
+   * entire job is to be a shape that is clearly a person.
+   *
+   * Ten of those in the gallery came to 390 meshes — nearly triple the whole
+   * rest of the room — on a phone already dropping frames.
+   */
+  simple?: boolean;
 }
 
 function rand(seed: number, channel: number): number {
@@ -50,6 +63,7 @@ export function Figure({
   rotation = [0, 0, 0],
   scale = 1,
   alive = true,
+  simple = false,
 }: FigureProps) {
   const group = useRef<Group>(null);
 
@@ -107,20 +121,25 @@ export function Figure({
         </mesh>
 
         {/* the shirt showing at the collar */}
+        {!simple && (
         <mesh position={[0, 0.79 * h + seated, 0.022]} castShadow>
           <cylinderGeometry args={[0.055, 0.075, 0.07, 12]} />
           <meshStandardMaterial color={t.shirt} roughness={0.8} />
         </mesh>
+        )}
 
         {/* shoulders — the capsule lies across the body, so the mesh turns,
             not the geometry */}
+        {!simple && (
         <mesh position={[0, 0.8 * h + seated, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
           <capsuleGeometry args={[0.085, 0.3 * t.shoulder, 4, 10]} />
           <meshStandardMaterial color={t.coat} roughness={0.9} />
         </mesh>
+        )}
 
         {/* arms, hanging */}
-        {[-1, 1].map((side) => (
+        {!simple &&
+          [-1, 1].map((side) => (
           <mesh
             key={side}
             position={[side * 0.17 * t.shoulder, 0.56 * h + seated, 0.01]}
@@ -130,17 +149,26 @@ export function Figure({
             <capsuleGeometry args={[0.042, 0.38 * h, 4, 8]} />
             <meshStandardMaterial color={t.coat} roughness={0.9} />
           </mesh>
-        ))}
+          ))}
 
         {/* neck */}
+        {!simple && (
         <mesh position={[0, 0.87 * h + seated, 0]}>
           <cylinderGeometry args={[0.032, 0.038, 0.06, 10]} />
           <meshStandardMaterial color="#C68B5E" roughness={0.75} />
         </mesh>
+        )}
 
-        {/* the face */}
+        {/* the face — or, in the gallery, the fact of one */}
         <group position={[0, 1.0 * h + seated, 0]}>
-          <Head seed={seed} appearance={appearance} accent={accent} focused={focused} tilt={tilt.head} />
+          {simple ? (
+            <mesh castShadow>
+              <sphereGeometry args={[0.085, 10, 8]} />
+              <meshStandardMaterial color="#C68B5E" roughness={0.85} />
+            </mesh>
+          ) : (
+            <Head seed={seed} appearance={appearance} accent={accent} focused={focused} tilt={tilt.head} />
+          )}
         </group>
 
         {/* legs */}

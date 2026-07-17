@@ -74,9 +74,11 @@ export default function CaseFile() {
     play('open');
     startBed('room');
     return () => stopAllBeds();
-    // Keyed on the id, not the object, and deliberately so: activeCase is
-    // replaced on every tick of local state, and depending on it would tear the
-    // room down and restart it mid-case — an audible stutter every second.
+    // Keyed on the id rather than the object. The object is in fact stable —
+    // the store sets activeCase once on load and nulls it at the verdict, and
+    // nothing touches it in between — but the id is what actually identifies a
+    // case, and keying on identity rather than on reference means this survives
+    // the store ever being changed to hand back a fresh object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCase?.id]);
 
