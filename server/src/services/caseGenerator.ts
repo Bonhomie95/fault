@@ -9,9 +9,27 @@ import { echoRolesFor, getEligibleCharacters, type PoolCharacter } from './chara
 import { computeJurorStats, weakestBias } from './jurorProfile.js';
 import { seedCaseFor, SEED_CASES } from './seedCases.js';
 
-const BATCH_SIZE = 5;
-const REFILL_BELOW = 3;
-const MAX_ATTEMPTS = 3;
+/**
+ * Buffer sizing, against two real limits.
+ *
+ * A case costs roughly 1.7k prompt + 1.2k completion ≈ 3k tokens. Groq's free
+ * tier caps BOTH:
+ *   - 12,000 tokens per minute  → about 4 cases a minute
+ *   - 100,000 tokens per DAY    → about 33 cases a day, total, for everyone
+ *
+ * The daily cap is the one that matters and it is brutal: a single engaged
+ * player can exhaust the entire free tier in one sitting, after which every
+ * juror on the server drops to the fallback docket. This is a billing decision
+ * disguised as a constant — FAULT needs a paid tier to exist as a product.
+ *
+ * The GDD (4.3) specifies batches of five. Three is what the budget affords.
+ * On a paid tier, raise BATCH_SIZE and drop SPACING_MS.
+ */
+const BATCH_SIZE = 3;
+const REFILL_BELOW = 2;
+/** Spacing exists for the per-minute cap; it does nothing for the daily one. */
+const SPACING_MS = 21_000;
+const MAX_ATTEMPTS = 4;
 
 /** GDD 12 — cases are human drama. This is the coarse net; the system prompt
  *  is the fine one. Anything caught here is dropped, never shown. */
@@ -67,6 +85,39 @@ interface GenerationContext {
   characterPool: PoolCharacter[];
   caseNumber: number;
   place: PlaceContext;
+  /** Whether THIS case is allowed to be unanswerable. Decided here, not by
+   *  the model — see ambiguityTargetFor. */
+  wantAmbiguous: boolean;
+}
+
+/**
+ * How often a case should have no right answer, by chapter.
+ *
+ * GDD 3.3 is explicit about the curve: cases 1-5 have clear evidence, 31-50
+ * have "NO correct answer — only precedent, only your record". Left to itself
+ * the model marks almost everything ambiguous, which sounds sophisticated and
+ * is actually fatal: ambiguous cases move trust by design (there is nothing to
+ * be right about), so a docket of pure ambiguity pins standing at its starting
+ * value forever and the promotion ladder — which needs 55 to leave the
+ * district — can never be climbed. The player would sit in their home district
+ * for eternity being told "your reasoning was your own".
+ *
+ * So the roll happens server-side and the model is told the answer.
+ */
+export function ambiguityTargetFor(caseNumber: number): number {
+  const chapter = Math.min(5, Math.floor((caseNumber - 1) / 10) + 1);
+  switch (chapter) {
+    case 1:
+      return 0.1; // learn that evidence means something
+    case 2:
+      return 0.25;
+    case 3:
+      return 0.4;
+    case 4:
+      return 0.6;
+    default:
+      return 0.75; // the weight
+  }
 }
 
 function buildSystemPrompt(ctx: GenerationContext): string {
@@ -159,8 +210,18 @@ Generate a case that:
 - Keeps prosecution_argument and defence_argument to 40 words or fewer each
 - Sets evidence_strength honestly: -1 means the evidence fully favours the
   defence, +1 fully favours the prosecution, 0 means truly balanced
-- Sets correct_verdict to "ambiguous" when the case genuinely has no right
-  answer. In chapter 4 and 5, most cases should be ambiguous.
+${
+    ctx.wantAmbiguous
+      ? `- correct_verdict MUST be "ambiguous". This case genuinely has no right
+  answer: both readings survive to the end, and an honest juror could go either
+  way. Set evidence_strength between -0.3 and 0.3.`
+      : `- correct_verdict MUST be "guilty" or "not_guilty" — NOT "ambiguous".
+  Something did or did not happen here, and a careful reader of the evidence
+  could arrive at it. The case must still be *hard*: the wrong answer should be
+  tempting, the witnesses still lie, and the surface reading should favour the
+  wrong side. But there is a truth underneath, and evidence_strength must point
+  toward it (at least 0.4 away from zero in the direction of the truth).`
+  }
 - Sets "appearance" (0 unsettling, 100 disarming) INDEPENDENTLY of guilt. Do
   not make guilty defendants look unsettling or innocent ones look harmless —
   the game measures whether the player is swayed by a face, and that only
@@ -196,11 +257,26 @@ Exactly 3 evidence items and exactly 2 witnesses.
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Groq's 429 carries "try again in 1.75s". Believe it. */
+/**
+ * Whether a 429 is worth waiting out.
+ *
+ * A per-minute 429 clears in seconds and is worth retrying. A per-DAY 429 does
+ * not clear for hours, and retrying it four times just burns the clock while a
+ * player waits — the honest move is to fall back to the authored docket
+ * immediately and let them play.
+ */
+const RETRY_FLOOR_MS = 8_000;
+
 function retryAfterMs(message: string): number | null {
+  if (/per day|TPD|RPD/i.test(message)) return null; // no amount of patience fixes tomorrow
+
   const m = /try again in ([\d.]+)s/i.exec(message);
-  if (m?.[1]) return Math.ceil(Number(m[1]) * 1000) + 250;
-  return /rate.?limit|429/i.test(message) ? 2000 : null;
+  if (m?.[1]) {
+    const advised = Math.ceil(Number(m[1]) * 1000) + 250;
+    // Groq's advice is when the next *token* frees, not a whole case's worth.
+    return advised > 120_000 ? null : Math.max(RETRY_FLOOR_MS, advised);
+  }
+  return /rate.?limit|429/i.test(message) ? RETRY_FLOOR_MS : null;
 }
 
 /**
@@ -222,7 +298,9 @@ async function generateOne(ctx: GenerationContext, attempt = 0): Promise<Generat
         { role: 'user', content: 'Generate the next case file. Return only the JSON object.' },
       ],
       temperature: 0.9,
-      max_tokens: 3000,
+      // A case JSON lands around 1.2k tokens; reserving 3k just inflates the
+      // rate-limit accounting for nothing.
+      max_tokens: 2000,
       response_format: { type: 'json_object' },
     });
 
@@ -239,6 +317,24 @@ async function generateOne(ctx: GenerationContext, attempt = 0): Promise<Generat
       console.warn('[caseGenerator] content filter rejected a case');
       return attempt < MAX_ATTEMPTS ? generateOne(ctx, attempt + 1) : null;
     }
+
+    // The model reaches for "ambiguous" whenever it is allowed to, and an
+    // all-ambiguous docket freezes standing and locks the ladder. If it
+    // ignored the instruction, try again rather than accept a case that
+    // quietly breaks progression.
+    const isAmbiguous = parsed.data.correct_verdict === 'ambiguous';
+    if (isAmbiguous !== ctx.wantAmbiguous && attempt < MAX_ATTEMPTS) {
+      return generateOne(ctx, attempt + 1);
+    }
+    if (isAmbiguous !== ctx.wantAmbiguous) {
+      // Out of retries: rather than ship a case that lies about its own
+      // answer, take the verdict the evidence actually points at.
+      const strength = parsed.data.evidence_strength;
+      if (!ctx.wantAmbiguous && Math.abs(strength) >= 0.2) {
+        parsed.data.correct_verdict = strength > 0 ? 'guilty' : 'not_guilty';
+      }
+    }
+
     return parsed.data;
   } catch (err) {
     const message = (err as Error).message ?? '';
@@ -249,7 +345,7 @@ async function generateOne(ctx: GenerationContext, attempt = 0): Promise<Generat
       return generateOne(ctx, attempt + 1);
     }
 
-    console.error('[caseGenerator] groq error:', message.slice(0, 160));
+    console.error("[caseGenerator] groq error:", message.slice(0, 400));
     return null;
   }
 }
@@ -275,6 +371,7 @@ async function buildContext(
     characterPool,
     caseNumber,
     place,
+    wantAmbiguous: Math.random() < ambiguityTargetFor(caseNumber),
   };
 }
 
@@ -294,17 +391,54 @@ export async function refillCaseCache(
 ) {
   if (!groq) return; // seed docket needs no cache
 
+  // One refill per juror at a time.
+  //
+  // This is fire-and-forget from the verdict route, so without a lock every
+  // verdict starts another worker: ten verdicts leave ten overlapping refills
+  // racing to generate thirty cases, which saturates the token budget so
+  // completely that the *player's* next case 429s and drops to the fallback
+  // docket. The refill starves the thing it exists to feed. The lock expires
+  // on its own so a crashed worker cannot wedge the queue shut.
+  const lock = `refill-lock:${userId}`;
+  const got = await redis.set(lock, '1', 'EX', 180, 'NX').catch(() => null);
+  if (got !== 'OK') return;
+
+  try {
+    await doRefill(userId, caseNumber, city, place);
+  } finally {
+    await redis.del(lock).catch(() => {});
+  }
+}
+
+async function doRefill(userId: string, caseNumber: number, city: CityMetrics, place: PlaceContext) {
   const cached = await redis.llen(caseQueueKey(userId));
   if (cached >= REFILL_BELOW) return;
 
   const ctx = await buildContext(userId, caseNumber, city, place);
   const wanted = BATCH_SIZE - cached;
 
-  const results = await Promise.all(Array.from({ length: wanted }, () => generateOne(ctx)));
-  const good = results.filter((c): c is GeneratedCase => c !== null);
+  // Sequentially, not Promise.all.
+  //
+  // Firing five generations at once puts ~12k tokens on the wire in the same
+  // instant, which is the entire free-tier per-minute budget — every request
+  // 429s together and the whole batch falls through to the fallback docket.
+  // Nobody is waiting on this loop (it runs behind the verdict response), so
+  // spending a few seconds here costs the player nothing and costs the buffer
+  // everything if we skip it.
+  //
+  // Each case rolls its own answerability, or a whole buffer comes back the
+  // same shape.
+  for (let i = 0; i < wanted; i++) {
+    const generated = await generateOne({
+      ...ctx,
+      wantAmbiguous: Math.random() < ambiguityTargetFor(caseNumber + i),
+    });
 
-  if (good.length > 0) {
-    await redis.rpush(caseQueueKey(userId), ...good.map((c) => JSON.stringify(c)));
+    if (generated) {
+      await redis.rpush(caseQueueKey(userId), JSON.stringify(generated));
+    }
+    // Breathe between calls so a full refill does not trip the limiter.
+    if (i < wanted - 1) await sleep(SPACING_MS);
   }
 }
 

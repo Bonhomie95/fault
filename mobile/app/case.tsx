@@ -120,6 +120,11 @@ export default function CaseFile() {
               {activeCase.title.toUpperCase()}
             </Text>
             <Text style={styles.charge}>Charge: {activeCase.charge}</Text>
+            {/* The real court this sits in. The place is real; everyone in the
+                room is invented. */}
+            {activeCase.place.jurisdiction.length > 0 && (
+              <Text style={styles.jurisdiction}>{activeCase.place.jurisdiction}</Text>
+            )}
           </View>
           <Text style={[styles.clock, urgent && { color: accent }]}>
             {String(Math.floor(remaining / 60)).padStart(2, '0')}:
@@ -337,6 +342,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Palette.textMuted,
     marginTop: 3,
+  },
+  jurisdiction: {
+    fontFamily: Fonts.mono,
+    fontSize: 8,
+    letterSpacing: 1.2,
+    color: Palette.textFaint,
+    marginTop: 2,
   },
   clock: {
     fontFamily: Fonts.monoBold,

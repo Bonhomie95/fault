@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { StandingBar } from '@/components/StandingBar';
 import { CityScene } from '@/components/three/CityScene';
 import { Fonts, Palette } from '@/constants/theme';
 import { ApiError } from '@/lib/api';
@@ -17,7 +18,9 @@ import { useGame } from '@/store/game';
  */
 export default function Lobby() {
   const city = useGame((s) => s.city);
+  const standing = useGame((s) => s.standing);
   const refreshCity = useGame((s) => s.refreshCity);
+  const refreshStanding = useGame((s) => s.refreshStanding);
   const loadCase = useGame((s) => s.loadCase);
   const [loading, setLoading] = useState(false);
   const [gate, setGate] = useState<string | null>(null);
@@ -25,7 +28,8 @@ export default function Lobby() {
   useFocusEffect(
     useCallback(() => {
       void refreshCity();
-    }, [refreshCity]),
+      void refreshStanding();
+    }, [refreshCity, refreshStanding]),
   );
 
   const beginCase = useCallback(async () => {
@@ -66,6 +70,9 @@ export default function Lobby() {
               </Text>
             )}
           </View>
+
+          {/* Who you are and where you sit — the record, on the way in. */}
+          {standing && <StandingBar standing={standing} />}
 
           <Pressable
             style={styles.caseFile}
@@ -109,7 +116,16 @@ export default function Lobby() {
           )}
 
           <View style={styles.links}>
-            <LobbyLink label="Review past cases" onPress={() => router.push('/review')} />
+            <LobbyLink label="The career" onPress={() => router.push('/career')} />
+            {/* GDD Screen 3 — gated on rank, not on being right. */}
+            <LobbyLink
+              label="Review past cases"
+              locked={standing ? !standing.unlocks.caseArchive : false}
+              lockedNote={
+                standing ? `OPENS TO JURORS OF RANK ${standing.unlocks.caseArchive ? '' : '2'}` : undefined
+              }
+              onPress={() => router.push('/review')}
+            />
             <LobbyLink
               label="Juror record"
               locked={!recordUnlocked}
