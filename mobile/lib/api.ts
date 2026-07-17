@@ -28,20 +28,98 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  options: { method?: string; body?: unknown; jurorId?: string | null } = {},
-): Promise<T> {
-  const { method = 'GET', body, jurorId } = options;
+/**
+ * Tokens.
+ *
+ * The client used to send `x-juror-id: <cuid>` — a permanent credential that
+ * identified a whole career and never expired. Now it carries a 30-minute
+ * access token and refreshes it when the server says it has gone stale.
+ *
+ * Held in module scope and injected by the store on boot, so no screen has to
+ * know about tokens and no request has to be handed one.
+ */
+let accessToken: string | null = null;
+let refreshToken: string | null = null;
+let onSignedOut: (() => void) | null = null;
 
-  const res = await fetch(`${API_BASE}${path}`, {
+export function setTokens(tokens: { accessToken: string; refreshToken: string } | null) {
+  accessToken = tokens?.accessToken ?? null;
+  refreshToken = tokens?.refreshToken ?? null;
+}
+
+export function getTokens() {
+  return accessToken && refreshToken ? { accessToken, refreshToken } : null;
+}
+
+/** Called when the session is beyond saving and the player must sign in again. */
+export function setSignedOutHandler(handler: () => void) {
+  onSignedOut = handler;
+}
+
+/** Only ever one refresh in flight; a burst of 401s must not become a burst of
+ *  refreshes, each rotating the token out from under the last. */
+let refreshing: Promise<boolean> | null = null;
+
+async function refreshTokens(): Promise<boolean> {
+  if (!refreshToken) return false;
+  if (refreshing) return refreshing;
+
+  refreshing = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      setTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+      await persistTokens?.(data);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+
+  return refreshing;
+}
+
+/** The store hands us a way to write refreshed tokens back to secure storage. */
+let persistTokens: ((t: { accessToken: string; refreshToken: string }) => Promise<void>) | null = null;
+export function setTokenPersister(fn: typeof persistTokens) {
+  persistTokens = fn;
+}
+
+async function send(path: string, method: string, body?: unknown, auth = true): Promise<Response> {
+  return fetch(`${API_BASE}${path}`, {
     method,
     headers: {
       'content-type': 'application/json',
-      ...(jurorId ? { 'x-juror-id': jurorId } : {}),
+      ...(auth && accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
+}
+
+async function request<T>(
+  path: string,
+  options: { method?: string; body?: unknown; auth?: boolean } = {},
+): Promise<T> {
+  const { method = 'GET', body, auth = true } = options;
+
+  let res = await send(path, method, body, auth);
+
+  // One transparent retry after a refresh. An expired access token is the
+  // normal case every 30 minutes, not an error the player should ever see.
+  if (res.status === 401 && auth && refreshToken) {
+    if (await refreshTokens()) {
+      res = await send(path, method, body, auth);
+    } else {
+      onSignedOut?.();
+    }
+  }
 
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
@@ -132,12 +210,47 @@ export interface JurorRecord {
   cityTrajectory: Record<string, number>;
 }
 
+export type Entitlement =
+  | 'campaign'
+  | 'no_ads'
+  | 'pack_corporate'
+  | 'pack_cold_case'
+  | 'pack_political';
+
 export interface Session {
   userId: string;
   jurorName: string;
+  /** Always 120. The server owns it; this is display only. */
   clockSeconds: number;
-  trialUnlocked: boolean;
+  entitlements: Entitlement[];
+  merit: number;
   casesHeard?: number;
+}
+
+export interface StoreItem {
+  id: string;
+  title: string;
+  blurb: string;
+  kind: 'unlock' | 'pack' | 'currency';
+  priceMinor: number | null;
+  meritPrice: number | null;
+  meritGranted: number | null;
+  owned: boolean;
+  affordable: boolean;
+}
+
+export interface StoreView {
+  merit: number;
+  entitlements: Entitlement[];
+  rewardedAdsLeft: number;
+  rewardedAdMerit: number;
+  items: StoreItem[];
+}
+
+export interface AdPolicy {
+  showAds: boolean;
+  interstitialEveryNCases: number | null;
+  rewardedAvailable: boolean;
 }
 
 export type Tier = 'district' | 'state' | 'national' | 'supranational' | 'international' | 'world';
@@ -222,6 +335,11 @@ export interface SignInResult {
   returning: boolean;
   homeCountry?: string;
   homeDistrict?: string;
+  /** 30-minute bearer. */
+  accessToken: string;
+  /** Long-lived, rotated on every use, revocable server-side. */
+  refreshToken: string;
+  expiresInSeconds: number;
 }
 
 export const api = {
@@ -236,71 +354,106 @@ export const api = {
     token: string;
     jurorName?: string;
     country?: string;
-  }) => request<SignInResult>('/api/auth/sign-in', { method: 'POST', body }),
+    /** IANA zone, so the player's day ends at their midnight. */
+    timezone?: string;
+  }) => request<SignInResult>('/api/auth/sign-in', { method: 'POST', body, auth: false }),
 
   countries: () =>
     request<{ countries: { code: string; name: string; districts: string[] }[] }>(
       '/api/auth/countries',
     ),
 
-  standing: (jurorId: string) => request<Standing>('/api/standing', { jurorId }),
+  standing: () => request<Standing>('/api/standing'),
 
-  leaderboard: (jurorId: string, board: Board) =>
-    request<BoardView>(`/api/leaderboard?board=${board}`, { jurorId }),
+  leaderboard: (board: Board) =>
+    request<BoardView>(`/api/leaderboard?board=${board}`),
 
-  ladder: (jurorId: string) =>
+  ladder: () =>
     request<{ country: string; current: Tier; rungs: { tier: Tier; label: string; reached: boolean }[] }>(
       '/api/standing/ladder',
-      { jurorId },
     ),
 
-  promote: (jurorId: string) =>
+  promote: () =>
     request<{ promoted: Tier; standing: Standing }>('/api/standing/promote', {
       method: 'POST',
-      jurorId,
     }),
 
-  missions: (jurorId: string) =>
-    request<{ missions: Mission[] }>('/api/standing/missions', { jurorId }),
+  missions: () =>
+    request<{ missions: Mission[] }>('/api/standing/missions'),
 
-  claimMission: (jurorId: string, key: string) =>
+  claimMission: (key: string) =>
     request<{ xp: number; rank: number }>('/api/standing/missions/claim', {
       method: 'POST',
       body: { key },
-      jurorId,
     }),
 
-  jurisdictions: (jurorId: string) =>
-    request<JurisdictionsView>('/api/standing/jurisdictions', { jurorId }),
+  jurisdictions: () =>
+    request<JurisdictionsView>('/api/standing/jurisdictions'),
 
-  applyToJurisdiction: (jurorId: string, body: { country: string; tier: Tier }) =>
+  applyToJurisdiction: (body: { country: string; tier: Tier }) =>
     request<{ accepted: boolean; decisionText: string; standing: Standing }>(
       '/api/standing/jurisdictions/apply',
-      { method: 'POST', body, jurorId },
+      { method: 'POST', body },
     ),
 
   createSession: (jurorName: string) =>
     request<Session>('/api/session', { method: 'POST', body: { jurorName } }),
 
-  me: (jurorId: string) => request<Session>('/api/session/me', { jurorId }),
+  me: () => request<Session>('/api/session/me'),
 
-  updateSettings: (jurorId: string, body: { clockSeconds?: number; trialUnlocked?: boolean }) =>
+  updateSettings: (body: { clockSeconds?: number; trialUnlocked?: boolean }) =>
     request<{ clockSeconds: number; trialUnlocked: boolean }>('/api/session/me', {
       method: 'PATCH',
       body,
-      jurorId,
     }),
 
-  nextCase: (jurorId: string) => request<ClientCase>('/api/case/next', { jurorId }),
+  nextCase: () => request<ClientCase>('/api/case/next'),
 
-  submitVerdict: (
-    jurorId: string,
-    body: { caseId: string; verdict?: 'guilty' | 'not_guilty'; timeRemaining: number; wasHung?: boolean },
-  ) => request<VerdictResult>('/api/verdict', { method: 'POST', body, jurorId }),
+  /**
+   * Deliver a verdict.
+   *
+   * We send which case and which way, and nothing else. `timeRemaining` and
+   * `wasHung` used to travel from here and be believed — the server now
+   * measures both from when it served the case. The phone does not get a vote
+   * on how long the phone took.
+   */
+  submitVerdict: (body: { caseId: string; verdict?: 'guilty' | 'not_guilty' }) =>
+    request<VerdictResult>('/api/verdict', { method: 'POST', body }),
 
-  cityState: (jurorId: string) => request<CityState>('/api/city-state', { jurorId }),
+  cityState: () => request<CityState>('/api/city-state'),
 
-  review: (jurorId: string) => request<{ entries: ReviewEntry[] }>('/api/review', { jurorId }),
+  review: () => request<{ entries: ReviewEntry[] }>('/api/review'),
 
-  jurorRecord: (jurorId: string) => request<JurorRecord>('/api/juror-profile', { jurorId }),
+  jurorRecord: () => request<JurorRecord>('/api/juror-profile'),
+
+  // ---- Store ----
+
+  store: () => request<StoreView>('/api/store'),
+
+  /** Buy with Merit. The server prices it; we only name it. */
+  buyWithMerit: (sku: string) =>
+    request<{ sku: string; granted: Entitlement | null; meritBalance: number }>('/api/store/buy', {
+      method: 'POST',
+      body: { sku },
+    }),
+
+  restorePurchases: () =>
+    request<{ restored: number; entitlements: Entitlement[] }>('/api/store/restore', {
+      method: 'POST',
+    }),
+
+  adPolicy: () => request<AdPolicy>('/api/store/ads'),
+
+  claimAdReward: (viewId: string) =>
+    request<{ merit: number; awarded: number }>('/api/store/ad-reward', {
+      method: 'POST',
+      body: { viewId },
+    }),
+
+  // ---- Account ----
+
+  signOut: () => request<{ signedOut: boolean }>('/api/auth/sign-out', { method: 'POST' }),
+
+  /** Irreversible. Takes the career, the city, and every verdict with it. */
+  deleteAccount: () => request<{ deleted: boolean }>('/api/session/me', { method: 'DELETE' }),
 };

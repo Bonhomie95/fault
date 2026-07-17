@@ -22,7 +22,7 @@ export default function Review() {
       return;
     }
     api
-      .review(jurorId)
+      .review()
       .then((r) => setEntries(r.entries))
       .catch(() => setEntries([]));
   }, [jurorId]);

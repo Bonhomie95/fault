@@ -43,7 +43,7 @@ export default function Boards() {
     setLoading(true);
     youOffset.current = null;
     api
-      .leaderboard(jurorId, board)
+      .leaderboard(board)
       .then(setView)
       .catch(() => setView(null))
       .finally(() => setLoading(false));

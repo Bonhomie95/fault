@@ -41,12 +41,14 @@ export default function CaseFile() {
   const submitted = useRef(false);
 
   const submit = useCallback(
-    async (verdict: 'guilty' | 'not_guilty' | null, timeLeft: number) => {
+    async (verdict: 'guilty' | 'not_guilty' | null) => {
       if (submitted.current) return;
       submitted.current = true;
       setDelivering(true);
       try {
-        await deliverVerdict(verdict, Math.max(0, timeLeft));
+        // Only the direction travels. How long we took is the server's to
+        // measure — it has been counting since it served the case.
+        await deliverVerdict(verdict);
         router.replace('/verdict');
       } catch {
         submitted.current = false;
@@ -61,7 +63,13 @@ export default function CaseFile() {
     if (!activeCase) router.replace('/lobby');
   }, [activeCase]);
 
-  // The clock. Wall-clock based, so backgrounding the app cannot buy you time.
+  // The countdown.
+  //
+  // This is a DISPLAY of the server's clock, not the clock. `clockSeconds` is
+  // whatever the server said was left when it served the case — which, on a
+  // reload mid-case, is already partly spent. We count down from there so the
+  // number on screen matches the number the server will use, and we submit
+  // without claiming a time at all.
   useEffect(() => {
     if (!activeCase) return;
     const total = activeCase.clockSeconds;
@@ -80,8 +88,9 @@ export default function CaseFile() {
       if (left === 0) {
         clearInterval(id);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-        // Forced verdict. The server flips the coin and records it as hung.
-        void submit(null, 0);
+        // Forced verdict. The server flips the coin and records it as hung —
+        // and would do so anyway on lateness, whatever we sent.
+        void submit(null);
       }
     }, 1000);
 
@@ -182,13 +191,13 @@ export default function CaseFile() {
             label="GUILTY"
             accent={accent}
             disabled={delivering}
-            onConfirm={() => submit('guilty', remaining)}
+            onConfirm={() => submit('guilty')}
           />
           <VerdictButton
             label="NOT GUILTY"
             accent={accent}
             disabled={delivering}
-            onConfirm={() => submit('not_guilty', remaining)}
+            onConfirm={() => submit('not_guilty')}
           />
         </View>
       </SafeAreaView>

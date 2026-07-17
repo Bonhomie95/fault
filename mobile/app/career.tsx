@@ -36,14 +36,14 @@ export default function Career() {
     await refreshStanding();
 
     const [l, m] = await Promise.all([
-      api.ladder(jurorId).catch(() => null),
-      api.missions(jurorId).catch(() => null),
+      api.ladder().catch(() => null),
+      api.missions().catch(() => null),
     ]);
     if (l) setLadder(l.rungs);
     if (m) setMissions(m.missions);
 
     try {
-      setJurisdictions(await api.jurisdictions(jurorId));
+      setJurisdictions(await api.jurisdictions());
       setForeignLock(null);
     } catch (err) {
       // Locked is a normal state here, not a failure.
@@ -66,7 +66,7 @@ export default function Career() {
     setBusy(true);
     setNotice(null);
     try {
-      const r = await api.promote(jurorId);
+      const r = await api.promote();
       setNotice(`You now sit at ${r.standing.tierLabel}.`);
       await load();
     } catch (err) {
@@ -85,7 +85,7 @@ export default function Career() {
       if (!jurorId || busy) return;
       setBusy(true);
       try {
-        await api.claimMission(jurorId, key);
+        await api.claimMission(key);
         await load();
       } finally {
         setBusy(false);
@@ -100,7 +100,7 @@ export default function Career() {
       setBusy(true);
       setNotice(null);
       try {
-        const r = await api.applyToJurisdiction(jurorId, { country, tier: 'district' });
+        const r = await api.applyToJurisdiction({ country, tier: 'district' });
         setNotice(r.decisionText);
         await load();
       } catch {

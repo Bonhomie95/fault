@@ -85,9 +85,35 @@ export const MISSIONS: MissionDef[] = [
   },
 ];
 
-/** Local calendar day for the player. Streaks are a human thing, not a UTC thing. */
-export function dayKey(now = new Date()): string {
-  return now.toISOString().slice(0, 10);
+/**
+ * The player's own calendar day.
+ *
+ * This used to be `toISOString().slice(0,10)` — UTC — under a comment claiming
+ * it was local. It was not, and the consequence was that a juror in Lagos lost
+ * their streak at 1am and one in Chicago at 6pm, mid-evening, for no reason
+ * they could see. A streak is a promise about days, and a day is where the
+ * player is standing.
+ *
+ * `en-CA` because it formats as YYYY-MM-DD, which is what we store.
+ */
+export function dayKey(timezone = 'UTC', now = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now);
+  } catch {
+    // An unknown zone should cost the player a correct streak boundary, not
+    // their whole verdict.
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now);
+  }
 }
 
 export function weekKey(now = new Date()): string {
@@ -100,8 +126,14 @@ export function weekKey(now = new Date()): string {
   return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
-function periodFor(kind: MissionKind): string {
-  if (kind === 'daily') return dayKey();
+/**
+ * Which instance of a mission we are talking about.
+ *
+ * Daily missions reset at the player's midnight, not UTC's — the same reason
+ * streaks do. A player in Lagos should not watch today's docket reset at 1am.
+ */
+function periodFor(kind: MissionKind, timezone: string): string {
+  if (kind === 'daily') return dayKey(timezone);
   if (kind === 'weekly') return weekKey();
   return 'career';
 }
@@ -113,10 +145,10 @@ function periodFor(kind: MissionKind): string {
  */
 export async function recordDocketDay(userId: string): Promise<{ streak: number; isNewDay: boolean }> {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  const today = dayKey();
+  const today = dayKey(user.timezone);
   if (user.lastDocketDay === today) return { streak: user.currentStreak, isNewDay: false };
 
-  const yesterday = dayKey(new Date(Date.now() - 86400000));
+  const yesterday = dayKey(user.timezone, new Date(Date.now() - 86400000));
   const streak = user.lastDocketDay === yesterday ? user.currentStreak + 1 : 1;
 
   await prisma.user.update({
@@ -141,6 +173,10 @@ export interface VerdictSignal {
 
 /** Advance whatever this verdict earned. Direction of the verdict is ignored. */
 export async function tickMissions(userId: string, signal: VerdictSignal) {
+  const { timezone } = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { timezone: true },
+  });
   const used = signal.clockSeconds - signal.timeRemaining;
   const deliberated = !signal.wasHung && used >= signal.clockSeconds / 2;
   const decidedInTime = !signal.wasHung;
@@ -160,7 +196,7 @@ export async function tickMissions(userId: string, signal: VerdictSignal) {
     const inc = increments[def.key] ?? 0;
     if (inc === 0) continue;
 
-    const period = periodFor(def.kind);
+    const period = periodFor(def.kind, timezone);
     const existing = await prisma.missionProgress.findUnique({
       where: { userId_key_period: { userId, key: def.key, period } },
     });
@@ -185,13 +221,17 @@ export interface MissionView extends MissionDef {
 }
 
 export async function missionsFor(userId: string): Promise<MissionView[]> {
-  const periods = [dayKey(), weekKey(), 'career'];
+  const { timezone } = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { timezone: true },
+  });
+  const periods = [dayKey(timezone), weekKey(), 'career'];
   const rows = await prisma.missionProgress.findMany({
     where: { userId, period: { in: periods } },
   });
 
   return MISSIONS.map((def) => {
-    const row = rows.find((r) => r.key === def.key && r.period === periodFor(def.kind));
+    const row = rows.find((r) => r.key === def.key && r.period === periodFor(def.kind, timezone));
     const progress = row?.progress ?? 0;
     return {
       ...def,
@@ -207,7 +247,11 @@ export async function claimMission(userId: string, key: string): Promise<number>
   const def = MISSIONS.find((m) => m.key === key);
   if (!def) return 0;
 
-  const period = periodFor(def.kind);
+  const { timezone } = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { timezone: true },
+  });
+  const period = periodFor(def.kind, timezone);
   const row = await prisma.missionProgress.findUnique({
     where: { userId_key_period: { userId, key, period } },
   });

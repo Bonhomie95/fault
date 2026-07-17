@@ -83,6 +83,23 @@ export type GeneratedCase = z.infer<typeof generatedCaseSchema>;
 export type Evidence = z.infer<typeof evidenceSchema>;
 export type Witness = z.infer<typeof witnessSchema>;
 
+/**
+ * A structural fingerprint, deliberately blind to names and specifics.
+ * Two cases with the same key are the same case wearing different clothes —
+ * that is how the consistency probe works (GDD 2.5).
+ *
+ * This lives in domain, not in caseGenerator, because it is a pure function
+ * and caseGenerator opens a Redis connection at import time — anything that
+ * wants this fingerprint should not have to dial a database to get it.
+ */
+export function structureKeyFor(c: GeneratedCase): string {
+  const wealthBand = c.defendant.wealth <= 30 ? 'poor' : c.defendant.wealth >= 70 ? 'rich' : 'mid';
+  const strengthBand =
+    c.evidence_strength <= -0.4 ? 'defence' : c.evidence_strength >= 0.4 ? 'prosecution' : 'balanced';
+  const planted = c.evidence.some((e) => e.is_planted) ? 'planted' : 'clean';
+  return `${c.accent}:${wealthBand}:${strengthBand}:${planted}:${c.correct_verdict}`;
+}
+
 /** The shape the mobile client actually receives. Note what is absent:
  *  correct_verdict, evidence_strength, is_planted, and lie_tell never ship.
  *  The player is not allowed to know the answer. */

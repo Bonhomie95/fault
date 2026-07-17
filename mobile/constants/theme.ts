@@ -44,16 +44,22 @@ export const Fonts = {
   uiBold: 'Inter_700Bold',
 } as const;
 
-/** GDD 2.2 — the clock's escalation points, in seconds remaining. */
+/**
+ * GDD 2.2 — the clock's escalation points, in seconds remaining.
+ *
+ * `defaultSeconds` is display only: the real clock lives on the server
+ * (server/src/domain/clock.ts) and every case arrives carrying how much of it
+ * is left. This is the fallback for the split second before that lands.
+ *
+ * The accessibility tiers are gone — 120 for everything, everywhere.
+ */
 export const Clock = {
   /** low ambient tension tone begins */
   tensionAt: 15,
   /** haptic pulse every second */
   hapticAt: 5,
-  /** default deliberation window (GDD 2.1) */
+  /** The one window. Mirrors CLOCK_SECONDS on the server. */
   defaultSeconds: 120,
-  /** accessibility tiers — no penalty, no badge change (GDD 8, 12) */
-  accessibleTiers: [120, 180, 240] as const,
 } as const;
 
 export const Layout = {

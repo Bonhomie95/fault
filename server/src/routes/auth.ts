@@ -4,6 +4,9 @@ import { COUNTRIES, districtFor, profileFor } from '../domain/jurisdiction.js';
 import { prisma } from '../lib/prisma.js';
 import { verifyApple, verifyDevice, verifyGoogle, type VerifiedIdentity } from '../services/auth.js';
 import { getCityState } from '../services/cityState.js';
+import { issueTokens, revokeAll, rotateRefresh } from '../services/tokens.js';
+import { authLimiter } from '../middleware/limits.js';
+import { requireJuror } from '../middleware/requireJuror.js';
 
 export const authRouter = Router();
 
@@ -22,6 +25,9 @@ const signInSchema = z.object({
    * game collects and never uses.
    */
   country: z.string().length(2).optional(),
+  /** IANA zone from the device, so streaks and daily missions end at the
+   *  player's midnight rather than UTC's. */
+  timezone: z.string().max(64).optional(),
 });
 
 async function verify(provider: string, token: string): Promise<VerifiedIdentity> {
@@ -36,14 +42,14 @@ async function verify(provider: string, token: string): Promise<VerifiedIdentity
  * One endpoint for both: the provider identity is the key, and whether a
  * juror already exists behind it is our problem, not the client's.
  */
-authRouter.post('/sign-in', async (req, res) => {
+authRouter.post('/sign-in', authLimiter, async (req, res) => {
   const parsed = signInSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'invalid sign-in payload' });
     return;
   }
 
-  const { provider, token, jurorName, country } = parsed.data;
+  const { provider, token, jurorName, country, timezone } = parsed.data;
 
   let identity: VerifiedIdentity;
   try {
@@ -63,9 +69,19 @@ authRouter.post('/sign-in', async (req, res) => {
   if (existing) {
     await prisma.user.update({
       where: { id: existing.userId },
-      data: { lastSeenAt: new Date() },
+      data: {
+        lastSeenAt: new Date(),
+        // People travel and phones move; keep the day boundary where they are.
+        ...(timezone ? { timezone } : {}),
+      },
     });
-    res.json({ userId: existing.userId, jurorName: existing.user.jurorName, returning: true });
+
+    res.json({
+      userId: existing.userId,
+      jurorName: existing.user.jurorName,
+      returning: true,
+      ...(await issueTokens(existing.userId)),
+    });
     return;
   }
 
@@ -85,6 +101,7 @@ authRouter.post('/sign-in', async (req, res) => {
       homeCountry: code,
       currentCountry: code,
       localeTag,
+      timezone: timezone ?? 'UTC',
       cityState: { create: {} },
       jurorProfile: { create: {} },
       identities: {
@@ -105,7 +122,36 @@ authRouter.post('/sign-in', async (req, res) => {
     returning: false,
     homeCountry: code,
     homeDistrict: district,
+    ...(await issueTokens(user.id)),
   });
+});
+
+/**
+ * Trade a refresh token for a new pair.
+ *
+ * Access tokens last 30 minutes; without this the player is signed out
+ * mid-case twice an hour.
+ */
+authRouter.post('/refresh', async (req, res) => {
+  const parsed = z.object({ refreshToken: z.string().min(10) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'refreshToken required' });
+    return;
+  }
+
+  const pair = await rotateRefresh(parsed.data.refreshToken);
+  if (!pair) {
+    res.status(401).json({ error: 'refresh_invalid', message: 'Sign in again.' });
+    return;
+  }
+
+  res.json(pair);
+});
+
+/** Sign out everywhere. */
+authRouter.post('/sign-out', requireJuror, async (req, res) => {
+  await revokeAll(req.juror.userId);
+  res.json({ signedOut: true });
 });
 
 /** Countries the game can actually stage a case in. */

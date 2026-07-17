@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Witness } from '../domain/case.js';
+import { CLOCK_SECONDS, clockFor } from '../domain/clock.js';
 import { xpForVerdict, trustForVerdict } from '../domain/progression.js';
+import { meritForStreak, meritForVerdict } from '../domain/store.js';
 import { prisma } from '../lib/prisma.js';
 import { requireJuror } from '../middleware/requireJuror.js';
+import { grantMerit } from '../services/economy.js';
 import { placeForUser, refillCaseCache } from '../services/caseGenerator.js';
 import { awardXp } from '../services/progression.js';
 import { recordDocketDay, tickMissions } from '../services/missions.js';
@@ -17,12 +20,20 @@ export const verdictRouter = Router();
 
 const REVIEW_INTERVAL = 10;
 
+/**
+ * What the client is allowed to tell us: which case, and which way.
+ *
+ * `timeRemaining` and `wasHung` are deliberately NOT here any more. They used
+ * to be sent by the phone and believed, which meant a player could claim 119
+ * seconds left on every verdict — maximum XP and Merit — or declare their own
+ * hung verdicts. Both are now derived from `Case.servedAt` on this server.
+ * The client reports a decision; it does not report the circumstances of the
+ * decision.
+ */
 const submitSchema = z.object({
   caseId: z.string().min(1),
-  /** Absent verdict = the clock ran out and the player never chose. */
+  /** Absent = the player let the clock run out without choosing. */
   verdict: z.enum(['guilty', 'not_guilty']).optional(),
-  timeRemaining: z.number().int().min(0),
-  wasHung: z.boolean().default(false),
 });
 
 /** Themes carried by the case, used to decide who can echo back later. */
@@ -48,7 +59,7 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
     return;
   }
 
-  const { caseId, timeRemaining } = parsed.data;
+  const { caseId } = parsed.data;
 
   const caseData = await prisma.case.findFirst({
     where: { id: caseId, userId },
@@ -64,12 +75,23 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
     return;
   }
 
-  // GDD 2.2 — at zero the game decides for you, and records it as hung.
-  // The server, not the client, performs the coin flip: a forced verdict is a
-  // consequence, and consequences are not the client's to author.
-  const ranOut = parsed.data.wasHung || !parsed.data.verdict || timeRemaining <= 0;
-  const verdict = parsed.data.verdict ?? (Math.random() < 0.5 ? 'guilty' : 'not_guilty');
-  const wasHung = ranOut && !parsed.data.verdict;
+  // ---- The clock, from the only place that knows ----
+  //
+  // Measured from when we served the case. If the window has closed, it is a
+  // hung verdict no matter what the player just tapped — arriving late is the
+  // same as not arriving, and that is the deal the game makes in GDD 2.2.
+  const clock = clockFor(caseData.servedAt);
+  const timeRemaining = clock.remaining;
+
+  const tooLate = clock.expired;
+  const neverChose = !parsed.data.verdict;
+  const wasHung = tooLate || neverChose;
+
+  // The coin flip stays here. A forced verdict is a consequence, and
+  // consequences are not the client's to author.
+  const verdict = wasHung
+    ? (Math.random() < 0.5 ? 'guilty' : 'not_guilty')
+    : parsed.data.verdict!;
 
   // 1. Record the verdict, along with what it will eventually cost.
   //
@@ -77,7 +99,6 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
   // the player whether they were right the instant they tapped, which is the
   // one thing this game refuses to do. It settles at the review break, next
   // to the outcome that explains it (see progression.settleTrust).
-  const outcomeText = await writeOutcome(caseData, verdict, wasHung);
   const trustDelta = trustForVerdict({
     verdict,
     correctVerdict: caseData.correctVerdict,
@@ -86,27 +107,45 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
   const xpAwarded = xpForVerdict({
     tier: caseData.tier,
     wasHung,
-    timeRemaining: wasHung ? 0 : timeRemaining,
-    clockSeconds: user.clockSeconds,
+    timeRemaining,
+    clockSeconds: CLOCK_SECONDS,
   });
+  const meritAwarded = meritForVerdict({ wasHung, timeRemaining, clockSeconds: CLOCK_SECONDS });
 
-  await prisma.verdictRecord.create({
+  const record = await prisma.verdictRecord.create({
     data: {
       userId,
       caseId,
       verdict,
       timeRemaining: wasHung ? 0 : timeRemaining,
       wasHung,
-      outcomeText,
+      // outcomeText is written later, off the hot path — see below.
+      outcomeText: null,
       trustDelta,
       xpAwarded,
     },
   });
 
-  // XP is service, so it lands immediately and spoils nothing.
+  // XP and Merit are service, so they land immediately and spoil nothing:
+  // neither can see whether the verdict was right.
   const { rank, promoted } = await awardXp(userId, xpAwarded);
-  await recordDocketDay(userId);
-  await tickMissions(userId, { verdict, wasHung, timeRemaining, clockSeconds: user.clockSeconds });
+  const merit = await grantMerit(userId, meritAwarded, 'case_heard', caseId);
+
+  const streak = await recordDocketDay(userId);
+  if (streak.isNewDay && streak.streak > 1) {
+    await grantMerit(userId, meritForStreak(streak.streak), 'streak', String(streak.streak));
+  }
+  await tickMissions(userId, { verdict, wasHung, timeRemaining, clockSeconds: CLOCK_SECONDS });
+
+  // The outcome line ("Rearrested eight months later.") is generated by Groq,
+  // and the player does not read it for another ten cases — so it has no
+  // business blocking the verdict screen, which is the most dramatic beat in
+  // the game. Fire it behind the response.
+  void writeOutcome(caseData, verdict, wasHung)
+    .then((text) =>
+      prisma.verdictRecord.update({ where: { id: record.id }, data: { outcomeText: text } }),
+    )
+    .catch((err: Error) => console.error('[outcome]', err.message));
 
   // Community consensus counter for the "63% of players convicted" beat.
   await prisma.case.update({
@@ -190,5 +229,7 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
     xpAwarded,
     rank,
     promoted,
+    meritAwarded,
+    merit,
   });
 });

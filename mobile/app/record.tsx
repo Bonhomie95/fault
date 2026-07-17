@@ -23,7 +23,7 @@ export default function Record() {
       return;
     }
     api
-      .jurorRecord(jurorId)
+      .jurorRecord()
       .then(setRecord)
       .catch(() => setLocked(true));
   }, [jurorId]);

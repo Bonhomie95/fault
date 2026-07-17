@@ -75,6 +75,35 @@ enum MissionKind {
   career
 }
 
+/// Things a juror can own. Deliberately small, and deliberately none of them
+/// touch rank, trust, verdicts or the clock — see domain/store.ts.
+enum Entitlement {
+  campaign      // the full docket, past the 10-case trial
+  no_ads        // forever
+  pack_corporate
+  pack_cold_case
+  pack_political
+}
+
+enum PurchaseSource {
+  store   // real money, via a validated receipt
+  merit   // earned by playing
+  grant   // support, promo, restore
+}
+
+/// Where Merit came from. Every one of these is service or attention —
+/// none is "was your verdict right".
+enum MeritReason {
+  case_heard
+  mission
+  streak
+  rewarded_ad
+  purchase
+  refund
+  spend
+  grant
+}
+
 model User {
   id           String   @id @default(cuid())
   /// Chosen by the player, always. The OAuth provider's display name is never
@@ -83,10 +112,19 @@ model User {
   createdAt    DateTime @default(now())
   lastSeenAt   DateTime @default(now())
 
-  // Accessibility: the deliberation clock in seconds. Default 120 (GDD 2.1).
-  // Extended tiers carry no penalty and no badge change (GDD 8, Settings).
-  clockSeconds Int      @default(120)
-  trialUnlocked Boolean @default(false) // false = 10-case trial
+  /// The player's own timezone (IANA, e.g. "Europe/Oslo"), captured at
+  /// sign-in. Streaks are a human thing: a day ends at the player's midnight,
+  /// not at UTC's.
+  timezone     String   @default("UTC")
+
+  /// Merit — earned by service, spendable in the store. Never buys standing.
+  /// The ledger in MeritEntry is the truth; this is the running total.
+  merit        Int      @default(0)
+
+  // NOTE: trialUnlocked is gone. Entitlements are rows now, and rows are only
+  // ever written by a validated receipt or an earned purchase — never by the
+  // client asking nicely. See the audit: the old boolean was settable straight
+  // from PATCH /api/session/me, which made the paid campaign free.
 
   // ---- Where you are from ----
   // Set once at swearing-in from device location (or a picker if declined).
@@ -114,6 +152,11 @@ model User {
   lastDocketDay String? // YYYY-MM-DD in the player's own day, for streaks
 
   identities   AuthIdentity[]
+  refreshTokens RefreshToken[]
+  entitlements UserEntitlement[]
+  purchases    Purchase[]
+  meritLedger  MeritEntry[]
+  adEvents     AdEvent[]
   applications JurisdictionApplication[]
   missions     MissionProgress[]
   cases        Case[]
@@ -123,6 +166,96 @@ model User {
   jurorProfile JurorProfile?
 
   @@map("users")
+}
+
+/// Refresh tokens, stored hashed — a database dump should not be a pile of
+/// working credentials. Rotated on every use so a stolen one surfaces loudly.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+/// What a juror owns. One row per thing; the row IS the entitlement.
+model UserEntitlement {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  entitlement Entitlement
+  source      PurchaseSource
+  grantedAt   DateTime    @default(now())
+
+  @@unique([userId, entitlement])
+  @@index([userId])
+  @@map("user_entitlements")
+}
+
+/// Every purchase, money or Merit, for support and for restore.
+model Purchase {
+  id          String         @id @default(cuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sku         String
+  source      PurchaseSource
+  /// Minor units (cents/øre) at time of sale, or 0 for a Merit purchase.
+  amountMinor Int            @default(0)
+  currency    String         @default("USD")
+  meritSpent  Int            @default(0)
+
+  /// The store's own transaction id. Unique so a replayed receipt cannot be
+  /// redeemed twice — the single most attacked path in any IAP flow.
+  transactionId String?      @unique
+  platform    String?        // "ios" | "android"
+  createdAt   DateTime       @default(now())
+
+  @@index([userId])
+  @@map("purchases")
+}
+
+/// The Merit ledger. Append-only: the balance is derived from this, so a bug
+/// in a grant is auditable rather than invisible.
+model MeritEntry {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Positive earns, negative spends.
+  delta     Int
+  reason    MeritReason
+  /// What caused it — a case id, a mission key, a sku.
+  reference String?
+  balance   Int         // running balance after this entry, for cheap audit
+  createdAt DateTime    @default(now())
+
+  @@index([userId, createdAt])
+  @@map("merit_entries")
+}
+
+/// Rewarded-ad views. Rate-limited server-side: a rewarded ad pays Merit, so
+/// without a cap it is a faucet anyone can hold open.
+model AdEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  kind      String   // "rewarded" | "interstitial"
+  /// The ad network's own view id, so one view cannot be claimed twice.
+  viewId    String?  @unique
+  meritPaid Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("ad_events")
 }
 
 /// One row per provider per user, so a juror can attach both Apple and Google
@@ -258,6 +391,19 @@ model Case {
   /// Community consensus for the "63% of players convicted" beat (GDD 11.4).
   consensusGuilty     Int            @default(0)
   consensusNotGuilty  Int            @default(0)
+
+  /// When this case was first handed to the player. THE CLOCK.
+  ///
+  /// The deliberation window is measured from here, on the server, and the
+  /// client's claimed timeRemaining is ignored entirely. Previously the clock
+  /// existed only in the phone, which meant a player could report 119 seconds
+  /// left on every verdict, or reload the screen to read the dossier at
+  /// leisure. The 120 seconds is the whole game; it cannot live somewhere the
+  /// player can edit it.
+  ///
+  /// Null until first served. Re-serving the same pending case does NOT reset
+  /// it — that was the reload exploit.
+  servedAt            DateTime?
 
   createdAt           DateTime       @default(now())
 

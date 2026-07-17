@@ -1,5 +1,5 @@
 import type { Tier } from '@prisma/client';
-import { ACCENTS, generatedCaseSchema, type GeneratedCase } from '../domain/case.js';
+import { ACCENTS, generatedCaseSchema, structureKeyFor, type GeneratedCase } from '../domain/case.js';
 import type { CityMetrics } from '../domain/city.js';
 import { aiEnabled, availableCount, classifyError, GROQ_MODEL, leaseKey } from '../lib/groq.js';
 import { caseQueueKey, redis } from '../lib/redis.js';
@@ -9,6 +9,10 @@ import { localizeCase } from './localizeCase.js';
 import { echoRolesFor, getEligibleCharacters, type PoolCharacter } from './characterPool.js';
 import { computeJurorStats, weakestBias } from './jurorProfile.js';
 import { seedCaseFor, SEED_CASES } from './seedCases.js';
+
+// Re-exported for existing callers; it lives in domain/case now because it is
+// a pure function and this module dials Redis on import.
+export { structureKeyFor };
 
 /**
  * Buffer sizing, against two real limits.
@@ -51,19 +55,6 @@ function violatesPolicy(c: GeneratedCase): boolean {
     ...c.witnesses.map((w) => w.testimony),
   ].join(' ');
   return BLOCKED_PATTERNS.some((p) => p.test(haystack));
-}
-
-/**
- * A structural fingerprint, deliberately blind to names and specifics.
- * Two cases with the same key are the same case wearing different clothes —
- * that is how the consistency probe works (GDD 2.5).
- */
-export function structureKeyFor(c: GeneratedCase): string {
-  const wealthBand = c.defendant.wealth <= 30 ? 'poor' : c.defendant.wealth >= 70 ? 'rich' : 'mid';
-  const strengthBand =
-    c.evidence_strength <= -0.4 ? 'defence' : c.evidence_strength >= 0.4 ? 'prosecution' : 'balanced';
-  const planted = c.evidence.some((e) => e.is_planted) ? 'planted' : 'clean';
-  return `${c.accent}:${wealthBand}:${strengthBand}:${planted}:${c.correct_verdict}`;
 }
 
 /** Where this case is heard. Real institutions; fictional people. */

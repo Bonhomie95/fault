@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import type { Tier } from '@prisma/client';
 import type { ClientCase, Evidence, Witness } from '../domain/case.js';
+import { clockFor } from '../domain/clock.js';
+import { CAMPAIGN_TRIAL_CASES } from '../domain/store.js';
+import { hasEntitlement } from '../services/economy.js';
+import { generationLimiter } from '../middleware/limits.js';
 import { prisma } from '../lib/prisma.js';
 import { accentHexFor, nextCase, placeForUser, structureKeyFor } from '../services/caseGenerator.js';
 import { tierLabel } from '../domain/jurisdiction.js';
@@ -95,32 +99,39 @@ async function findReturning(userId: string, names: string[], excludeCaseId: str
   return known;
 }
 
-caseRouter.get('/next', requireJuror, async (req, res) => {
+caseRouter.get('/next', requireJuror, generationLimiter, async (req, res) => {
   const { userId, user } = req.juror;
 
   // An unjudged case is still open — hand back the same one rather than
   // letting a reload skip a defendant.
+  //
+  // Crucially, servedAt is NOT reset here. Re-requesting a case you already
+  // hold returns it with whatever time is actually left; reloading the screen
+  // used to hand back a fresh 120 seconds with the dossier already read.
   const pending = await prisma.case.findFirst({
     where: { userId, verdict: { is: null } },
     orderBy: { caseNumber: 'asc' },
   });
 
   if (pending) {
+    const clock = clockFor(pending.servedAt);
     const names = [
       pending.defendantName,
       ...(pending.witnesses as Witness[]).map((w) => w.name),
     ];
     const returning = await findReturning(userId, names, pending.id);
-    res.json(toClientCase(pending, user.clockSeconds, returning));
+    res.json(toClientCase(pending, clock.remaining, returning));
     return;
   }
 
   const heard = await prisma.verdictRecord.count({ where: { userId } });
+  const hasCampaign = await hasEntitlement(userId, 'campaign');
 
-  if (!user.trialUnlocked && heard >= TRIAL_CASE_LIMIT) {
+  // The gate reads an entitlement row now, not a boolean the client could set.
+  if (!hasCampaign && heard >= CAMPAIGN_TRIAL_CASES) {
     res.status(402).json({
       error: 'trial_complete',
-      message: 'The trial docket is closed. Unlock the full campaign to continue.',
+      message: 'The trial docket is closed. Open the full docket to continue.',
       casesHeard: heard,
     });
     return;
@@ -164,5 +175,12 @@ caseRouter.get('/next', requireJuror, async (req, res) => {
   const names = [generated.defendant.name, ...generated.witnesses.map((w) => w.name)];
   const returning = await findReturning(userId, names, created.id);
 
-  res.json(toClientCase(created, user.clockSeconds, returning));
+  // The clock starts the moment the case leaves the building. There is no
+  // "ready?" prompt in the fiction (GDD 2.2) and there is no grace here.
+  const served = await prisma.case.update({
+    where: { id: created.id },
+    data: { servedAt: new Date() },
+  });
+
+  res.json(toClientCase(served, clockFor(served.servedAt).remaining, returning));
 });

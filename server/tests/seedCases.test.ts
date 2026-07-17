@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { generatedCaseSchema } from '../src/domain/case.js';
-import { structureKeyFor } from '../src/services/caseGenerator.js';
+import { generatedCaseSchema, structureKeyFor } from '../src/domain/case.js';
 import { SEED_CASES, seedCaseFor } from '../src/services/seedCases.js';
 
 /**

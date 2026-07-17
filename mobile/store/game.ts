@@ -2,8 +2,12 @@ import { create } from 'zustand';
 import {
   api,
   ApiError,
+  setSignedOutHandler,
+  setTokenPersister,
+  setTokens,
   type CityState,
   type ClientCase,
+  type Entitlement,
   type Session,
   type Standing,
   type VerdictResult,
@@ -12,13 +16,15 @@ import type { ProviderToken } from '@/lib/auth';
 import { resolveCountry } from '@/lib/location';
 import { storage } from '@/lib/storage';
 
-const JUROR_KEY = 'fault.juror.id';
+const TOKEN_KEY = 'fault.session.tokens';
 
 interface GameState {
   jurorId: string | null;
   jurorName: string | null;
+  /** Display only; the server owns the real one. Always 120. */
   clockSeconds: number;
-  trialUnlocked: boolean;
+  entitlements: Entitlement[];
+  merit: number;
   hasBriefed: boolean;
 
   activeCase: ClientCase | null;
@@ -39,10 +45,13 @@ interface GameState {
   signInExisting: (token: ProviderToken) => Promise<boolean>;
   refreshStanding: () => Promise<void>;
   loadCase: () => Promise<void>;
-  deliverVerdict: (verdict: 'guilty' | 'not_guilty' | null, timeRemaining: number) => Promise<VerdictResult>;
+  /** null = the clock ran out and the player never chose. */
+  deliverVerdict: (verdict: 'guilty' | 'not_guilty' | null) => Promise<VerdictResult>;
   refreshCity: () => Promise<void>;
-  setClockSeconds: (seconds: number) => Promise<void>;
   markBriefed: () => void;
+  signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
+  refreshWallet: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -50,7 +59,8 @@ export const useGame = create<GameState>((set, get) => ({
   jurorId: null,
   jurorName: null,
   clockSeconds: 120,
-  trialUnlocked: false,
+  entitlements: [],
+  merit: 0,
   hasBriefed: false,
 
   activeCase: null,
@@ -62,36 +72,53 @@ export const useGame = create<GameState>((set, get) => ({
   bootstrapping: true,
   error: null,
 
-  /** Re-attach the juror this device already belongs to, if any. */
+  /**
+   * Re-attach this device's session.
+   *
+   * Restores the token pair into the API layer and installs the hooks it needs
+   * to persist a rotated refresh token and to tell us when the session is
+   * beyond saving.
+   */
   bootstrap: async () => {
+    setTokenPersister(async (t) => {
+      await storage.set(TOKEN_KEY, JSON.stringify(t));
+    });
+    setSignedOutHandler(() => {
+      void storage.remove(TOKEN_KEY);
+      set({ jurorId: null, jurorName: null, activeCase: null, standing: null });
+    });
+
     try {
-      const stored = await storage.get(JUROR_KEY);
-      if (!stored) {
+      const raw = await storage.get(TOKEN_KEY);
+      if (!raw) {
         set({ bootstrapping: false });
         return;
       }
 
-      const session: Session = await api.me(stored);
+      setTokens(JSON.parse(raw));
+      const session: Session = await api.me();
       set({
         jurorId: session.userId,
         jurorName: session.jurorName,
         clockSeconds: session.clockSeconds,
-        trialUnlocked: session.trialUnlocked,
+        entitlements: session.entitlements,
+        merit: session.merit,
         // A returning juror has already read the letter.
         hasBriefed: (session.casesHeard ?? 0) > 0,
         bootstrapping: false,
       });
     } catch {
-      // A juror id that the server no longer knows is worse than none.
-      await storage.remove(JUROR_KEY).catch(() => {});
+      // Tokens the server will not honour are worse than none.
+      setTokens(null);
+      await storage.remove(TOKEN_KEY).catch(() => {});
       set({ bootstrapping: false });
     }
   },
 
   /**
    * First time through. Resolves the country on-device (coordinates never
-   * leave the phone — see lib/location) and swears the juror in under the
-   * name they chose, not the one their Apple or Google account carries.
+   * leave the phone — see lib/location) and swears the juror in under the name
+   * they chose, not the one their Apple or Google account carries.
    */
   swearInWith: async (token: ProviderToken, jurorName: string) => {
     const country = await resolveCountry();
@@ -101,11 +128,14 @@ export const useGame = create<GameState>((set, get) => ({
       token: token.token,
       jurorName,
       ...(country.code ? { country: country.code } : {}),
+      // The player's own day is where streaks and daily missions end.
+      timezone: deviceTimezone(),
     });
 
-    await storage.set(JUROR_KEY, result.userId);
+    await adoptSession(result);
     set({ jurorId: result.userId, jurorName: result.jurorName, hasBriefed: false });
     await get().refreshStanding();
+    await get().refreshWallet();
   },
 
   /**
@@ -114,10 +144,15 @@ export const useGame = create<GameState>((set, get) => ({
    */
   signInExisting: async (token: ProviderToken) => {
     try {
-      const result = await api.signIn({ provider: token.provider, token: token.token });
-      await storage.set(JUROR_KEY, result.userId);
+      const result = await api.signIn({
+        provider: token.provider,
+        token: token.token,
+        timezone: deviceTimezone(),
+      });
+      await adoptSession(result);
       set({ jurorId: result.userId, jurorName: result.jurorName, hasBriefed: true });
       await get().refreshStanding();
+      await get().refreshWallet();
       return true;
     } catch (err) {
       if (err instanceof ApiError && err.code === 'juror_name_required') return false;
@@ -126,57 +161,93 @@ export const useGame = create<GameState>((set, get) => ({
   },
 
   refreshStanding: async () => {
-    const { jurorId } = get();
-    if (!jurorId) return;
+    if (!get().jurorId) return;
     try {
-      set({ standing: await api.standing(jurorId) });
+      set({ standing: await api.standing() });
     } catch {
       // Standing is a display concern; never block the room on it.
     }
   },
 
+  refreshWallet: async () => {
+    if (!get().jurorId) return;
+    try {
+      const session = await api.me();
+      set({ merit: session.merit, entitlements: session.entitlements });
+    } catch {
+      /* display only */
+    }
+  },
+
   loadCase: async () => {
-    const { jurorId } = get();
-    if (!jurorId) throw new Error('not sworn in');
-    const activeCase = await api.nextCase(jurorId);
+    if (!get().jurorId) throw new Error('not sworn in');
+    const activeCase = await api.nextCase();
     set({ activeCase });
   },
 
   /**
-   * A null verdict means the clock ran out. The server decides what a forced
-   * verdict becomes — the client never flips that coin.
+   * Deliver a verdict.
+   *
+   * We send the case and the direction. Nothing else: the server measures how
+   * long we took and decides whether the clock beat us, because those are
+   * facts about us and we are not a trustworthy witness to them.
    */
-  deliverVerdict: async (verdict, timeRemaining) => {
-    const { jurorId, activeCase } = get();
-    if (!jurorId || !activeCase) throw new Error('no case in progress');
+  deliverVerdict: async (verdict) => {
+    const { activeCase } = get();
+    if (!activeCase) throw new Error('no case in progress');
 
-    const result = await api.submitVerdict(jurorId, {
+    const result = await api.submitVerdict({
       caseId: activeCase.id,
       ...(verdict ? { verdict } : {}),
-      timeRemaining,
-      wasHung: verdict === null,
     });
 
     set({ lastResult: result, lastAccent: activeCase.accent, city: result.city, activeCase: null });
-    // Rank may have moved; standing is cheap and the lobby shows it.
     void get().refreshStanding();
+    void get().refreshWallet();
     return result;
   },
 
   refreshCity: async () => {
-    const { jurorId } = get();
-    if (!jurorId) return;
-    const city = await api.cityState(jurorId);
-    set({ city });
-  },
-
-  setClockSeconds: async (seconds: number) => {
-    const { jurorId } = get();
-    if (!jurorId) return;
-    await api.updateSettings(jurorId, { clockSeconds: seconds });
-    set({ clockSeconds: seconds });
+    if (!get().jurorId) return;
+    set({ city: await api.cityState() });
   },
 
   markBriefed: () => set({ hasBriefed: true }),
+
+  signOut: async () => {
+    try {
+      await api.signOut();
+    } catch {
+      // Signing out locally matters more than telling the server about it.
+    }
+    setTokens(null);
+    await storage.remove(TOKEN_KEY).catch(() => {});
+    set({ jurorId: null, jurorName: null, activeCase: null, standing: null, city: null });
+  },
+
+  deleteAccount: async () => {
+    await api.deleteAccount();
+    setTokens(null);
+    await storage.remove(TOKEN_KEY).catch(() => {});
+    set({ jurorId: null, jurorName: null, activeCase: null, standing: null, city: null });
+  },
+
   clearError: () => set({ error: null }),
 }));
+
+/** The device's IANA zone, e.g. "Europe/Oslo". */
+function deviceTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+async function adoptSession(result: { accessToken: string; refreshToken: string }) {
+  setTokens(result);
+  await storage.set(
+    TOKEN_KEY,
+    JSON.stringify({ accessToken: result.accessToken, refreshToken: result.refreshToken }),
+  );
+}
