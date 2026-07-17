@@ -1,5 +1,18 @@
-import 'dotenv/config';
+import { config } from 'dotenv';
 import { z } from 'zod';
+
+/**
+ * Load .env.test under test, .env otherwise.
+ *
+ * Not cosmetic. Plain `dotenv/config` loads .env unconditionally, and dotenv
+ * fills in any variable the process does not already have — so a test that
+ * cleared GROQ_API_KEY still got GROQ_API_KEY_1..5 from the developer's real
+ * .env and quietly spent live tokens against a 100k/day budget. The test run
+ * that caught this logged "key …nFvA spent for the day".
+ *
+ * A test suite must not be able to cost money.
+ */
+config({ path: process.env.NODE_ENV === 'test' ? '.env.test' : '.env' });
 
 const schema = z.object({
   DATABASE_URL: z.string().min(1),
@@ -39,6 +52,26 @@ const schema = z.object({
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
 
+  /**
+   * Accept unverified purchase receipts.
+   *
+   * Deliberately NOT the same switch as ALLOW_DEV_AUTH. "Let me sign in
+   * without an Apple account" and "let me have the paid campaign for free" are
+   * different risks, and they were conflated: every non-production environment
+   * with dev auth on would hand out entitlements to any made-up transaction
+   * id. A staging server with real testers on it was giving the game away.
+   */
+  ALLOW_FAKE_PURCHASES: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+
+  /** Rate limiting off, for tests that legitimately hammer a route. */
+  DISABLE_RATE_LIMITS: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+
   /** Signs access tokens. Must be long and secret; there is no safe default. */
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
 
@@ -47,6 +80,18 @@ const schema = z.object({
    * request origin", which is only tolerable in development — enforced below.
    */
   CORS_ORIGINS: z.string().default(''),
+
+  // ---- Payments ----
+  // Without these, receipt verification refuses everything. That is the correct
+  // behaviour for a server that cannot tell a real purchase from a made-up one:
+  // an unverifiable receipt is not a borderline case to wave through.
+  /** App Store Connect: issuer UUID, key id, and the .p8 private key. */
+  APPLE_ISSUER_ID: z.string().default(''),
+  APPLE_KEY_ID: z.string().default(''),
+  APPLE_PRIVATE_KEY: z.string().default(''),
+  /** Google Play: a service account JSON with the androidpublisher scope. */
+  GOOGLE_SERVICE_ACCOUNT_JSON: z.string().default(''),
+  ANDROID_PACKAGE_NAME: z.string().default(''),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -66,6 +111,8 @@ export const isProduction = env.NODE_ENV === 'production';
 if (isProduction) {
   const problems: string[] = [];
   if (env.ALLOW_DEV_AUTH) problems.push('ALLOW_DEV_AUTH must be false in production');
+  if (env.ALLOW_FAKE_PURCHASES) problems.push('ALLOW_FAKE_PURCHASES must be false in production');
+  if (env.DISABLE_RATE_LIMITS) problems.push('DISABLE_RATE_LIMITS must be false in production');
   if (!env.CORS_ORIGINS) problems.push('CORS_ORIGINS must be set in production');
   if (env.JWT_SECRET.length < 48) problems.push('JWT_SECRET should be at least 48 chars in production');
   if (problems.length > 0) {

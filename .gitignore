@@ -10,7 +10,14 @@ expo-env.d.ts
 
 
 # Secrets — the Groq key and DB URL live here
-.env
+# Secrets. The bare `.env` rule this replaces matched ONLY the exact name, so
+# .env.local / .env.production / .env.staging were all one `git add -A` away
+# from being published. Ignore the whole family, then re-admit the two that are
+# deliberately public: .env.example is a template, .env.test is localhost and a
+# fake secret and exists so anyone can run the suite.
+.env*
+!.env.example
+!.env.test
 
 # Prisma generated client
 server/generated/

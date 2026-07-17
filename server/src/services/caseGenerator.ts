@@ -677,16 +677,6 @@ function enforceCast(
   return rewritten;
 }
 
-/** Does this case actually contain that person, by name? */
-function mentions(c: GeneratedCase, name: string): boolean {
-  if (c.defendant.name === name) return true;
-  if (c.witnesses.some((w) => w.name === name)) return true;
-  if (c.character_pool_additions.some((p) => p.name === name)) return true;
-  // A mention anywhere in the prose counts: an echo can be someone spoken
-  // about rather than someone present.
-  return JSON.stringify(c).includes(name);
-}
-
 /**
  * Is a twin due?
  *

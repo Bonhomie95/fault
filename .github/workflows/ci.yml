@@ -1,0 +1,117 @@
+name: CI
+
+# Everything in this repo has been verified by hand against a running server,
+# once, by one person. This is the part that does it again on every push.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: server — typecheck & tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: fault
+          POSTGRES_PASSWORD: fault
+          POSTGRES_DB: fault_test
+        ports: ['5432:5432']
+        # Without a health check the migration races the database's first boot.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://fault:fault@localhost:5432/fault_test?schema=public
+      REDIS_URL: redis://localhost:6379/1
+      JWT_SECRET: ci-secret-that-is-comfortably-long-enough-for-hs256-signing
+      ALLOW_DEV_AUTH: 'true'
+      DISABLE_RATE_LIMITS: 'true'
+      # Deliberately absent: ALLOW_FAKE_PURCHASES, so CI proves the store still
+      # refuses an unverified receipt. And no Groq keys — a test suite must not
+      # be able to spend money, and this one did before it was sealed.
+      GROQ_API_KEY: ''
+      GROQ_API_KEYS: ''
+
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - run: npm ci
+
+      # The tests import the app, which reads .env.test at boot.
+      - name: Write .env.test
+        run: |
+          cat > .env.test <<'EOF'
+          DATABASE_URL="postgresql://fault:fault@localhost:5432/fault_test?schema=public"
+          REDIS_URL="redis://localhost:6379/1"
+          JWT_SECRET="ci-secret-that-is-comfortably-long-enough-for-hs256-signing"
+          ALLOW_DEV_AUTH="true"
+          DISABLE_RATE_LIMITS="true"
+          NODE_ENV="test"
+          CORS_ORIGINS=""
+          GROQ_API_KEY=""
+          GROQ_API_KEYS=""
+          PORT=4999
+          EOF
+
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  mobile:
+    name: mobile — typecheck & lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - run: npm ci
+
+      # The sound assets are generated, not committed as source of truth — this
+      # proves the generator still runs and still produces every file the app
+      # requires. A missing require() would only surface at runtime otherwise.
+      - name: Generate sound assets
+        run: node scripts/generate-sounds.mjs
+
+      - run: npx tsc --noEmit
+      - run: npx expo lint
