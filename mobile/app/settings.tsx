@@ -3,7 +3,8 @@ import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Clock, Fonts, Palette } from '@/constants/theme';
+import { Button } from '@/components/Button';
+import { Clock, Fonts, Palette, Space } from '@/constants/theme';
 import { api } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play, refreshBedVolume } from '@/lib/sound';
@@ -238,16 +239,21 @@ export default function Settings() {
               Your juror name appears on the public registry. Your country is stored; your location
               is not.
             </Text>
-            <Pressable onPress={onDelete} disabled={busy} style={styles.danger}>
-              <Text style={styles.dangerText}>DELETE THIS JUROR</Text>
-            </Pressable>
+            {/* Destructive, separated, and in the semantic danger colour —
+                never adjacent to the ordinary actions above it. */}
+            <Button
+              label="Delete this juror"
+              onPress={onDelete}
+              disabled={busy}
+              variant="danger"
+              hint="This cannot be undone"
+              style={styles.dangerBtn}
+            />
           </View>
         </ScrollView>
 
         <View style={styles.footer}>
-          <Pressable onPress={() => router.back()} style={styles.close} accessibilityRole="button">
-            <Text style={styles.closeText}>CLOSE</Text>
-          </Pressable>
+          <Button label="Close" onPress={() => router.back()} variant="primary" />
         </View>
       </SafeAreaView>
     </View>
@@ -263,6 +269,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+// The last of the bracket buttons. `[ Sign out ]` was the whole affordance.
 function Action({
   label,
   onPress,
@@ -272,19 +279,11 @@ function Action({
   onPress: () => void;
   disabled?: boolean;
 }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={[styles.action, disabled && styles.actionDisabled]}
-      accessibilityRole="button"
-    >
-      <Text style={styles.actionText}>[ {label} ]</Text>
-    </Pressable>
-  );
+  return <Button label={label} onPress={onPress} disabled={disabled} variant="secondary" />;
 }
 
 const styles = StyleSheet.create({
+  dangerBtn: { marginTop: Space.md },
   root: { flex: 1, backgroundColor: Palette.bg },
   safe: { flex: 1 },
   content: { padding: 22, gap: 26 },

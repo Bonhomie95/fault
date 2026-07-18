@@ -113,7 +113,14 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
   });
   const meritAwarded = meritForVerdict({ wasHung, timeRemaining, clockSeconds: CLOCK_SECONDS });
 
-  const record = await prisma.verdictRecord.create({
+  // The findFirst check above is a courtesy, not the guarantee: two taps that
+  // arrive together both pass it. VerdictRecord.caseId is unique, so the
+  // database is the thing that actually enforces one verdict per case — but
+  // without this catch the loser of that race got a 500 and a stack trace for
+  // what is simply "you already decided this one".
+  let record;
+  try {
+    record = await prisma.verdictRecord.create({
     data: {
       userId,
       caseId,
@@ -125,7 +132,14 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
       trustDelta,
       xpAwarded,
     },
-  });
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code === 'P2002') {
+      res.status(409).json({ error: 'verdict already delivered on this case' });
+      return;
+    }
+    throw err;
+  }
 
   // XP and Merit are service, so they land immediately and spoil nothing:
   // neither can see whether the verdict was right.

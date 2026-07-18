@@ -20,6 +20,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
+import { CourtError } from '@/components/CourtError';
 import { Palette } from '@/constants/theme';
 import { initSound } from '@/lib/sound';
 import { useGame } from '@/store/game';
@@ -88,4 +89,14 @@ export default function RootLayout() {
       </Stack>
     </GestureHandlerRootView>
   );
+}
+
+/**
+ * expo-router renders this instead of a subtree that threw.
+ *
+ * Exported from the root layout, so it covers every screen in the app. Without
+ * it a render error is a blank screen in a release build with no way back.
+ */
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  return <CourtError error={error} retry={retry} />;
 }

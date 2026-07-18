@@ -12,6 +12,16 @@ function resolveBaseUrl(): string {
   const host = hostUri?.split(':')[0];
   if (host) return `http://${host}:4000`;
 
+  // A release build has no Metro host to borrow, so reaching here means
+  // EXPO_PUBLIC_API_URL was never set — and the alternative is an app that
+  // ships pointing at localhost and fails every request on every device with
+  // no clue why. Fail loudly at startup instead of mysteriously at runtime.
+  if (!__DEV__) {
+    throw new Error(
+      'EXPO_PUBLIC_API_URL is not set. A release build cannot infer the API host.',
+    );
+  }
+
   return 'http://localhost:4000';
 }
 
@@ -56,6 +66,17 @@ export function setSignedOutHandler(handler: () => void) {
   onSignedOut = handler;
 }
 
+/**
+ * How long we will wait before deciding the network is not coming back.
+ *
+ * fetch has no default timeout — on a flaky connection a request hangs until
+ * the OS gives up, which can be minutes. Every call site here puts a Busy
+ * scrim over the screen that eats input while it waits, so an unbounded fetch
+ * is an app that is indistinguishable from frozen. Fifteen seconds is longer
+ * than any healthy request and short enough to still feel like an answer.
+ */
+const TIMEOUT_MS = 15_000;
+
 /** Only ever one refresh in flight; a burst of 401s must not become a burst of
  *  refreshes, each rotating the token out from under the last. */
 let refreshing: Promise<boolean> | null = null;
@@ -65,9 +86,15 @@ async function refreshTokens(): Promise<boolean> {
   if (refreshing) return refreshing;
 
   refreshing = (async () => {
+    // Its own timeout, and not via send(): send() attaches the access token we
+    // are here precisely because it has expired. An unbounded refresh would
+    // hang the retry of every request behind it.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
       const res = await fetch(`${API_BASE}/api/auth/refresh`, {
         method: 'POST',
+        signal: controller.signal,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
       });
@@ -79,6 +106,7 @@ async function refreshTokens(): Promise<boolean> {
     } catch {
       return false;
     } finally {
+      clearTimeout(timer);
       refreshing = null;
     }
   })();
@@ -93,14 +121,29 @@ export function setTokenPersister(fn: typeof persistTokens) {
 }
 
 async function send(path: string, method: string, body?: unknown, auth = true): Promise<Response> {
-  return fetch(`${API_BASE}${path}`, {
-    method,
-    headers: {
-      'content-type': 'application/json',
-      ...(auth && accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    return await fetch(`${API_BASE}${path}`, {
+      method,
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        ...(auth && accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch (err) {
+    // An abort and a dead radio are the same thing to the player: the court
+    // could not be reached. Give both a message they can act on rather than
+    // "Aborted" or "Network request failed".
+    if ((err as Error).name === 'AbortError') {
+      throw new ApiError(0, 'timeout', 'The court did not answer. Check your connection.');
+    }
+    throw new ApiError(0, 'offline', 'Could not reach the court. Check your connection.');
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function request<T>(
@@ -122,10 +165,31 @@ async function request<T>(
   }
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
+
+  // Not everything that answers is our server. A proxy 502, a captive portal
+  // or a CDN error page all return HTML, and JSON.parse on HTML throws a
+  // SyntaxError that is not an ApiError — so it escapes every `instanceof
+  // ApiError` check in the app and surfaces as an unhandled crash instead of
+  // "the court could not be reached".
+  let data: Record<string, unknown> = {};
+  if (text) {
+    try {
+      data = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new ApiError(
+        res.status,
+        'bad_response',
+        'The court sent something we could not read.',
+      );
+    }
+  }
 
   if (!res.ok) {
-    throw new ApiError(res.status, data.error ?? 'unknown', data.message ?? data.error ?? 'Request failed');
+    throw new ApiError(
+      res.status,
+      (data.error as string) ?? 'unknown',
+      (data.message as string) ?? (data.error as string) ?? 'Request failed',
+    );
   }
 
   return data as T;

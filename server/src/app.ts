@@ -10,6 +10,7 @@ import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
 import { env, isProduction } from './lib/env.js';
+import { log, requestLog } from './lib/log.js';
 import { globalLimiter } from './middleware/limits.js';
 import { aiEnabled, availableCount, keyCount } from './lib/groq.js';
 import { prisma } from './lib/prisma.js';
@@ -59,6 +60,7 @@ app.use(
 );
 
 app.use(express.json({ limit: '256kb' }));
+app.use(requestLog);
 app.use(globalLimiter);
 
 app.get('/health', async (_req, res) => {
@@ -101,9 +103,22 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'not found' });
 });
 
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('[error]', err);
-  res.status(500).json({ error: 'internal error' });
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  const id = (req as Request & { id?: string }).id;
+
+  // CORS rejections are a client configuration problem, not a server fault,
+  // and logging them at error level buries real 500s in noise from scanners.
+  if (err.message === 'origin not allowed') {
+    log.warn('cors rejected', { id, origin: req.header('origin') });
+    res.status(403).json({ error: 'origin_not_allowed' });
+    return;
+  }
+
+  // The stack goes to the log, never to the client: a stack trace names file
+  // paths, package versions and query shapes, which is free reconnaissance.
+  // The request id goes to both, so a bug report can be tied to a log line.
+  log.error('unhandled', { id, err: err.message, stack: err.stack });
+  res.status(500).json({ error: 'internal_error', requestId: id });
 });
 
 export { app };

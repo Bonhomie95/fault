@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import { env } from '../lib/env.js';
+import { log } from '../lib/log.js';
 import { prisma } from '../lib/prisma.js';
 
 /**
@@ -84,21 +85,49 @@ export async function verifyAccessToken(token: string): Promise<string | null> {
 /**
  * Trade a refresh token for a new pair, rotating it.
  *
- * The old token is consumed. If a stolen refresh token is used, the real
- * player's next refresh fails and they are signed out — which is noisy, and
- * noisy is what you want: silent theft is the bad outcome.
+ * Rotation alone is not theft detection, which is what this used to assume.
+ * The old code treated an already-revoked token as an ordinary failure and
+ * returned null: the victim was signed out, the thief kept the token they had
+ * rotated into, and nothing anywhere recorded that it had happened.
+ *
+ * A revoked-but-not-expired token being presented has exactly two causes. A
+ * benign race — the client fired two refreshes and one lost — or someone is
+ * replaying a stolen token. The two are indistinguishable at this layer, and
+ * only one of them is dangerous, so it is treated as the dangerous one: every
+ * token for that juror is revoked, which logs both the thief and the victim
+ * out and forces a real provider sign-in that an attacker cannot complete.
+ *
+ * The cost of being wrong is one unexpected sign-in screen. The cost of the
+ * other mistake is a permanently stolen account.
  */
 export async function rotateRefresh(refreshToken: string): Promise<TokenPair | null> {
   const row = await prisma.refreshToken.findUnique({
     where: { tokenHash: hash(refreshToken) },
   });
 
-  if (!row || row.revokedAt || row.expiresAt < new Date()) return null;
+  if (!row) return null;
 
-  await prisma.refreshToken.update({
-    where: { id: row.id },
+  if (row.revokedAt) {
+    log.warn('refresh token reuse — revoking all sessions', {
+      userId: row.userId,
+      tokenId: row.id,
+      revokedAt: row.revokedAt.toISOString(),
+    });
+    await revokeAll(row.userId);
+    return null;
+  }
+
+  if (row.expiresAt < new Date()) return null;
+
+  // Conditional update, so two simultaneous refreshes cannot both rotate the
+  // same token: the loser matches zero rows and is treated as reuse on its
+  // next attempt rather than being handed a second valid pair.
+  const consumed = await prisma.refreshToken.updateMany({
+    where: { id: row.id, revokedAt: null },
     data: { revokedAt: new Date() },
   });
+
+  if (consumed.count === 0) return null;
 
   return issueTokens(row.userId);
 }

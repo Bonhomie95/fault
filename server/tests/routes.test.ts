@@ -105,6 +105,27 @@ describe('tokens', () => {
     assert.equal(replay.status, 401);
   });
 
+  it('treats a replayed refresh token as theft and kills the whole family', async () => {
+    const { refreshToken } = await swearIn('routes-reuse');
+
+    // Normal rotation. The player now holds `second`.
+    const first = await api().post('/api/auth/refresh').send({ refreshToken });
+    assert.equal(first.status, 200);
+    const second = first.body.refreshToken as string;
+
+    // Someone replays the token that was already spent. Rotation alone would
+    // just fail this one request and let the holder of `second` carry on — so
+    // a thief who rotated first would keep the account.
+    const replay = await api().post('/api/auth/refresh').send({ refreshToken });
+    assert.equal(replay.status, 401);
+
+    // The point of the fix: the currently-valid token is dead too. Both
+    // parties are logged out and must sign in with a provider again, which an
+    // attacker cannot do.
+    const after = await api().post('/api/auth/refresh').send({ refreshToken: second });
+    assert.equal(after.status, 401, 'reuse must revoke every session, not just the replayed one');
+  });
+
   it('kills every token when the juror signs out', async () => {
     const { accessToken, refreshToken } = await swearIn('routes-signout');
     assert.equal((await api().post('/api/auth/sign-out').set(auth(accessToken))).status, 200);
