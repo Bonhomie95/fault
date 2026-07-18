@@ -103,6 +103,15 @@ async function appleServerToken(): Promise<string> {
     .sign(key);
 }
 
+const APPLE_PROD = 'https://api.storekit.itunes.apple.com';
+const APPLE_SANDBOX = 'https://api.storekit-sandbox.itunes.apple.com';
+
+async function appleFetch(host: string, transactionId: string): Promise<Response> {
+  return fetch(`${host}/inApps/v1/transactions/${encodeURIComponent(transactionId)}`, {
+    headers: { Authorization: `Bearer ${await appleServerToken()}` },
+  });
+}
+
 /**
  * Ask Apple what this transaction actually is.
  *
@@ -114,14 +123,24 @@ async function appleServerToken(): Promise<string> {
  * response, which arrives signed and over TLS, and never from the client's.
  */
 async function appleServerCheck(claim: ReceiptClaim): Promise<ReceiptVerdict> {
-  const host = env.NODE_ENV === 'production'
-    ? 'https://api.storekit.itunes.apple.com'
-    : 'https://api.storekit-sandbox.itunes.apple.com';
+  // Ask production first, then sandbox if production has never heard of this
+  // transaction.
+  //
+  // This used to pick one host from NODE_ENV, which would have failed App
+  // Review — and failing App Review is not a bug you find in testing, it is a
+  // rejection weeks later. Apple's reviewers test with SANDBOX purchases
+  // against whatever server the submitted build points at, which is
+  // production. A sandbox transaction id does not exist in production, so
+  // every purchase the reviewer attempted would have been refused, and the
+  // app rejected for a broken store.
+  //
+  // The order matters the other way too: asking sandbox first would mean real
+  // paying customers wait on a doomed request before the real one.
+  let res = await appleFetch(APPLE_PROD, claim.transactionId);
 
-  const res = await fetch(
-    `${host}/inApps/v1/transactions/${encodeURIComponent(claim.transactionId)}`,
-    { headers: { Authorization: `Bearer ${await appleServerToken()}` } },
-  );
+  if (res.status === 404) {
+    res = await appleFetch(APPLE_SANDBOX, claim.transactionId);
+  }
 
   if (!res.ok) return { valid: false, reason: `apple ${res.status}` };
 
