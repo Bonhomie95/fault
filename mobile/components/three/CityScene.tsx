@@ -1,7 +1,9 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import type { Group, Mesh, PointLight } from 'three';
 import type { CityState } from '@/lib/api';
 import { Canvas, useFrame } from '@/lib/r3f';
+import { glUsable } from './glCapability';
 
 /**
  * Orun City.
@@ -237,16 +239,34 @@ function CityModel({ city }: { city: CityState }) {
 }
 
 export function CityScene({ city }: { city: CityState }) {
+  // See components/three/glCapability. A context that cannot do float colour
+  // buffers renders this scene with every lit surface missing, and the lobby
+  // is stacked with cards anyway — an empty night is a better backdrop than a
+  // half-drawn city.
+  const [usable, setUsable] = useState<boolean | null>(null);
+
   return (
-    <Canvas
-      shadows
-      camera={{ position: [0, 3.4, 4.6], fov: 38, near: 0.1, far: 40 }}
-      gl={{ antialias: true }}
-      style={{ flex: 1 }}
-      onCreated={({ camera }) => camera.lookAt(0, 0.3, 0)}
-    >
-      <color attach="background" args={['#0D0D0D']} />
-      <CityModel city={city} />
-    </Canvas>
+    <View style={styles.night}>
+      {usable !== false && (
+        <Canvas
+          shadows
+          camera={{ position: [0, 3.4, 4.6], fov: 38, near: 0.1, far: 40 }}
+          gl={{ antialias: true }}
+          style={{ flex: 1 }}
+          onCreated={({ camera, gl }) => {
+            camera.lookAt(0, 0.3, 0);
+            setUsable(glUsable(gl));
+          }}
+        >
+          <color attach="background" args={['#0D0D0D']} />
+          <CityModel city={city} />
+        </Canvas>
+      )}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  // Matches the scene's own clear colour, so nothing changes where GL works.
+  night: { ...StyleSheet.absoluteFillObject, backgroundColor: '#0D0D0D' },
+});

@@ -134,31 +134,24 @@ export async function addToCharacterPool(
   //
   // Record everyone; decide who may return later.
 
+  // One upsert per person, against the (userId, name) unique constraint.
+  //
+  // This was findFirst-then-create-or-update, which is a read-then-write race:
+  // two concurrent verdicts naming the same person both saw "no row" and both
+  // created one. The result is not a harmless duplicate — it is a person split
+  // in two. Half their echoes resolve to one row and half to the other, their
+  // fate and echoCount diverge, and because a NAME is the Echo System's
+  // identity key, "PREVIOUSLY BEFORE YOU" starts naming someone the player
+  // has never met.
+  //
+  // The database enforces the rule now (see the @@unique in schema.prisma);
+  // this is simply the graceful path to the same outcome.
   for (const person of people) {
     const fate: CharacterFate = person.name === defendantName ? defendantFate : 'untried';
 
-    const existing = await prisma.character.findFirst({
-      where: { userId, name: person.name },
-    });
-
-    if (existing) {
-      // They were already in the city — this is a return, not a debut.
-      await prisma.character.update({
-        where: { id: existing.id },
-        data: {
-          lastUsedCase: originCaseNumber,
-          echoCount: { increment: 1 },
-          // A defendant's fate is the strongest thing about them; keep it
-          // rather than flattening it back to untried on a later cameo.
-          fate: fate === 'untried' ? existing.fate : fate,
-          relevanceScore: { increment: 1 },
-        },
-      });
-      continue;
-    }
-
-    await prisma.character.create({
-      data: {
+    await prisma.character.upsert({
+      where: { userId_name: { userId, name: person.name } },
+      create: {
         userId,
         name: person.name,
         role: person.role,
@@ -170,6 +163,17 @@ export async function addToCharacterPool(
         lastUsedCase: originCaseNumber,
         // A defendant you judged is more memorable than a witness you skimmed.
         relevanceScore: person.role === 'defendant' ? 3 : 1,
+      },
+      update: {
+        // They were already in the city — this is a return, not a debut.
+        lastUsedCase: originCaseNumber,
+        echoCount: { increment: 1 },
+        relevanceScore: { increment: 1 },
+        // A defendant's fate is the strongest thing about them, so a later
+        // cameo as a witness must not flatten it back to untried. Only a fate
+        // that actually says something overwrites the stored one — which is
+        // why this is conditional rather than a plain assignment.
+        ...(fate === 'untried' ? {} : { fate }),
       },
     });
   }

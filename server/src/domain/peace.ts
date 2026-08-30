@@ -39,7 +39,18 @@ export function peaceIndex(city: CityMetrics): number {
   return Math.max(0, Math.min(100, raw));
 }
 
-/** The same SQL, for ranking in the database rather than in memory. */
+/**
+ * The same formula in SQL.
+ *
+ * No longer used to rank. The boards read `city_state."peaceIndex"`, which is
+ * this value stored and indexed — ranking one player used to mean computing
+ * this expression for every city in the world and sorting them, per request.
+ *
+ * It survives for the one job that still needs it: backfilling that column in
+ * a migration, and re-deriving it if the weights above ever change. Keep it in
+ * step with peaceIndex() — they are the same statement said twice, and a
+ * migration written against a stale copy would silently mis-rank everybody.
+ */
 export const PEACE_SQL = `
   ((100 - cs."crimeRate") * ${PEACE_WEIGHTS.crime}
  + cs."judicialTrust"     * ${PEACE_WEIGHTS.trust}

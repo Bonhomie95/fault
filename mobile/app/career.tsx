@@ -1,11 +1,10 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
 import { ApiError, api, type JurisdictionsView, type Mission, type Tier } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
@@ -132,11 +131,11 @@ export default function Career() {
 
           {standing ? <StandingBar standing={standing} /> : <ActivityIndicator color={Palette.text} />}
 
-          {notice && (
-            <Animated.Text entering={FadeIn} style={styles.notice}>
-              {notice}
-            </Animated.Text>
-          )}
+          {/* NOT an entering animation. See app/lobby.tsx: a Reanimated
+              `entering` on a notice like this one leaves it at
+              `visibility: hidden` on web, forever — the player taps and is
+              told nothing. */}
+          {notice && <Text style={styles.notice}>{notice}</Text>}
 
           {/* ---- The ladder ---- */}
           <Section title="THE LADDER">
@@ -154,7 +153,15 @@ export default function Career() {
             {standing?.promotion && (
               <View style={styles.promotion}>
                 {standing.promotion.eligible ? (
-                  <Pressable onPress={onPromote} disabled={busy} style={styles.promoteButton}>
+                  <Pressable
+                    onPress={onPromote}
+                    disabled={busy}
+                    style={styles.promoteButton}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Apply to sit at ${standing.promotion.tierLabel} level`}
+                    accessibilityState={{ disabled: busy }}
+                    hitSlop={8}
+                  >
                     <Text style={styles.promoteText}>
                       ASK TO SIT AT {standing.promotion.tierLabel.toUpperCase()}
                     </Text>
@@ -198,7 +205,15 @@ export default function Career() {
                     {Math.min(m.progress, m.target)}/{m.target}
                   </Text>
                   {m.complete && !m.claimed && (
-                    <Pressable onPress={() => onClaim(m.key)} disabled={busy} style={styles.claim}>
+                    <Pressable
+                      onPress={() => onClaim(m.key)}
+                      disabled={busy}
+                      style={styles.claim}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Claim ${m.xp} experience for completing: ${m.title}`}
+                      accessibilityState={{ disabled: busy }}
+                      hitSlop={8}
+                    >
                       <Text style={styles.claimText}>CLAIM {m.xp}</Text>
                     </Pressable>
                   )}
@@ -232,6 +247,10 @@ export default function Career() {
                 onPress={() => onApply(c.code)}
                 disabled={busy}
                 style={styles.country}
+                accessibilityRole="button"
+                accessibilityLabel={`Apply to sit on the bench in ${c.name}`}
+                accessibilityState={{ disabled: busy }}
+                hitSlop={6}
               >
                 <Text style={styles.countryName}>{c.name}</Text>
                 <Text style={styles.countryApply}>APPLY</Text>
@@ -241,7 +260,13 @@ export default function Career() {
         </ScrollView>
 
         <View style={styles.footer}>
-          <Pressable onPress={() => router.replace('/lobby')} style={styles.back}>
+          <Pressable
+            onPress={() => router.replace('/lobby')}
+            style={styles.back}
+            accessibilityRole="button"
+            accessibilityLabel="Back to the docket"
+            hitSlop={8}
+          >
             <Text style={styles.backText}>BACK TO DOCKET</Text>
           </Pressable>
         </View>
@@ -279,13 +304,13 @@ const styles = StyleSheet.create({
   section: { gap: 8 },
   sectionTitle: {
     fontFamily: Fonts.mono,
-    fontSize: 8,
+    fontSize: Type.micro,
     letterSpacing: 2.4,
     color: Palette.textMuted,
     marginBottom: 2,
   },
   rung: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 3 },
-  rungMark: { fontFamily: Fonts.mono, fontSize: 10, color: Palette.textFaint },
+  rungMark: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Palette.textFaint },
   rungMarkOn: { color: '#1D7E6A' },
   rungLabel: { fontFamily: Fonts.mono, fontSize: 12, color: Palette.textFaint },
   rungLabelOn: { color: Palette.text },
@@ -299,7 +324,7 @@ const styles = StyleSheet.create({
   },
   promoteText: { fontFamily: Fonts.uiBold, fontSize: 11, letterSpacing: 1.8, color: '#1D7E6A' },
   blockedTitle: { fontFamily: Fonts.mono, fontSize: 11, color: Palette.textMuted },
-  blocked: { fontFamily: Fonts.mono, fontSize: 10, lineHeight: 17, color: Palette.textFaint },
+  blocked: { fontFamily: Fonts.mono, fontSize: Type.micro, lineHeight: 17, color: Palette.textFaint },
   mission: {
     backgroundColor: Palette.surface,
     borderWidth: 1,
@@ -310,12 +335,12 @@ const styles = StyleSheet.create({
   },
   missionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   missionTitle: { fontFamily: Fonts.displayRegular, fontSize: 15, color: Palette.text, flex: 1 },
-  missionKind: { fontFamily: Fonts.mono, fontSize: 7, letterSpacing: 1.4, color: Palette.textFaint },
-  missionDesc: { fontFamily: Fonts.mono, fontSize: 10, lineHeight: 16, color: Palette.textMuted },
+  missionKind: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.4, color: Palette.textFaint },
+  missionDesc: { fontFamily: Fonts.mono, fontSize: Type.micro, lineHeight: 16, color: Palette.textMuted },
   missionFoot: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   missionTrack: { flex: 1, height: 2, backgroundColor: Palette.hairline },
   missionFill: { height: 2, backgroundColor: '#1D7E6A' },
-  missionCount: { fontFamily: Fonts.mono, fontSize: 9, color: Palette.textMuted },
+  missionCount: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Palette.textMuted },
   claim: {
     borderWidth: 1,
     borderColor: '#D4860A',
@@ -323,8 +348,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 2,
   },
-  claimText: { fontFamily: Fonts.mono, fontSize: 8, letterSpacing: 1, color: '#D4860A' },
-  claimed: { fontFamily: Fonts.mono, fontSize: 8, letterSpacing: 1, color: Palette.textFaint },
+  claimText: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1, color: '#D4860A' },
+  claimed: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1, color: Palette.textFaint },
   locked: { fontFamily: Fonts.mono, fontSize: 11, lineHeight: 18, color: Palette.textFaint },
   application: {
     borderLeftWidth: 2,
@@ -333,10 +358,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     gap: 4,
   },
-  applicationStatus: { fontFamily: Fonts.monoBold, fontSize: 10, letterSpacing: 1 },
+  applicationStatus: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1 },
   accepted: { color: '#1D7E6A' },
   rejected: { color: '#C23B22' },
-  decision: { fontFamily: Fonts.mono, fontSize: 10, lineHeight: 17, color: Palette.textMuted },
+  decision: { fontFamily: Fonts.mono, fontSize: Type.micro, lineHeight: 17, color: Palette.textMuted },
   country: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -346,7 +371,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Palette.hairline,
   },
   countryName: { fontFamily: Fonts.mono, fontSize: 12, color: Palette.text },
-  countryApply: { fontFamily: Fonts.mono, fontSize: 8, letterSpacing: 1.4, color: Palette.textMuted },
+  countryApply: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.4, color: Palette.textMuted },
   footer: { paddingHorizontal: 20, paddingBottom: 12 },
   back: {
     borderWidth: 1,

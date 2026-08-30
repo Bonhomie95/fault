@@ -13,7 +13,8 @@ import {
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { NewspaperScene } from '@/components/three/NewspaperScene';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
+import { api, ApiError } from '@/lib/api';
 import {
   googleClientId,
   isAppleAvailable,
@@ -21,6 +22,7 @@ import {
   signInWithDevice,
   signInWithGoogle,
   type ProviderToken,
+  type SignInNonce,
 } from '@/lib/auth';
 import { localNewspaper } from '@/lib/press';
 import { useGame } from '@/store/game';
@@ -78,12 +80,22 @@ export default function ColdOpen() {
    * happens to have on file.
    */
   const authenticate = useCallback(
-    async (get: () => Promise<ProviderToken>) => {
+    /**
+     * @param get  Opens a provider's sheet. It is handed a way to ASK for a
+     *             nonce rather than a nonce, so only the providers that need
+     *             one pay for it — the device bypass has nothing to bind a
+     *             nonce to, and requiring one would make local development
+     *             depend on Redis being reachable just to sign in.
+     */
+    async (get: (requestNonce: () => Promise<SignInNonce>) => Promise<ProviderToken>) => {
       if (busy) return;
       setBusy(true);
       setError(null);
       try {
-        const token = await get();
+        // Issued by our server, before the provider sheet opens. The device
+        // used to invent its own and nothing ever checked it, which meant a
+        // captured provider token could be replayed into a sign-in.
+        const token = await get(() => api.signInNonce());
         const known = await signInExisting(token);
         if (known) {
           router.replace('/lobby');
@@ -94,7 +106,14 @@ export default function ColdOpen() {
       } catch (err) {
         const message = (err as Error).message ?? '';
         // A cancelled sign-in is not an error worth shouting about.
-        if (!/cancel/i.test(message)) setError('That sign-in did not go through.');
+        if (/cancel/i.test(message)) return;
+        // The nonce endpoint refuses when its store is unreachable, which is
+        // the one case where "try again shortly" is genuinely the right advice.
+        if (err instanceof ApiError && err.code === 'sign_in_unavailable') {
+          setError(err.message);
+          return;
+        }
+        setError('That sign-in did not go through.');
       } finally {
         setBusy(false);
       }
@@ -110,8 +129,16 @@ export default function ColdOpen() {
     try {
       await swearInWith(pending, trimmed);
       router.replace('/briefing');
-    } catch {
-      setError('The court could not be reached.');
+    } catch (err) {
+      // The registry filter refuses reserved, unprintable and impersonating
+      // names, and says exactly what to change. Show that rather than a
+      // generic failure — "The court could not be reached" is a lie when the
+      // court answered and explained itself.
+      if (err instanceof ApiError && err.code === 'juror_name_rejected') {
+        setError(err.message);
+      } else {
+        setError('The court could not be reached.');
+      }
       setBusy(false);
     }
   }, [name, busy, pending, swearInWith]);
@@ -148,13 +175,13 @@ export default function ColdOpen() {
                 buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
                 cornerRadius={2}
                 style={styles.appleButton}
-                onPress={() => authenticate(signInWithApple)}
+                onPress={() => authenticate(async (nonce) => signInWithApple(await nonce()))}
               />
             )}
 
             {googleClientId() && (
               <Pressable
-                onPress={() => authenticate(signInWithGoogle)}
+                onPress={() => authenticate(async (nonce) => signInWithGoogle(await nonce()))}
                 disabled={busy}
                 style={[styles.provider, busy && styles.acceptDisabled]}
                 accessibilityRole="button"
@@ -244,7 +271,7 @@ const styles = StyleSheet.create({
   },
   mastheadRule: {
     fontFamily: Fonts.mono,
-    fontSize: 8,
+    fontSize: Type.micro,
     letterSpacing: 2,
     color: '#6B6558',
     marginTop: 3,
@@ -261,7 +288,7 @@ const styles = StyleSheet.create({
   entry: { marginTop: 34, alignItems: 'center' },
   label: {
     fontFamily: Fonts.mono,
-    fontSize: 10,
+    fontSize: Type.micro,
     letterSpacing: 3,
     color: '#6B6558',
     marginBottom: 8,
@@ -315,15 +342,15 @@ const styles = StyleSheet.create({
   },
   providerGhostText: {
     fontFamily: Fonts.mono,
-    fontSize: 10,
+    fontSize: Type.micro,
     letterSpacing: 1.6,
     color: '#4A4A45',
   },
   busy: { marginTop: 16 },
   note: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
-    lineHeight: 15,
+    fontSize: Type.micro,
+    lineHeight: 16,
     color: '#6B6558',
     textAlign: 'center',
     marginTop: 12,

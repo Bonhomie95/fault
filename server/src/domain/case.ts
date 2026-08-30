@@ -105,6 +105,35 @@ export const generatedCaseSchema = z.object({
      * juror who follows the face is following nothing.
      */
     appearance: z.number().min(0).max(100).default(50),
+    /**
+     * BODY LANGUAGE — 0 closed and defensive, 100 open and still.
+     *
+     * The second thing a juror reads off a person, and the second thing that
+     * tells them nothing. A defendant who sits hunched with folded arms is not
+     * more likely to have done it; a defendant who sits open and level is not
+     * less. Measured as `demeanour_bias` for exactly that reason.
+     *
+     * Rolled by the SERVER, never by the model — see rollPresentation. The
+     * model is a good writer and a hopeless randomiser: asked for a number
+     * uncorrelated with guilt it will quietly make guilty people shifty,
+     * because that is what the stories it learned from do.
+     */
+    demeanour: z.number().min(0).max(100).default(50),
+    /**
+     * ODDITY — 0 unremarkable, 100 openly strange.
+     *
+     * The uncanny axis: a gaze that does not quite meet yours, a face slightly
+     * out of true, stillness held a beat too long. Things that unsettle and
+     * mean nothing at all.
+     *
+     * This is the sharpest of the three, because strangeness is the bias
+     * people are least willing to admit to and least able to justify. A juror
+     * who convicts the odd one has done something they could not defend to a
+     * defendant, and the Juror Record will say so.
+     *
+     * Server-rolled, for the same reason as demeanour.
+     */
+    oddity: z.number().min(0).max(100).default(50),
   }),
   accent: z.enum(['violent', 'financial', 'systemic', 'passion']),
   evidence: z.array(evidenceSchema).length(3),
@@ -174,6 +203,10 @@ export interface ClientCase {
     /** Shipped to the client because the face has to be drawn. It is the one
      *  "hidden" value the player is *meant* to see — just not as a number. */
     appearance: number;
+    /** 0 closed and defensive .. 100 open and still. Means nothing. */
+    demeanour: number;
+    /** 0 unremarkable .. 100 openly strange. Means nothing. */
+    oddity: number;
   };
   evidence: { id: string; description: string; prosecution_reading: string; defence_reading: string }[];
   witnesses: { name: string; role: string; testimony: string }[];
@@ -181,5 +214,14 @@ export interface ClientCase {
   defenceArgument: string;
   /** Names in this case the player has judged before. The Echo System (GDD 2.4)
    *  never announces itself — this only marks who is returning, not how. */
+  /**
+   * True when this case's window closed while the player was away.
+   *
+   * The client shows the adjournment and lets them acknowledge it before the
+   * forced verdict is submitted, rather than firing one the instant the screen
+   * loads. The outcome is identical; being told is the difference between a
+   * consequence and a bug.
+   */
+  adjourned?: boolean;
   returningCharacters: { name: string; portraitSeed: number }[];
 }

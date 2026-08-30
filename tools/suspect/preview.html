@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>suspect preview</title>
+<style>html,body{margin:0;background:#0B0B0C;color:#ddd;font:12px ui-monospace,monospace}
+#bar{position:fixed;top:0;left:0;right:0;padding:6px;z-index:2;background:#000a}
+canvas{display:block}</style>
+<div id="bar"></div>
+<script type="importmap">
+{"imports":{"three":"/mobile/node_modules/three/build/three.module.js",
+            "three/addons/":"/mobile/node_modules/three/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const q = new URLSearchParams(location.search);
+const SHEET = q.get('sheet');
+const file = q.get('m') || 'm_mid_ca';
+const shape = q.get('s') || '';
+const amount = parseFloat(q.get('a') || '1');
+// eyes-to-crown fraction of the viewport, matching AccusedReaction
+const headScreen = parseFloat(q.get('h') || '0.155');
+const eyesScreen = parseFloat(q.get('e') || '0.45');
+
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(1);
+renderer.setSize(W, H);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(q.get('bg') || '#141418');
+const FOV = 34;
+const dist = 1 / headScreen / (2 * Math.tan((FOV * Math.PI) / 360));
+const camera = new THREE.PerspectiveCamera(FOV, W / H, 0.01, 50);
+camera.position.set(0, 0, dist);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+const key = new THREE.DirectionalLight(0xFFF0DD, 2.6); key.position.set(0.8, 1.4, 1.6); scene.add(key);
+const rim = new THREE.DirectionalLight(0x9DAFC8, 0.45); rim.position.set(-1.6, 0.4, -1.2); scene.add(rim);
+
+const root = new THREE.Group();
+root.position.y = (0.5 - eyesScreen) / headScreen;
+scene.add(root);
+
+const bar = document.getElementById('bar');
+const res = await fetch(`/mobile/assets/suspect/${file}.glb?v=${performance.timeOrigin|0}`, {cache:"no-store"});
+const buf = await res.arrayBuffer();
+new GLTFLoader().parse(buf, '', (gltf) => {
+  let eyeMesh = null; const morphMeshes = [];
+  gltf.scene.traverse((o) => {
+    if (o.isMesh && o.morphTargetDictionary) morphMeshes.push(o);
+    if (o.isMesh && /(^|\.)eyes$/i.test(o.name)) eyeMesh = o;
+  });
+  gltf.scene.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  const heights = (m) => { const p = m.geometry.getAttribute('position');
+    let top = -Infinity, bot = Infinity;
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+      if (v.y > top) top = v.y; if (v.y < bot) bot = v.y; }
+    return { top, bot, mid: (top + bot) / 2 }; };
+  const all = []; gltf.scene.traverse(o => { if (o.isMesh) all.push(o); });
+  const crownY = Math.max(...all.map(m => heights(m).top));
+  const eyes = eyeMesh ? heights(eyeMesh).mid : 0;
+  const crown = crownY - eyes;
+  const scale = crown > 0 ? 1 / crown : 1;
+  gltf.scene.scale.setScalar(scale);
+  gltf.scene.position.set(0, -eyes * scale, 0);
+  // MIRRORS components/suspect/SuspectModel softenCutout. Keep the two the
+  // same or these pages stop telling the truth about what the app draws.
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh || /(^|\.)eyes$/i.test(o.name)) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (!m || m.alphaTest <= 0) continue;
+      const at = q.get('at');
+      m.alphaTest = at !== null ? parseFloat(at) : 0.02;
+      m.transparent = true; m.depthWrite = true; m.needsUpdate = true;
+    }
+  });
+  const hide = (q.get('hide') || '').split(',').filter(Boolean);
+  if (hide.length) gltf.scene.traverse(o => { if (o.isMesh && hide.some(h => o.name.toLowerCase().includes(h))) o.visible = false; });
+  root.add(gltf.scene);
+
+  if (shape) for (const m of morphMeshes) {
+    const i = m.morphTargetDictionary[shape];
+    if (i !== undefined) m.morphTargetInfluences[i] = amount;
+  }
+  const names = morphMeshes[0] ? Object.keys(morphMeshes[0].morphTargetDictionary) : [];
+  const per = all.map(o => { const h = heights(o); return `${o.name}:${h.bot.toFixed(3)}..${h.top.toFixed(3)}`; });
+  bar.textContent = `${file} eyes=${eyes.toFixed(3)} crown=${crown.toFixed(3)} scale=${scale.toFixed(2)} `
+    + `shape=${shape || '-'} | ${per.join(' ')} | ${names.join(',')}`;
+  renderer.render(scene, camera);
+  window.__ready = true;
+}, (e) => { bar.textContent = 'FAILED ' + e; window.__ready = true; });
+</script>

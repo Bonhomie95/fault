@@ -18,10 +18,32 @@ export type Provider = 'apple' | 'google' | 'device';
 export interface ProviderToken {
   provider: Provider;
   token: string;
+  /** The server-issued nonce this token was minted against. */
+  nonce?: string;
   /** Apple gives a name exactly once, at first authorisation. We do NOT use it
    *  as the juror name — the player always names themselves — but it makes a
    *  reasonable prefill in the name field. */
   suggestedName?: string;
+}
+
+/**
+ * A sign-in nonce, from our own server.
+ *
+ * Every provider flow below takes one. The device used to invent its own —
+ * `Crypto.randomUUID()` — hand it to Apple or Google, and the server never
+ * looked at the value that came back. A nonce nobody issued and nobody checks
+ * is decoration: its whole job is to bind one identity token to one sign-in
+ * that THIS server asked for, and it cannot do that if the server has never
+ * seen it.
+ *
+ * Fetching it costs one round trip before the provider sheet opens, which is
+ * the cheapest possible place to spend it.
+ */
+export interface SignInNonce {
+  /** Send this back to our server with the provider token. */
+  nonce: string;
+  /** What Apple wants: it hashes the input and embeds the hash in the token. */
+  nonceSha256: string;
 }
 
 /** Apple Sign In needs a native build; it does not exist in Expo Go. */
@@ -34,21 +56,16 @@ export async function isAppleAvailable(): Promise<boolean> {
   }
 }
 
-export async function signInWithApple(): Promise<ProviderToken> {
-  // A nonce ties this response to this request, so a token captured elsewhere
-  // cannot be replayed into our sign-in.
-  const rawNonce = Crypto.randomUUID();
-  const hashedNonce = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    rawNonce,
-  );
-
+export async function signInWithApple(issued: SignInNonce): Promise<ProviderToken> {
+  // Apple hashes whatever it is given and embeds the HASH in the identity
+  // token, so it receives the SHA-256 while our server keeps the raw value.
+  // Both spellings come from the same server-issued secret.
   const credential = await AppleAuthentication.signInAsync({
     requestedScopes: [
       AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
       AppleAuthentication.AppleAuthenticationScope.EMAIL,
     ],
-    nonce: hashedNonce,
+    nonce: issued.nonce,
   });
 
   if (!credential.identityToken) throw new Error('Apple returned no identity token');
@@ -60,6 +77,7 @@ export async function signInWithApple(): Promise<ProviderToken> {
   return {
     provider: 'apple',
     token: credential.identityToken,
+    nonce: issued.nonce,
     ...(suggestedName ? { suggestedName } : {}),
   };
 }
@@ -83,12 +101,11 @@ export function googleClientId(): string | null {
   return web ?? null;
 }
 
-export async function signInWithGoogle(): Promise<ProviderToken> {
+export async function signInWithGoogle(issued: SignInNonce): Promise<ProviderToken> {
   const clientId = googleClientId();
   if (!clientId) throw new Error('No Google client id configured');
 
   const redirectUri = AuthSession.makeRedirectUri({ scheme: 'fault' });
-  const rawNonce = Crypto.randomUUID();
 
   const request = new AuthSession.AuthRequest({
     clientId,
@@ -96,7 +113,8 @@ export async function signInWithGoogle(): Promise<ProviderToken> {
     scopes: ['openid', 'profile', 'email'],
     // implicit id_token: nothing to exchange, nothing to keep secret on device
     responseType: AuthSession.ResponseType.IdToken,
-    extraParams: { nonce: rawNonce },
+    // Google embeds the raw value, unlike Apple.
+    extraParams: { nonce: issued.nonce },
   });
 
   const result = await request.promptAsync(GOOGLE_DISCOVERY);
@@ -105,13 +123,17 @@ export async function signInWithGoogle(): Promise<ProviderToken> {
   const token = result.params.id_token;
   if (!token) throw new Error('Google returned no id token');
 
-  return { provider: 'google', token };
+  return { provider: 'google', token, nonce: issued.nonce };
 }
 
 /**
  * The dev bypass. Uses a stable per-install id so a reload keeps the same
  * juror. The server refuses this entirely when ALLOW_DEV_AUTH is off or
  * NODE_ENV is production — it authenticates anyone who can name a device.
+ *
+ * Takes no nonce, and is not handed one. There is no provider to bind it to,
+ * and asking for one would make local development depend on Redis being up
+ * just to sign in — see the nonce request in app/index.
  */
 export async function signInWithDevice(): Promise<ProviderToken> {
   let id: string | null = null;

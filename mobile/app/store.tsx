@@ -1,13 +1,13 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
 import { api, type StoreItem, type StoreView } from '@/lib/api';
+import { buy, purchasesAvailable } from '@/lib/purchases';
 import { useGame } from '@/store/game';
 
 /**
@@ -69,17 +69,61 @@ export default function Store() {
   /**
    * Real-money purchase.
    *
-   * The IAP SDK belongs here: StoreKit / Play Billing returns a receipt, and
-   * the app hands it to POST /api/store/redeem, which validates it with Apple
-   * or Google before granting anything. Until that exists, the server refuses
-   * to redeem outside development — so this button says what is true rather
-   * than pretending to charge anyone.
+   * Goes through lib/purchases, which takes the store's receipt and hands it
+   * to POST /api/store/redeem — the server verifies it with Apple or Google
+   * and grants on THEIR answer, never on ours.
+   *
+   * `purchasesAvailable()` is false until an IAP backend is registered at
+   * startup (see lib/purchases). While it is, this still says something true
+   * rather than pretending to charge anyone — which is what the whole
+   * catalogue is supposed to do.
    */
-  const onBuy = useCallback((item: StoreItem) => {
-    setNotice(
-      `Payments are not connected yet. ${item.title} is still earnable with Merit by sitting cases.`,
-    );
-  }, []);
+  const onBuy = useCallback(
+    async (item: StoreItem) => {
+      if (busy) return;
+
+      if (!purchasesAvailable()) {
+        setNotice(
+          `Payments are not connected yet. ${item.title} is still earnable with Merit by sitting cases.`,
+        );
+        return;
+      }
+
+      setBusy(true);
+      setNotice(null);
+      try {
+        const result = await buy(item.id);
+        switch (result.status) {
+          case 'granted':
+            play('stamp');
+            haptic.stamped();
+            setNotice(`${item.title} is yours.`);
+            await load();
+            await refreshWallet();
+            break;
+          case 'cancelled':
+            break;
+          case 'unavailable':
+            setNotice('The store is not reachable from this device.');
+            break;
+          case 'failed':
+            haptic.refused();
+            setNotice(result.message);
+            break;
+        }
+      } catch {
+        // `buy` resolves rather than rejects for every purchase outcome, so
+        // reaching here means something further in (a refresh, a render) went
+        // wrong. Without this the promise rejects unhandled, because nothing
+        // awaits the handler an onPress fires.
+        haptic.refused();
+        setNotice('That did not go through.');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, load, refreshWallet],
+  );
 
   return (
     <View style={styles.root}>
@@ -95,11 +139,11 @@ export default function Store() {
 
         {!view && <ActivityIndicator color={Palette.text} style={styles.loading} />}
 
-        {notice && (
-          <Animated.Text entering={FadeIn} style={styles.notice}>
-            {notice}
-          </Animated.Text>
-        )}
+        {/* NOT an entering animation. See app/lobby.tsx: a Reanimated
+            `entering` on a notice like this one leaves it at
+            `visibility: hidden` on web, forever — the player taps and is
+            told nothing. */}
+        {notice && <Text style={styles.notice}>{notice}</Text>}
 
         {view && (
           <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
@@ -113,6 +157,9 @@ export default function Store() {
                 <Pressable
                   onPress={() => setNotice('The ad network is not connected yet.')}
                   style={styles.rewardBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Watch an advert to earn ${view.rewardedAdMerit} Merit`}
+                  hitSlop={8}
                 >
                   <Text style={styles.rewardBtnText}>WATCH · +{view.rewardedAdMerit}</Text>
                 </Pressable>
@@ -134,6 +181,14 @@ export default function Store() {
                         onPress={() => onEarn(item)}
                         disabled={busy || !item.affordable}
                         style={[styles.earnBtn, !item.affordable && styles.cantAfford]}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          item.affordable
+                            ? `Buy ${item.title} for ${item.meritPrice} Merit`
+                            : `${item.title} costs ${item.meritPrice} Merit — you do not have enough yet`
+                        }
+                        accessibilityState={{ disabled: busy || !item.affordable }}
+                        hitSlop={8}
                       >
                         <Text style={[styles.earnText, !item.affordable && styles.cantAffordText]}>
                           {item.affordable
@@ -143,7 +198,15 @@ export default function Store() {
                       </Pressable>
                     )}
                     {item.priceMinor !== null && (
-                      <Pressable onPress={() => onBuy(item)} disabled={busy} style={styles.buyBtn}>
+                      <Pressable
+                        onPress={() => onBuy(item)}
+                        disabled={busy}
+                        style={styles.buyBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Buy ${item.title} for ${(item.priceMinor / 100).toFixed(2)} dollars`}
+                        accessibilityState={{ disabled: busy }}
+                        hitSlop={8}
+                      >
                         <Text style={styles.buyText}>${(item.priceMinor / 100).toFixed(2)}</Text>
                       </Pressable>
                     )}
@@ -155,7 +218,13 @@ export default function Store() {
         )}
 
         <View style={styles.footer}>
-          <Pressable onPress={() => router.back()} style={styles.close}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.close}
+            accessibilityRole="button"
+            accessibilityLabel="Close the store"
+            hitSlop={8}
+          >
             <Text style={styles.closeText}>CLOSE</Text>
           </Pressable>
         </View>
@@ -184,7 +253,7 @@ const styles = StyleSheet.create({
   merit: { fontFamily: Fonts.monoBold, fontSize: 13, color: '#D4860A' },
   creed: {
     fontFamily: Fonts.mono,
-    fontSize: 9.5,
+    fontSize: Type.micro,
     lineHeight: 16,
     color: Palette.textMuted,
     paddingHorizontal: 20,
@@ -216,7 +285,7 @@ const styles = StyleSheet.create({
   rewarded: { borderStyle: 'dashed', borderColor: '#6B4FBB' },
   itemHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   itemTitle: { fontFamily: Fonts.display, fontSize: 17, color: Palette.text, flex: 1 },
-  ownedTag: { fontFamily: Fonts.mono, fontSize: 8, letterSpacing: 1.4, color: '#1D7E6A' },
+  ownedTag: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.4, color: '#1D7E6A' },
   itemBlurb: { fontFamily: Fonts.mono, fontSize: 11, lineHeight: 18, color: Palette.textMuted },
   prices: { flexDirection: 'row', gap: 8, marginTop: 6 },
   earnBtn: {
@@ -227,7 +296,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 2,
   },
-  earnText: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.2, color: '#D4860A' },
+  earnText: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.2, color: '#D4860A' },
   cantAfford: { borderColor: Palette.hairline },
   cantAffordText: { color: Palette.textFaint },
   buyBtn: {
@@ -246,7 +315,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     marginTop: 4,
   },
-  rewardBtnText: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.2, color: '#6B4FBB' },
+  rewardBtnText: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.2, color: '#6B4FBB' },
   footer: { paddingHorizontal: 20, paddingBottom: 12, paddingTop: 8 },
   close: {
     borderWidth: 1,

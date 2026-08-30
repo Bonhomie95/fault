@@ -1,11 +1,22 @@
 import Slider from '@react-native-community/slider';
 import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
-import { Clock, Fonts, Palette, Space } from '@/constants/theme';
-import { api } from '@/lib/api';
+import { Clock, Fonts, Layout, Palette, Space, Type } from '@/constants/theme';
+import { api, ApiError, type Session } from '@/lib/api';
+import { restore as restorePurchases } from '@/lib/purchases';
 import * as haptic from '@/lib/haptics';
 import { play, refreshBedVolume } from '@/lib/sound';
 import { useGame } from '@/store/game';
@@ -33,6 +44,7 @@ export default function Settings() {
   const entitlements = useGame((s) => s.entitlements);
   const signOut = useGame((s) => s.signOut);
   const deleteAccount = useGame((s) => s.deleteAccount);
+  const refreshWallet = useGame((s) => s.refreshWallet);
 
   const volume = useSettings((s) => s.volume);
   const muted = useSettings((s) => s.muted);
@@ -43,13 +55,66 @@ export default function Settings() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
+  /**
+   * Where to send someone who wants the policy, the terms, or a human.
+   *
+   * Served by the API rather than hardcoded, so a URL can be corrected without
+   * shipping a build. Apple requires both links to be reachable from inside
+   * any app that creates accounts — a dead privacy policy link is a rejection,
+   * and a missing one is a rejection too.
+   */
+  const [support, setSupport] = useState<Session['support'] | null>(null);
+
+  /** The rename field. Empty until the player opens it. */
+  const [renaming, setRenaming] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  useEffect(() => {
+    api
+      .me()
+      .then((session) => setSupport(session.support ?? null))
+      .catch(() => setSupport(null));
+  }, []);
+
+  const onRename = useCallback(async () => {
+    const wanted = newName.trim();
+    if (!wanted || busy) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const res = await api.renameJuror(wanted);
+      useGame.setState({ jurorName: res.jurorName });
+      setNotice(res.changed ? `You are ${res.jurorName} on the registry now.` : 'That is already your name.');
+      setRenaming(false);
+      setNewName('');
+    } catch (err) {
+      // The registry filter explains itself; show what it said rather than a
+      // generic failure.
+      setNotice(
+        err instanceof ApiError ? err.message : 'The register could not be reached.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [newName, busy]);
+
   const onRestore = useCallback(async () => {
     setBusy(true);
     try {
+      // Both halves. The device half re-presents any receipt the store still
+      // holds — including a purchase that was paid for but never confirmed by
+      // our server, which lib/purchases deliberately leaves unfinished so it
+      // can be recovered here. The server half then reports what this account
+      // owns. Asking only the server would satisfy Apple's requirement on
+      // paper and still leave a paying player with nothing.
+      const device = await restorePurchases();
       const r = await api.restorePurchases();
+      await refreshWallet();
+
+      const total = Math.max(r.restored, device.restored);
       setNotice(
-        r.restored > 0
-          ? `Restored ${r.restored} purchase${r.restored === 1 ? '' : 's'}.`
+        total > 0
+          ? `Restored ${total} purchase${total === 1 ? '' : 's'}.`
           : 'Nothing to restore on this account.',
       );
     } catch {
@@ -57,7 +122,7 @@ export default function Settings() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [refreshWallet]);
 
   const onSignOut = useCallback(async () => {
     await signOut();
@@ -234,10 +299,75 @@ export default function Settings() {
           </View>
 
           <View style={styles.section}>
+            <Text style={styles.sectionTitle}>YOUR NAME ON THE REGISTRY</Text>
+            <Row label="Juror" value={jurorName ?? '—'} />
+            <Text style={styles.sectionNote}>
+              This name is public. Other jurors see it beside the state of your city.
+            </Text>
+
+            {renaming ? (
+              <View style={styles.renameBlock}>
+                <TextInput
+                  value={newName}
+                  onChangeText={setNewName}
+                  placeholder="New name"
+                  placeholderTextColor={Palette.textFaint}
+                  style={styles.renameInput}
+                  maxLength={32}
+                  autoCorrect={false}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={onRename}
+                  editable={!busy}
+                  accessibilityLabel="Your new juror name"
+                />
+                <Text style={styles.sectionNote}>The register accepts one change a day.</Text>
+                <Action label="Change it" onPress={onRename} disabled={busy || !newName.trim()} />
+                <Action
+                  label="Never mind"
+                  onPress={() => {
+                    setRenaming(false);
+                    setNewName('');
+                  }}
+                  disabled={busy}
+                />
+              </View>
+            ) : (
+              <Action label="Change my name" onPress={() => setRenaming(true)} disabled={busy} />
+            )}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>THE COURT</Text>
+            {/* Required to be reachable in-app, and served from the API so a
+                URL can be fixed without a release. */}
+            {support?.privacyPolicyUrl && (
+              <Action
+                label="Privacy policy"
+                onPress={() => void Linking.openURL(support.privacyPolicyUrl!)}
+              />
+            )}
+            {support?.termsUrl && (
+              <Action label="Terms of use" onPress={() => void Linking.openURL(support.termsUrl!)} />
+            )}
+            {support?.supportEmail && (
+              <Action
+                label="Contact the court"
+                onPress={() => void Linking.openURL(`mailto:${support.supportEmail}`)}
+              />
+            )}
+            {!support?.privacyPolicyUrl && !support?.termsUrl && (
+              <Text style={styles.sectionNote}>
+                The court has not published its papers yet.
+              </Text>
+            )}
+          </View>
+
+          <View style={styles.section}>
             <Text style={styles.sectionTitle}>DATA</Text>
             <Text style={styles.sectionNote}>
-              Your juror name appears on the public registry. Your country is stored; your location
-              is not.
+              Your country is stored; your location is not. Deleting your juror deletes every case,
+              every verdict, and the city you made.
             </Text>
             {/* Destructive, separated, and in the semantic danger colour —
                 never adjacent to the ordinary actions above it. */}
@@ -284,13 +414,24 @@ function Action({
 
 const styles = StyleSheet.create({
   dangerBtn: { marginTop: Space.md },
+  renameBlock: { gap: Space.sm },
+  renameInput: {
+    fontFamily: Fonts.monoBold,
+    fontSize: Type.body,
+    color: Palette.text,
+    borderWidth: 1,
+    borderColor: Palette.hairlineBright,
+    borderRadius: 4,
+    paddingHorizontal: Space.md,
+    minHeight: Layout.touchMin,
+  },
   root: { flex: 1, backgroundColor: Palette.bg },
   safe: { flex: 1 },
   content: { padding: 22, gap: 26 },
   title: { fontFamily: Fonts.display, fontSize: 28, color: Palette.text },
   juror: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
+    fontSize: Type.micro,
     letterSpacing: 2,
     color: Palette.textMuted,
     marginTop: -18,
@@ -306,7 +447,7 @@ const styles = StyleSheet.create({
   section: { gap: 10 },
   sectionTitle: {
     fontFamily: Fonts.mono,
-    fontSize: 8.5,
+    fontSize: Type.micro,
     letterSpacing: 2.4,
     color: Palette.textMuted,
   },

@@ -22,6 +22,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { CourtError } from '@/components/CourtError';
 import { Palette } from '@/constants/theme';
+import { reportFatal } from '@/lib/report';
 import { initSound } from '@/lib/sound';
 import { useGame } from '@/store/game';
 import { useSettings } from '@/store/settings';
@@ -82,6 +83,7 @@ export default function RootLayout() {
         <Stack.Screen name="verdict" />
         <Stack.Screen name="review" />
         <Stack.Screen name="record" />
+        <Stack.Screen name="archive" />
         <Stack.Screen name="career" />
         <Stack.Screen name="boards" />
         <Stack.Screen name="store" options={{ presentation: 'modal', gestureEnabled: true }} />
@@ -98,5 +100,8 @@ export default function RootLayout() {
  * it a render error is a blank screen in a release build with no way back.
  */
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  // The boundary was correct and silent. In a release build a render crash
+  // showed the player a recovery screen and told nobody else anything at all.
+  reportFatal(error);
   return <CourtError error={error} retry={retry} />;
 }

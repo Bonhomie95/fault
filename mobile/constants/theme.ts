@@ -81,6 +81,16 @@ export const Fonts = {
  *
  * Every size in the app comes from here. Scaled at the point of use by the
  * player's text-size setting where the content is prose.
+ *
+ * It said that before and it was not true. The scale existed and one component
+ * used it; the screens carried 145 raw `fontSize:` literals between them, and
+ * `case.tsx` alone had 23 — 8, 8.5, 9, 10, 12.5, 15, 17, 19. Labels, tags,
+ * timings and jurisdiction lines were running at 8-10pt in warm grey on
+ * near-black, with heavy letter-spacing, read under a 120-second clock.
+ *
+ * iOS's smallest standard text style is 11pt. `micro` is now that floor rather
+ * than a suggestion, and nothing in the app is allowed below it. The eslint
+ * rule in eslint.config.js keeps new literals from creeping back.
  */
 export const Type = {
   hero: 44,
@@ -90,8 +100,43 @@ export const Type = {
   body: 16,
   small: 14,
   label: 12,
-  micro: 10,
+  /**
+   * The floor. Was 10, and the screens went to 8.
+   *
+   * Reserved for uppercase mono labels with letter-spacing — never for prose,
+   * and never for anything a player has to read quickly.
+   */
+  micro: 11,
 } as const;
+
+/**
+ * The tightest leading Anton can be set at without losing its own capitals.
+ *
+ * Taken from the font, not from taste. Anton_400Regular is 2048 units/em with
+ * a capHeight of 1760 (0.859em) and a typo descender of 674 (0.329em). iOS
+ * puts the baseline `lineHeight - descent` below the top of the line box and
+ * clips anything above it, so the smallest leading that still clears a capital
+ * is (1760 + 674) / 2048 = 1.1885.
+ *
+ * The screens were asking for `Type.hero * 0.92`. That is not merely tight,
+ * it is a quarter of an em inside the capitals, and the top was sliced off
+ * every display heading in the game — the lobby read "CASE / DOCKET" with all
+ * four letters of CASE cut through, and the docket card did the same to
+ * "A CASE FILE / IS WAITING". Only ever the FIRST line, which is what makes it
+ * read as a rendering fault rather than a leading value somebody chose.
+ *
+ * Anton's own natural line is 1.505, so 1.19 is still far tighter than the
+ * face asks for: the headings keep their stacked, poster-like setting. They
+ * just keep their letters as well.
+ */
+export const IMPACT_LEADING = 1.19;
+
+/**
+ * The smallest size any text in this app may use.
+ *
+ * Exported so it can be asserted rather than merely intended.
+ */
+export const MIN_FONT_SIZE = Type.micro;
 
 /** 4pt rhythm. Nothing in the app may invent its own spacing. */
 export const Space = {

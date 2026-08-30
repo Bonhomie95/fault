@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { GATES, rankFor, trustLabel } from '../domain/progression.js';
 import { prisma } from '../lib/prisma.js';
 import { requireJuror } from '../middleware/requireJuror.js';
@@ -61,6 +62,21 @@ reviewRouter.get('/', requireJuror, async (req, res) => {
  * own career by serving; they do not lose it by being wrong, because a gate
  * that closed on a bad verdict would be a score wearing a lock.
  */
+/**
+ * A page of the archive.
+ *
+ * This used to return the player's ENTIRE record, with the full Case row
+ * joined onto every verdict — no take, no cursor, no projection. At case 500
+ * that is five hundred dossiers, JSON evidence blobs and all, serialised and
+ * pushed down a phone connection so a list screen could show a charge and a
+ * date. The read cost grew forever and the payload grew with it.
+ *
+ * Newest first now, and paged. Newest-first is also simply the right order for
+ * an archive: the case you are looking for is almost always a recent one, and
+ * the old version made you scroll your whole career to reach it.
+ */
+const HISTORY_PAGE = 25;
+
 reviewRouter.get('/history', requireJuror, async (req, res) => {
   const { userId, user } = req.juror;
 
@@ -76,14 +92,56 @@ reviewRouter.get('/history', requireJuror, async (req, res) => {
     return;
   }
 
+  const parsed = z
+    .object({
+      /** ISO timestamp of the last entry on the previous page. */
+      before: z.string().datetime().optional(),
+      limit: z.coerce.number().int().min(1).max(HISTORY_PAGE).default(HISTORY_PAGE),
+    })
+    .safeParse(req.query);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid page' });
+    return;
+  }
+
+  const { before, limit } = parsed.data;
+
+  // One extra row, purely to answer "is there another page" without a count.
   const verdicts = await prisma.verdictRecord.findMany({
-    where: { userId },
-    include: { case: true },
-    orderBy: { createdAt: 'asc' },
+    where: {
+      userId,
+      ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+    },
+    // Only the columns the archive screen renders. The dossier itself lives
+    // behind a case that has already been decided; nobody reads the evidence
+    // JSON from a list row.
+    select: {
+      verdict: true,
+      wasHung: true,
+      timeRemaining: true,
+      outcomeText: true,
+      outcomeSeen: true,
+      createdAt: true,
+      case: {
+        select: {
+          caseNumber: true,
+          title: true,
+          defendantName: true,
+          charge: true,
+          accent: true,
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit + 1,
   });
 
+  const page = verdicts.slice(0, limit);
+  const hasMore = verdicts.length > limit;
+
   res.json({
-    entries: verdicts.map((v) => ({
+    entries: page.map((v) => ({
       caseNumber: v.case.caseNumber,
       title: v.case.title,
       defendantName: v.case.defendantName,
@@ -95,5 +153,7 @@ reviewRouter.get('/history', requireJuror, async (req, res) => {
       outcome: v.outcomeSeen ? v.outcomeText : null,
       deliveredAt: v.createdAt,
     })),
+    /** Pass back as `before` for the next page. Null when the record ends. */
+    nextCursor: hasMore ? (page[page.length - 1]?.createdAt.toISOString() ?? null) : null,
   });
 });

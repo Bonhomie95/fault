@@ -32,7 +32,23 @@ const { app } = await import('../src/app.js');
 const { prisma } = await import('../src/lib/prisma.js');
 const { redis } = await import('../src/lib/redis.js');
 
-const api = () => request(app);
+/**
+ * One listener for the whole file, not one per request.
+ *
+ * `request(app)` starts a fresh ephemeral server for every single call and
+ * closes it again afterwards. This file makes well over a hundred of them in
+ * a couple of seconds, and superagent keeps its sockets alive — so a request
+ * would occasionally be handed a pooled socket pointing at a listener that had
+ * already gone, and come back as ECONNRESET / "socket hang up".
+ *
+ * It failed roughly one run in four, on a different test each time, which is
+ * the worst possible shape: it looks like whatever you happened to change
+ * last. It cost an hour here being mistaken for a Prisma upgrade regression.
+ * Binding once removes the race entirely and makes the suite faster.
+ */
+const server = app.listen(0);
+server.unref();   // never the reason the test process stays alive
+const api = () => request(server);
 
 /** A signed-in juror, from nothing. */
 async function swearIn(token: string, country = 'NO') {
@@ -46,14 +62,60 @@ async function swearIn(token: string, country = 'NO') {
 
 const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
 
+/**
+ * Clean up only THIS file's jurors.
+ *
+ * It used to be `deleteMany({})` — every user in the test database. Node runs
+ * test files concurrently, so that reached into whatever else happened to be
+ * running and deleted its fixtures mid-assertion. It surfaced once as a
+ * refresh-token test failing in the full suite and passing three times in a
+ * row alone, which is the most expensive kind of failure to chase.
+ *
+ * Every juror this file creates signs in with a device token prefixed
+ * `routes-`, so that prefix is the scope. A test file should own its data and
+ * nothing else's.
+ */
+const OWNED = { identities: { some: { subject: { startsWith: 'routes-' } } } };
+
 before(async () => {
-  await prisma.user.deleteMany({});
+  await prisma.user.deleteMany({ where: OWNED });
 });
 
 after(async () => {
-  await prisma.user.deleteMany({});
+  server.close();
+  await prisma.user.deleteMany({ where: OWNED });
   await prisma.$disconnect();
   redis.disconnect();
+});
+
+describe('two requests for the same next case', () => {
+  it('serves one case to both, never a 500 and never two open cases', async () => {
+    // `caseNumber` is read with an aggregate and written by a separate insert.
+    // Two overlapping /next calls therefore compute the same number and the
+    // second one used to hit @@unique([userId, caseNumber]) and come back as a
+    // 500 with a Prisma stack in it. That is in the server log from an
+    // ordinary session — and the client's answer to a failed /next is to ask
+    // again, which collides again.
+    const { accessToken, userId } = await swearIn('routes-race');
+
+    const [a, b] = await Promise.all([
+      api().get('/api/case/next').set(auth(accessToken)),
+      api().get('/api/case/next').set(auth(accessToken)),
+    ]);
+
+    assert.equal(a.status, 200, JSON.stringify(a.body));
+    assert.equal(b.status, 200, JSON.stringify(b.body));
+
+    // Both callers hold the same case. Anything else means the juror is now
+    // sitting two trials at once, and every other query in the route assumes
+    // they are sitting one.
+    assert.equal(a.body.id, b.body.id, 'the race produced two different cases');
+
+    const open = await prisma.case.count({
+      where: { userId, verdict: { is: null }, quarantinedAt: null },
+    });
+    assert.equal(open, 1, `juror has ${open} open cases`);
+  });
 });
 
 describe('the door', () => {
@@ -250,8 +312,22 @@ describe('the clock belongs to the server', () => {
     assert.equal(res.body.timeRemaining, 0);
   });
 
-  it('refuses a second verdict on the same case', async () => {
-    const { accessToken } = await swearIn('routes-double');
+  it('answers a second verdict with the first one, and changes nothing', async () => {
+    /**
+     * Submitting a verdict has to be safe to retry, because on a phone it WILL
+     * be retried — the request succeeds, the response is lost to a dropped
+     * connection or a backgrounded app, and the client asks again.
+     *
+     * This used to answer 409. The client treats that as a failure, so the
+     * case was decided, the clock was dead, every retry failed the same way,
+     * and the player was stuck on a screen with no way forward. It was
+     * reproduced by playing one case.
+     *
+     * What must NOT happen is the second call taking effect: no second record,
+     * no second helping of merit, and the verdict that stands is the first
+     * one — note the retry below deliberately sends the OPPOSITE verdict.
+     */
+    const { accessToken, userId } = await swearIn('routes-double');
     const c = await api().get('/api/case/next').set(auth(accessToken));
 
     const first = await api()
@@ -260,11 +336,31 @@ describe('the clock belongs to the server', () => {
       .send({ caseId: c.body.id, verdict: 'guilty' });
     assert.equal(first.status, 200);
 
+    const meritAfterFirst = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { merit: true, xp: true },
+    });
+
     const second = await api()
       .post('/api/verdict')
       .set(auth(accessToken))
       .send({ caseId: c.body.id, verdict: 'not_guilty' });
-    assert.equal(second.status, 409);
+
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.equal(second.body.verdict, 'guilty', 'the retry overwrote the verdict');
+    assert.equal(second.body.replayed, true);
+    // An advert belongs to a verdict that just happened, not to a retry.
+    assert.equal(second.body.showInterstitial, false);
+
+    const records = await prisma.verdictRecord.count({ where: { caseId: c.body.id } });
+    assert.equal(records, 1, 'the retry created a second verdict record');
+
+    const after = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { merit: true, xp: true },
+    });
+    assert.equal(after.merit, meritAfterFirst.merit, 'the retry paid merit twice');
+    assert.equal(after.xp, meritAfterFirst.xp, 'the retry awarded xp twice');
   });
 
   it('will not let a juror deliver a verdict on another juror\'s case', async () => {
@@ -344,5 +440,420 @@ describe('health', () => {
     assert.equal(res.body.postgres, true);
     // No keys configured in tests, so generation is honestly off.
     assert.equal(res.body.groq, false);
+  });
+});
+
+describe('the name on the public registry', () => {
+  it('refuses a name that could impersonate the court', async () => {
+    const res = await api()
+      .post('/api/auth/sign-in')
+      .send({ provider: 'device', token: 'routes-impersonator', jurorName: 'FAULT Admin', country: 'NO' });
+
+    assert.equal(res.status, 400);
+    assert.equal(res.body.error, 'juror_name_rejected');
+    assert.equal(res.body.reason, 'reserved');
+  });
+
+  it('refuses the markup payload that used to create a real account', async () => {
+    const res = await api()
+      .post('/api/auth/sign-in')
+      .send({
+        provider: 'device',
+        token: 'routes-xss',
+        jurorName: '<img src=x onerror=alert(1)>',
+        country: 'NO',
+      });
+
+    assert.equal(res.status, 400, 'a script tag became a juror name before this check existed');
+    assert.equal(res.body.error, 'juror_name_rejected');
+  });
+
+  it('stores the normalised name, never the raw input', async () => {
+    const res = await api()
+      .post('/api/auth/sign-in')
+      .send({ provider: 'device', token: 'routes-padded', jurorName: '   Ada   Lovelace   ', country: 'NO' });
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.jurorName, 'Ada Lovelace');
+  });
+
+  it('lets a juror be renamed, which is the only remedy short of deletion', async () => {
+    // Guideline 1.2 asks for the ability to ACT on a report. Before this, the
+    // only lever an operator had against an abusive name was deleting the
+    // account and the whole career with it.
+    const { accessToken } = await swearIn('routes-rename');
+
+    const res = await api()
+      .patch('/api/session/me/name')
+      .set(auth(accessToken))
+      .send({ jurorName: 'Renamed Juror' });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.jurorName, 'Renamed Juror');
+    assert.equal(res.body.changed, true);
+
+    const me = await api().get('/api/session/me').set(auth(accessToken));
+    assert.equal(me.body.jurorName, 'Renamed Juror');
+  });
+
+  it('applies the same filter on rename as on sign-up', async () => {
+    const { accessToken } = await swearIn('routes-rename-bad');
+    const res = await api()
+      .patch('/api/session/me/name')
+      .set(auth(accessToken))
+      .send({ jurorName: 'Moderator' });
+
+    assert.equal(res.status, 400);
+    assert.equal(res.body.reason, 'reserved');
+  });
+
+  it('holds the rename cooldown, so a reported name cannot simply move', async () => {
+    const { accessToken } = await swearIn('routes-rename-twice');
+    const first = await api()
+      .patch('/api/session/me/name')
+      .set(auth(accessToken))
+      .send({ jurorName: 'First Name' });
+    assert.equal(first.status, 200);
+
+    const second = await api()
+      .patch('/api/session/me/name')
+      .set(auth(accessToken))
+      .send({ jurorName: 'Second Name' });
+    assert.equal(second.status, 429);
+    assert.equal(second.body.error, 'rename_too_soon');
+  });
+});
+
+describe('reporting', () => {
+  it('takes a report and withholds the case immediately', async () => {
+    // The generated docket writes criminal accusations about invented people
+    // in named real jurisdictions, unreviewed. Quarantine-then-review is the
+    // only safe order: a case reported for naming a real person must stop
+    // being served while it waits for a human.
+    const { accessToken, userId } = await swearIn('routes-reporter');
+    const c = await api().get('/api/case/next').set(auth(accessToken));
+    assert.equal(c.status, 200);
+
+    const res = await api()
+      .post('/api/report')
+      .set(auth(accessToken))
+      .send({ kind: 'case', subjectId: c.body.id, reason: 'real_person' });
+
+    assert.equal(res.status, 201);
+    assert.equal(res.body.reported, true);
+
+    const row = await prisma.case.findUnique({ where: { id: c.body.id } });
+    assert.ok(row?.quarantinedAt, 'a reported case must leave the docket at once');
+
+    // And it is genuinely gone from the docket: the next request must not hand
+    // back the case they just reported.
+    const next = await api().get('/api/case/next').set(auth(accessToken));
+    assert.notEqual(next.body.id, c.body.id);
+
+    const reports = await prisma.contentReport.findMany({ where: { reporterId: userId } });
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0]?.reason, 'real_person');
+  });
+
+  it('does not collide the docket numbering when a case is withdrawn', async () => {
+    // The bug this catches: caseNumber used to be `verdictsHeard + 1`. A
+    // quarantined case is never judged, so the count does not move, and the
+    // next case was handed a number that was already taken — turning a
+    // player's report into a 500 on their very next request, via the
+    // (userId, caseNumber) unique constraint.
+    const { accessToken, userId } = await swearIn('routes-report-numbering');
+
+    const first = await api().get('/api/case/next').set(auth(accessToken));
+    assert.equal(first.status, 200);
+
+    await api()
+      .post('/api/report')
+      .set(auth(accessToken))
+      .send({ kind: 'case', subjectId: first.body.id, reason: 'real_person' });
+
+    // Two more, so the numbering has to survive more than one gap.
+    const second = await api().get('/api/case/next').set(auth(accessToken));
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+
+    await api()
+      .post('/api/report')
+      .set(auth(accessToken))
+      .send({ kind: 'case', subjectId: second.body.id, reason: 'broken_case' });
+
+    const third = await api().get('/api/case/next').set(auth(accessToken));
+    assert.equal(third.status, 200, JSON.stringify(third.body));
+
+    const numbers = (
+      await prisma.case.findMany({ where: { userId }, select: { caseNumber: true } })
+    ).map((c) => c.caseNumber);
+
+    assert.equal(new Set(numbers).size, numbers.length, `docket numbers collided: ${numbers}`);
+  });
+
+  it('refuses a report about a case that is not this juror\'s', async () => {
+    const mine = await swearIn('routes-report-mine');
+    const theirs = await swearIn('routes-report-theirs');
+    const c = await api().get('/api/case/next').set(auth(theirs.accessToken));
+
+    const res = await api()
+      .post('/api/report')
+      .set(auth(mine.accessToken))
+      .send({ kind: 'case', subjectId: c.body.id, reason: 'harmful_content' });
+
+    assert.equal(res.status, 404);
+  });
+
+  it('needs a reason it recognises', async () => {
+    const { accessToken } = await swearIn('routes-report-bad');
+    const res = await api()
+      .post('/api/report')
+      .set(auth(accessToken))
+      .send({ kind: 'case', subjectId: 'whatever', reason: 'because-i-said-so' });
+
+    assert.equal(res.status, 400);
+  });
+});
+
+describe('a receipt belongs to one account', () => {
+  it('refuses a transaction already redeemed by another juror', async () => {
+    // Verified receipt, wrong owner. The old code returned 200 with
+    // `granted: <sku>` and granted nothing — indistinguishable, from the
+    // buyer's side, from paying and receiving nothing.
+    const first = await swearIn('routes-receipt-owner');
+    const second = await swearIn('routes-receipt-thief');
+
+    await prisma.purchase.create({
+      data: {
+        userId: first.userId,
+        sku: 'campaign',
+        source: 'store',
+        transactionId: 'txn-shared-000001',
+        platform: 'ios',
+        amountMinor: 499,
+      },
+    });
+
+    const { redeemPurchase, ReceiptOwnedByAnotherAccount } = await import(
+      '../src/services/economy.js'
+    );
+    const { skuById } = await import('../src/domain/store.js');
+
+    await assert.rejects(
+      () =>
+        redeemPurchase({
+          userId: second.userId,
+          sku: skuById('campaign')!,
+          transactionId: 'txn-shared-000001',
+          platform: 'ios',
+        }),
+      ReceiptOwnedByAnotherAccount,
+    );
+
+    // And the thief got nothing.
+    const owned = await prisma.userEntitlement.findMany({ where: { userId: second.userId } });
+    assert.equal(owned.length, 0);
+  });
+
+  it('is idempotent for the juror who actually bought it', async () => {
+    // The restore path, and it must re-grant rather than merely report success:
+    // "already recorded" and "already granted" are different facts, and a
+    // half-finished first attempt is exactly when someone taps restore.
+    const { userId } = await swearIn('routes-receipt-restore');
+    const { redeemPurchase } = await import('../src/services/economy.js');
+    const { skuById } = await import('../src/domain/store.js');
+    const sku = skuById('campaign')!;
+
+    await redeemPurchase({ userId, sku, transactionId: 'txn-restore-01', platform: 'ios' });
+    await prisma.userEntitlement.deleteMany({ where: { userId } }); // simulate a half-finished grant
+
+    const again = await redeemPurchase({
+      userId,
+      sku,
+      transactionId: 'txn-restore-01',
+      platform: 'ios',
+    });
+
+    assert.equal(again.granted, 'campaign');
+    const owned = await prisma.userEntitlement.findMany({ where: { userId } });
+    assert.equal(owned.length, 1, 'restore must re-grant, not just report success');
+  });
+});
+
+describe('a mission pays once', () => {
+  it('does not pay twice when two claims arrive together', async () => {
+    // Read-then-write: both requests saw claimed:false and both paid. The fix
+    // is the conditional update that tokens.rotateRefresh already used.
+    const { userId } = await swearIn('routes-mission-race');
+    const { claimMission } = await import('../src/services/missions.js');
+
+    await prisma.missionProgress.create({
+      data: {
+        userId,
+        key: 'daily_hear_three',
+        kind: 'daily',
+        period: '2999-01-01',
+        progress: 3,
+        target: 3,
+      },
+    });
+
+    // Same period the service will compute for this user's timezone.
+    const { dayKey } = await import('../src/services/missions.js');
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    await prisma.missionProgress.updateMany({
+      where: { userId, key: 'daily_hear_three' },
+      data: { period: dayKey(user.timezone) },
+    });
+
+    const [a, b] = await Promise.all([
+      claimMission(userId, 'daily_hear_three'),
+      claimMission(userId, 'daily_hear_three'),
+    ]);
+
+    assert.equal([a, b].filter((x) => x > 0).length, 1, `both claims paid: ${a} and ${b}`);
+  });
+});
+
+describe('xp is not lost to a race', () => {
+  it('composes concurrent awards instead of overwriting them', async () => {
+    // Read, add, write — two awards landing together both read the same
+    // starting value and the second silently erased the first.
+    const { userId } = await swearIn('routes-xp-race');
+    const { awardXp } = await import('../src/services/progression.js');
+
+    const before = (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).xp;
+    await Promise.all([awardXp(userId, 10), awardXp(userId, 10), awardXp(userId, 10)]);
+    const after = (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).xp;
+
+    assert.equal(after - before, 30, 'an award was lost');
+  });
+});
+
+describe('the archive is paged', () => {
+  it('does not return an entire career in one response', async () => {
+    const { accessToken, userId } = await swearIn('routes-history');
+
+    // Rank 2 opens the archive; grant it directly rather than playing 30 cases.
+    await prisma.user.update({ where: { id: userId }, data: { xp: 200, rank: 2 } });
+
+    const res = await api().get('/api/review/history?limit=5').set(auth(accessToken));
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.body.entries));
+    assert.ok(res.body.entries.length <= 5);
+    // The cursor is present in the contract whether or not there is a page 2.
+    assert.ok('nextCursor' in res.body);
+  });
+});
+
+describe('trust settles exactly once', () => {
+  it('does not double-apply when two review breaks land together', async () => {
+    // The interleaving this guards: settle B reads the pending verdicts BEFORE
+    // settle A marks them applied, but reads the user's trust AFTER A has
+    // already lowered it — then applies the same deltas a second time on top.
+    // Trust gates the promotion ladder, so a doubled run of wrongful
+    // convictions is a career, not a rounding error.
+    const { userId } = await swearIn('routes-settle-race');
+    const { settleTrust } = await import('../src/services/progression.js');
+
+    const start = (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).trust;
+
+    // Three unsettled verdicts worth -5 each. Cases first: VerdictRecord
+    // requires one, and caseId is unique.
+    for (let i = 1; i <= 3; i++) {
+      const c = await prisma.case.create({
+        data: {
+          userId,
+          caseNumber: 900 + i,
+          title: `Settle ${i}`,
+          charge: 'test',
+          accent: '#fff',
+          mood: 'test',
+          defendantName: `Settle Person ${i}`,
+          defendantAge: 40,
+          defendantOccupation: 'tester',
+          defendantBackground: 'x',
+          evidence: [],
+          witnesses: [],
+          prosecutionArgument: 'x',
+          defenceArgument: 'x',
+          correctVerdict: 'guilty',
+        },
+      });
+      await prisma.verdictRecord.create({
+        data: { userId, caseId: c.id, verdict: 'guilty', timeRemaining: 60, trustDelta: -5 },
+      });
+    }
+
+    const [a, b] = await Promise.all([settleTrust(userId), settleTrust(userId)]);
+
+    // Exactly three verdicts settled in total, across both calls.
+    assert.equal(a.applied + b.applied, 3, `settled ${a.applied} + ${b.applied} of 3`);
+
+    const after = (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).trust;
+    assert.equal(after, Math.max(0, start - 15), `trust moved to ${after}, expected ${start - 15}`);
+
+    // And nothing is left unsettled.
+    const left = await prisma.verdictRecord.count({ where: { userId, trustApplied: false } });
+    assert.equal(left, 0);
+  });
+
+  it('clamps at the floor rather than going negative', async () => {
+    const { userId } = await swearIn('routes-settle-floor');
+    const { settleTrust } = await import('../src/services/progression.js');
+
+    const c = await prisma.case.create({
+      data: {
+        userId, caseNumber: 950, title: 'Floor', charge: 'test', accent: '#fff', mood: 'test',
+        defendantName: 'Floor Person', defendantAge: 40, defendantOccupation: 'tester',
+        defendantBackground: 'x', evidence: [], witnesses: [],
+        prosecutionArgument: 'x', defenceArgument: 'x', correctVerdict: 'guilty',
+      },
+    });
+    await prisma.verdictRecord.create({
+      data: { userId, caseId: c.id, verdict: 'guilty', timeRemaining: 60, trustDelta: -500 },
+    });
+
+    const settled = await settleTrust(userId);
+    assert.equal(settled.trust, 0, 'trust went below the floor');
+  });
+
+  it('is a no-op with nothing pending, and reports the real trust', async () => {
+    const { userId } = await swearIn('routes-settle-empty');
+    const { settleTrust } = await import('../src/services/progression.js');
+
+    const current = (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).trust;
+    const settled = await settleTrust(userId);
+
+    assert.equal(settled.applied, 0);
+    assert.equal(settled.delta, 0);
+    assert.equal(settled.trust, current);
+  });
+});
+
+describe('xp awards are exact', () => {
+  it('refuses a negative amount rather than silently clamping', async () => {
+    // Every caller floors at zero already, so a negative is a caller bug —
+    // and the old handling needed a second absolute write to clamp it, which
+    // reintroduced the lost update this function exists to avoid.
+    const { userId } = await swearIn('routes-xp-negative');
+    const { awardXp } = await import('../src/services/progression.js');
+    await assert.rejects(() => awardXp(userId, -50), /non-negative/);
+  });
+
+  it('reports promotion for exactly one of two awards that cross together', async () => {
+    // Rank 2 is 120 xp. Two 70-point awards land together: their sum crosses
+    // the boundary once, so exactly one caller may claim the promotion.
+    const { userId } = await swearIn('routes-xp-promote');
+    const { awardXp } = await import('../src/services/progression.js');
+    await prisma.user.update({ where: { id: userId }, data: { xp: 0, rank: 1 } });
+
+    const [a, b] = await Promise.all([awardXp(userId, 70), awardXp(userId, 70)]);
+    const promoted = [a, b].filter((r) => r.promoted).length;
+
+    assert.equal(promoted, 1, `${promoted} callers claimed the same promotion`);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    assert.equal(user.xp, 140, 'an award was lost');
+    assert.equal(user.rank, 2, 'the stored rank did not follow the xp');
   });
 });

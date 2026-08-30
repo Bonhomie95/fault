@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
 import { api, type ReviewEntry } from '@/lib/api';
 import { newspaperFor } from '@/lib/press';
 import { useGame } from '@/store/game';
@@ -146,12 +146,12 @@ const styles = StyleSheet.create({
   },
   verdictChipText: {
     fontFamily: Fonts.mono,
-    fontSize: 7.5,
+    fontSize: Type.micro,
     letterSpacing: 1.2,
   },
   entryMeta: {
     fontFamily: Fonts.mono,
-    fontSize: 8,
+    fontSize: Type.micro,
     letterSpacing: 1.4,
     color: '#6B6558',
   },

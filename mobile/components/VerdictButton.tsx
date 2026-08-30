@@ -8,7 +8,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
 import * as haptic from '@/lib/haptics';
 
 /**
@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontFamily: Fonts.mono,
-    fontSize: 8,
+    fontSize: Type.micro,
     letterSpacing: 2,
     color: Palette.textFaint,
   },

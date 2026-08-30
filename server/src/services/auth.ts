@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AuthProvider } from '@prisma/client';
 import { env } from '../lib/env.js';
+import { nonceMatches } from './nonces.js';
 
 /**
  * Verifying who someone is.
@@ -9,6 +10,18 @@ import { env } from '../lib/env.js';
  * provider's own signed token and the server verifies it against the
  * provider's public keys. A client that could assert its own identity could
  * assert anyone's.
+ *
+ * Three questions, and all three now get asked:
+ *
+ *   1. Did the provider sign this?     (JWKS)
+ *   2. Was it minted for OUR app?      (aud, and azp on Google)
+ *   3. Was it minted for THIS attempt? (nonce — see services/nonces)
+ *
+ * The third used to be skipped. The client generated a nonce, both providers
+ * embedded it, and nothing here ever looked at it — so a real token for our
+ * app, captured anywhere in its validity window, could be replayed into a
+ * sign-in. Signature and audience were doing all the work and neither of them
+ * can tell a fresh token from a stolen one.
  */
 
 export interface VerifiedIdentity {
@@ -23,10 +36,17 @@ const appleKeys = createRemoteJWKSet(new URL('https://appleid.apple.com/auth/key
 
 /**
  * Apple's identityToken is a JWT signed by Apple. We check the signature, the
- * issuer, and that the audience is *our* app — without the audience check, a
- * token minted for any other Apple app would authenticate here.
+ * issuer, that the audience is *our* app — without the audience check, a token
+ * minted for any other Apple app would authenticate here — and that its nonce
+ * is the one this server issued for this attempt.
+ *
+ * Apple embeds sha256(whatever the app passed), not the raw value, which is
+ * why `nonceMatches` accepts either spelling of the issued secret.
  */
-export async function verifyApple(identityToken: string): Promise<VerifiedIdentity> {
+export async function verifyApple(
+  identityToken: string,
+  issuedNonce: string,
+): Promise<VerifiedIdentity> {
   if (!env.APPLE_BUNDLE_ID) {
     throw new Error('APPLE_BUNDLE_ID is not configured');
   }
@@ -37,6 +57,9 @@ export async function verifyApple(identityToken: string): Promise<VerifiedIdenti
   });
 
   if (!payload.sub) throw new Error('apple token has no subject');
+  if (!nonceMatches(issuedNonce, payload.nonce as string | undefined)) {
+    throw new Error('apple token nonce does not match this sign-in');
+  }
 
   return {
     provider: 'apple',
@@ -54,8 +77,17 @@ const googleKeys = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2
  * Google's id_token, verified the same way. The audience must be one of our
  * own client ids — Google issues tokens to every app in the world, and only
  * the aud claim distinguishes ours.
+ *
+ * `azp` is checked alongside it. On Google, `aud` is who the token is FOR and
+ * `azp` is who REQUESTED it, and they differ whenever one project's clients
+ * share a backend audience — so a token legitimately issued to a different
+ * client of ours (or, in some configurations, someone else's) can carry an
+ * `aud` we accept. Requiring azp to be one of ours too closes that gap.
  */
-export async function verifyGoogle(idToken: string): Promise<VerifiedIdentity> {
+export async function verifyGoogle(
+  idToken: string,
+  issuedNonce: string,
+): Promise<VerifiedIdentity> {
   const audiences = env.GOOGLE_CLIENT_IDS.split(',')
     .map((s) => s.trim())
     .filter(Boolean);
@@ -71,6 +103,15 @@ export async function verifyGoogle(idToken: string): Promise<VerifiedIdentity> {
 
   if (!payload.sub) throw new Error('google token has no subject');
   if (payload.email_verified === false) throw new Error('google email not verified');
+
+  const azp = payload.azp;
+  if (typeof azp === 'string' && !audiences.includes(azp)) {
+    throw new Error('google token was requested by another client');
+  }
+
+  if (!nonceMatches(issuedNonce, payload.nonce as string | undefined)) {
+    throw new Error('google token nonce does not match this sign-in');
+  }
 
   return {
     provider: 'google',

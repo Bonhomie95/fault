@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
+import { adsAvailable, showInterstitial } from '@/lib/ads';
 
 /**
  * The interstitial.
@@ -16,10 +17,12 @@ import { Fonts, Palette } from '@/constants/theme';
  * verdict response), on a 2-3 case cadence the client never sees.
  *
  * ───────────────────────────────────────────────────────────────────────────
- * NO AD NETWORK IS CONNECTED. This is the slot — correctly placed, correctly
- * gated, with the real lifecycle around it. Wiring
- * react-native-google-mobile-ads means replacing `fakeLoad` with the SDK's
- * load/show/close events; every state below already exists to receive them.
+ * The network itself is registered at startup through lib/ads. With none
+ * registered — which is the case today — the slot fails open immediately and
+ * the player goes straight on to the next case, exactly as it did when this
+ * was a `fakeLoad` timer. The difference is that the real code path now runs,
+ * so wiring an SDK is one implementation of AdBackend rather than a rewrite
+ * of this component.
  * ───────────────────────────────────────────────────────────────────────────
  */
 
@@ -44,10 +47,8 @@ export function Interstitial({ onDone }: { onDone: () => void }) {
    * ad arrives on top of the dossier with the clock already running.
    */
   useEffect(() => {
+    let cancelled = false;
     const nag = setTimeout(() => setSlow(true), 1800);
-
-    // Stand-in for the SDK's load callback.
-    const loaded = setTimeout(() => setPhase('showing'), 900);
 
     /**
      * A failed or slow ad must never trap the player. If the network cannot
@@ -55,12 +56,29 @@ export function Interstitial({ onDone }: { onDone: () => void }) {
      * we move on — nobody is held hostage to an impression.
      */
     const bail = setTimeout(() => {
-      setPhase((p) => (p === 'loading' ? 'failed' : p));
+      if (!cancelled) setPhase((p) => (p === 'loading' ? 'failed' : p));
     }, LOAD_TIMEOUT_MS);
 
+    void (async () => {
+      // With no network registered this resolves false immediately, and the
+      // slot fails open — which is exactly the old placeholder behaviour, but
+      // now on the real code path rather than beside it.
+      if (!adsAvailable()) {
+        if (!cancelled) setPhase('failed');
+        return;
+      }
+
+      const shown = await showInterstitial();
+      if (cancelled) return;
+      // showInterstitial resolves when the ad is DISMISSED, so by the time we
+      // are here the player has already seen it and closed it themselves.
+      // There is nothing left to display and nothing to make them wait for.
+      setPhase(shown ? 'showing' : 'failed');
+    })();
+
     return () => {
+      cancelled = true;
       clearTimeout(nag);
-      clearTimeout(loaded);
       clearTimeout(bail);
     };
   }, []);
@@ -141,12 +159,12 @@ const styles = StyleSheet.create({
   },
   loadingLabel: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
+    fontSize: Type.micro,
     letterSpacing: 2.2,
     color: Palette.textMuted,
     textAlign: 'center',
   },
-  label: { fontFamily: Fonts.mono, fontSize: 8, letterSpacing: 2.4, color: Palette.textFaint },
+  label: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 2.4, color: Palette.textFaint },
   body: {
     fontFamily: Fonts.displayRegular,
     fontSize: 17,
@@ -156,7 +174,7 @@ const styles = StyleSheet.create({
   },
   note: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
+    fontSize: Type.micro,
     lineHeight: 15,
     color: Palette.textMuted,
     textAlign: 'center',

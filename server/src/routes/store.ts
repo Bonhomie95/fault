@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { MERIT, SKUS, skuById } from '../domain/store.js';
+import { log } from '../lib/log.js';
 import { prisma } from '../lib/prisma.js';
 import { economyLimiter } from '../middleware/limits.js';
 import { requireJuror } from '../middleware/requireJuror.js';
@@ -10,13 +11,24 @@ import {
   entitlementsFor,
   hasEntitlement,
   redeemPurchase,
+  ReceiptOwnedByAnotherAccount,
   rewardedAdsToday,
 } from '../services/economy.js';
 import { verifyReceipt } from '../services/receipts.js';
 
 export const storeRouter = Router();
 
-storeRouter.use(economyLimiter);
+/**
+ * NOTE ON MIDDLEWARE ORDER.
+ *
+ * `storeRouter.use(economyLimiter)` used to live here, which put the limiter
+ * ahead of `requireJuror` on every route below — so `economyLimiter` never saw
+ * an authenticated juror and silently keyed every store request by IP, the
+ * same bug the global limiter had.
+ *
+ * Each route now lists `requireJuror, economyLimiter` in that order. It is
+ * more typing and it is the only ordering that actually limits per player.
+ */
 
 /**
  * The shelf.
@@ -24,7 +36,7 @@ storeRouter.use(economyLimiter);
  * Prices come from the server, always. A client that is told the price cannot
  * set the price.
  */
-storeRouter.get('/', requireJuror, async (req, res) => {
+storeRouter.get('/', requireJuror, economyLimiter, async (req, res) => {
   const { userId, user } = req.juror;
   const owned = await entitlementsFor(userId);
 
@@ -48,7 +60,7 @@ storeRouter.get('/', requireJuror, async (req, res) => {
 });
 
 /** Buy with Merit — the earned path. */
-storeRouter.post('/buy', requireJuror, async (req, res) => {
+storeRouter.post('/buy', requireJuror, economyLimiter, async (req, res) => {
   const parsed = z.object({ sku: z.string() }).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'sku required' });
@@ -88,7 +100,7 @@ const redeemSchema = z.object({
  * double-granting, grants are idempotent so restore works, and the server
  * prices everything.
  */
-storeRouter.post('/redeem', requireJuror, async (req, res) => {
+storeRouter.post('/redeem', requireJuror, economyLimiter, async (req, res) => {
   const parsed = redeemSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'invalid purchase' });
@@ -110,18 +122,38 @@ storeRouter.post('/redeem', requireJuror, async (req, res) => {
     return;
   }
 
-  const result = await redeemPurchase({
-    userId: req.juror.userId,
-    sku,
-    transactionId: parsed.data.transactionId,
-    platform: parsed.data.platform,
-  });
-
-  res.json(result);
+  try {
+    const result = await redeemPurchase({
+      userId: req.juror.userId,
+      sku,
+      transactionId: parsed.data.transactionId,
+      platform: parsed.data.platform,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof ReceiptOwnedByAnotherAccount) {
+      // A real, Apple-confirmed receipt — attached to a different juror. Worth
+      // a log line at any volume: it is either receipt sharing, or a player
+      // who has ended up with two accounts and one purchase, and those want
+      // different answers from a human.
+      log.warn('receipt redeemed against another account', {
+        userId: req.juror.userId,
+        sku: sku.id,
+        transactionId: parsed.data.transactionId,
+      });
+      res.status(409).json({
+        error: 'receipt_belongs_to_another_account',
+        message:
+          'That purchase is already on another juror’s record. Sign in as that juror to restore it.',
+      });
+      return;
+    }
+    throw err;
+  }
 });
 
 /** Restore purchases — Apple requires this to exist and to be reachable. */
-storeRouter.post('/restore', requireJuror, async (req, res) => {
+storeRouter.post('/restore', requireJuror, economyLimiter, async (req, res) => {
   const { userId } = req.juror;
   const purchases = await prisma.purchase.findMany({
     where: { userId, source: 'store' },
@@ -136,7 +168,7 @@ storeRouter.post('/restore', requireJuror, async (req, res) => {
  * faucet, and a faucet without a tap is just a hole. In production the viewId
  * should be an SSV callback from the ad network rather than the client's word.
  */
-storeRouter.post('/ad-reward', requireJuror, async (req, res) => {
+storeRouter.post('/ad-reward', requireJuror, economyLimiter, async (req, res) => {
   const parsed = z.object({ viewId: z.string().min(6) }).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'viewId required' });
@@ -159,7 +191,7 @@ storeRouter.post('/ad-reward', requireJuror, async (req, res) => {
  * The server decides, not the app — an ad-free entitlement enforced only in
  * the client is an ad-free entitlement anyone can have.
  */
-storeRouter.get('/ads', requireJuror, async (req, res) => {
+storeRouter.get('/ads', requireJuror, economyLimiter, async (req, res) => {
   const { userId } = req.juror;
   const noAds = await hasEntitlement(userId, 'no_ads');
 

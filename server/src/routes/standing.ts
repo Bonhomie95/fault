@@ -5,7 +5,7 @@ import { ladderFor, tierLabel } from '../domain/jurisdiction.js';
 import { prisma } from '../lib/prisma.js';
 import { requireJuror } from '../middleware/requireJuror.js';
 import { invalidateCaseCache } from '../services/caseGenerator.js';
-import { claimMission, missionsFor } from '../services/missions.js';
+import { claimMission, missionsFor, unclaimMission } from '../services/missions.js';
 import {
   awardXp,
   decideApplication,
@@ -76,7 +76,18 @@ standingRouter.post('/missions/claim', requireJuror, async (req, res) => {
     return;
   }
 
-  const { rank } = await awardXp(req.juror.userId, xp);
+  // The mission is already marked claimed at this point, so a failure here
+  // loses the XP for good — the player did the work, the row says paid, and
+  // nothing was paid. Put the claim back if the award cannot land, so they can
+  // simply tap again.
+  let rank: number;
+  try {
+    ({ rank } = await awardXp(req.juror.userId, xp));
+  } catch (err) {
+    await unclaimMission(req.juror.userId, parsed.data.key).catch(() => {});
+    throw err;
+  }
+
   res.json({ xp, rank });
 });
 

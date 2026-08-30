@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
 
 /**
  * The room is doing something. Do not touch anything.
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   },
   slow: {
     fontFamily: Fonts.mono,
-    fontSize: 9.5,
+    fontSize: Type.micro,
     lineHeight: 15,
     color: Palette.textMuted,
     textAlign: 'center',

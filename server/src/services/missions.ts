@@ -192,26 +192,51 @@ export async function tickMissions(userId: string, signal: VerdictSignal) {
     daily_no_hung: signal.wasHung ? -Number.MAX_SAFE_INTEGER : 1,
   };
 
-  for (const def of MISSIONS) {
-    const inc = increments[def.key] ?? 0;
-    if (inc === 0) continue;
+  // One read for every mission, then one write each — instead of a
+  // read-then-write per mission, serially.
+  //
+  // This loop was doing findUnique + upsert for each of seven missions: up to
+  // fifteen sequential round trips inside POST /api/verdict, which was already
+  // the heaviest write path in the game at roughly thirty-eight. Each one waits
+  // for the last, so it is fifteen network latencies stacked end to end for
+  // work that touches at most seven small rows.
+  //
+  // The reads collapse to a single findMany. The writes stay separate — each
+  // upsert has different data — but they go out together rather than in
+  // lockstep, so it is one round trip's worth of waiting instead of seven.
+  const advancing = MISSIONS.filter((def) => (increments[def.key] ?? 0) !== 0);
+  if (advancing.length === 0) return;
 
-    const period = periodFor(def.kind, timezone);
-    const existing = await prisma.missionProgress.findUnique({
-      where: { userId_key_period: { userId, key: def.key, period } },
-    });
+  const periods = [...new Set(advancing.map((def) => periodFor(def.kind, timezone)))];
 
-    const base = existing?.progress ?? 0;
-    const progress = Math.max(0, Math.min(def.target, inc < 0 ? 0 : base + inc));
-    const completedAt =
-      progress >= def.target ? (existing?.completedAt ?? new Date()) : null;
+  const existing = await prisma.missionProgress.findMany({
+    where: {
+      userId,
+      key: { in: advancing.map((def) => def.key) },
+      period: { in: periods },
+    },
+  });
 
-    await prisma.missionProgress.upsert({
-      where: { userId_key_period: { userId, key: def.key, period } },
-      create: { userId, key: def.key, kind: def.kind, period, progress, target: def.target, completedAt },
-      update: { progress, completedAt },
-    });
-  }
+  const byKeyPeriod = new Map(existing.map((row) => [`${row.key}:${row.period}`, row]));
+  const now = new Date();
+
+  await Promise.all(
+    advancing.map((def) => {
+      const inc = increments[def.key]!;
+      const period = periodFor(def.kind, timezone);
+      const prior = byKeyPeriod.get(`${def.key}:${period}`);
+
+      const base = prior?.progress ?? 0;
+      const progress = Math.max(0, Math.min(def.target, inc < 0 ? 0 : base + inc));
+      const completedAt = progress >= def.target ? (prior?.completedAt ?? now) : null;
+
+      return prisma.missionProgress.upsert({
+        where: { userId_key_period: { userId, key: def.key, period } },
+        create: { userId, key: def.key, kind: def.kind, period, progress, target: def.target, completedAt },
+        update: { progress, completedAt },
+      });
+    }),
+  );
 }
 
 export interface MissionView extends MissionDef {
@@ -242,7 +267,21 @@ export async function missionsFor(userId: string): Promise<MissionView[]> {
   });
 }
 
-/** Claim a finished mission's XP. Idempotent — a mission pays once. */
+/**
+ * Claim a finished mission's XP. Idempotent — a mission pays once.
+ *
+ * The claim is a CONDITIONAL update, not a read-then-write.
+ *
+ * It used to read the row, check `row.claimed`, then update by id with no
+ * condition — so two requests arriving together both passed the check, both
+ * wrote `claimed: true`, and both returned `def.xp`. Double pay, from a plain
+ * double tap on a flaky connection.
+ *
+ * The correct pattern was already in this codebase, in tokens.rotateRefresh:
+ * make the database do the checking with `updateMany` and a WHERE that
+ * includes the condition, then trust `count`. Exactly one caller can win a row
+ * that way, because the row can only transition once.
+ */
 export async function claimMission(userId: string, key: string): Promise<number> {
   const def = MISSIONS.find((m) => m.key === key);
   if (!def) return 0;
@@ -252,16 +291,46 @@ export async function claimMission(userId: string, key: string): Promise<number>
     select: { timezone: true },
   });
   const period = periodFor(def.kind, timezone);
-  const row = await prisma.missionProgress.findUnique({
-    where: { userId_key_period: { userId, key, period } },
-  });
 
-  if (!row || row.claimed || row.progress < def.target) return 0;
-
-  await prisma.missionProgress.update({
-    where: { id: row.id },
+  const claimed = await prisma.missionProgress.updateMany({
+    where: {
+      userId,
+      key,
+      period,
+      claimed: false,
+      // Completeness is part of the condition too, so a claim cannot race a
+      // tickMissions that has not yet pushed progress over the line.
+      progress: { gte: def.target },
+    },
     data: { claimed: true },
   });
 
-  return def.xp;
+  // Zero rows means: no such mission instance, not finished yet, or somebody
+  // else already took it. All three are "nothing to claim" from here.
+  return claimed.count === 1 ? def.xp : 0;
+}
+
+/**
+ * Put a claim back.
+ *
+ * Only for the caller that took it and then failed to pay out — see the
+ * mission claim route. Claiming marks the row before the XP is awarded, so a
+ * failure between those two steps leaves a mission that says "paid" and a
+ * player who was not. This is the compensation for that, and it is deliberately
+ * not exported as anything more general: unclaiming a mission somebody WAS paid
+ * for is a duplication bug wearing a helpful name.
+ */
+export async function unclaimMission(userId: string, key: string): Promise<void> {
+  const def = MISSIONS.find((m) => m.key === key);
+  if (!def) return;
+
+  const { timezone } = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { timezone: true },
+  });
+
+  await prisma.missionProgress.updateMany({
+    where: { userId, key, period: periodFor(def.kind, timezone), claimed: true },
+    data: { claimed: false },
+  });
 }

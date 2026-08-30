@@ -1,4 +1,5 @@
 import type { CityMetrics, CityStateView } from '../domain/city.js';
+import { peaceIndex } from '../domain/peace.js';
 import { prisma } from '../lib/prisma.js';
 import { cityKey, redis } from '../lib/redis.js';
 import { deriveFactions } from './cityEffects.js';
@@ -49,7 +50,12 @@ export async function updateCityState(userId: string, metrics: CityMetrics): Pro
 
   const row = await prisma.cityState.update({
     where: { userId },
-    data: { ...metrics, activeFactions },
+    // peaceIndex is denormalised so the boards can rank with an index range
+    // count instead of sorting every city in the world per request. This is
+    // the ONLY place it is written, which is what keeps it honest — it is
+    // recomputed from the same metrics in the same statement that stores them,
+    // so the two cannot drift apart.
+    data: { ...metrics, activeFactions, peaceIndex: peaceIndex(metrics) },
   });
 
   const view = toView(row);

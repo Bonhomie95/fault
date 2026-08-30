@@ -218,8 +218,17 @@ export interface ClientCase {
     occupation: string;
     background: string;
     portraitSeed: number;
-    /** 0 unsettling .. 100 disarming. Shapes the face and means nothing. */
+    /**
+     * The three channels a juror reads off a body, none of which mean
+     * anything. All rolled server-side, blind to the verdict — which is the
+     * only reason measuring a player's reaction to them says anything.
+     */
+    /** 0 unsettling .. 100 disarming. Shapes the face. */
     appearance: number;
+    /** 0 closed and defensive .. 100 open and still. Shapes the posture. */
+    demeanour: number;
+    /** 0 unremarkable .. 100 uncanny. Shapes the strangeness. */
+    oddity: number;
   };
   evidence: {
     id: string;
@@ -231,6 +240,32 @@ export interface ClientCase {
   prosecutionArgument: string;
   defenceArgument: string;
   returningCharacters: { name: string; portraitSeed: number }[];
+  /**
+   * The window closed while the player was away.
+   *
+   * Set only when a pending case is re-served after its clock has run out.
+   * The forced hung verdict is unavoidable at that point — the server has been
+   * counting since it served the case — but the app now says so and waits for
+   * an acknowledgement instead of firing the verdict the instant the screen
+   * mounts. Losing four trust and twenty Merit is a consequence; discovering
+   * it afterwards with no explanation was a bug.
+   */
+  adjourned?: boolean;
+}
+
+/** A row in the archive. Deliberately lighter than a ClientCase. */
+export interface HistoryEntry {
+  caseNumber: number;
+  title: string;
+  defendantName: string;
+  charge: string;
+  accent: string;
+  verdict: 'guilty' | 'not_guilty';
+  wasHung: boolean;
+  timeRemaining: number;
+  /** Null until the outcome has been read at a review break. */
+  outcome: string | null;
+  deliveredAt: string;
 }
 
 export interface CityState {
@@ -251,6 +286,17 @@ export interface VerdictResult {
   /** Measured by the server from when it served the case, not claimed by us. */
   timeRemaining: number;
   aftermath: string;
+  /**
+   * What the accused does with their face, for the verdict screen.
+   *
+   * The only field in this response that reflects whether the juror was right,
+   * and it is deliberately shaped as the defendant's reaction rather than a
+   * correctness flag — the client should not be holding "you were right" as a
+   * boolean it could render as a score. Optional so an older server, or a
+   * cached response from before the field existed, degrades to `neutral`
+   * rather than throwing on a screen the player cannot leave.
+   */
+  reaction?: 'broken' | 'stricken' | 'smirk' | 'relief' | 'unreadable';
   city: CityState;
   triggerReview: boolean;
   casesHeard: number;
@@ -315,6 +361,18 @@ export interface Session {
   entitlements: Entitlement[];
   merit: number;
   casesHeard?: number;
+  /**
+   * Where to send a player who wants the policy, the terms, or a human.
+   *
+   * Served rather than hardcoded so a URL can be corrected without shipping a
+   * build — Apple requires both links to be reachable in-app from any app that
+   * creates accounts, and a dead privacy policy link is a rejection.
+   */
+  support?: {
+    privacyPolicyUrl: string | null;
+    termsUrl: string | null;
+    supportEmail: string | null;
+  };
 }
 
 export interface StoreItem {
@@ -440,14 +498,33 @@ export interface SignInResult {
 
 export const api = {
   /**
+   * A nonce for one sign-in attempt, issued by the server.
+   *
+   * The client used to invent its own and the server never checked it, which
+   * made it decoration — a nonce exists to bind one identity token to one
+   * sign-in THIS server asked for, and a value the server has never seen
+   * cannot do that. Without it, a provider token captured anywhere inside its
+   * validity window could be replayed to take over an account.
+   */
+  signInNonce: () =>
+    request<{ nonce: string; nonceSha256: string; expiresInSeconds: number }>(
+      '/api/auth/nonce',
+      { auth: false },
+    ),
+
+  /**
    * Sign in or swear in. The provider token is verified server-side — the
    * client never asserts who it is, only hands over what the provider signed.
    * `jurorName` is the player's own choice and is required on first sign-in;
    * a 409 juror_name_required means the court needs a name before proceeding.
+   * A 400 juror_name_rejected means the name did not pass the registry filter,
+   * and `message` says what to change.
    */
   signIn: (body: {
     provider: 'apple' | 'google' | 'device';
     token: string;
+    /** The nonce from signInNonce(). Required for apple and google. */
+    nonce?: string;
     jurorName?: string;
     country?: string;
     /** IANA zone, so the player's day ends at their midnight. */
@@ -492,15 +569,33 @@ export const api = {
       { method: 'POST', body },
     ),
 
-  createSession: (jurorName: string) =>
-    request<Session>('/api/session', { method: 'POST', body: { jurorName } }),
+  /**
+   * NOTE: `createSession` and `updateSettings` are gone.
+   *
+   * Both were fossils of vulnerabilities the server had already closed, still
+   * sitting here as callable methods. `createSession` posted to /api/session,
+   * which was deleted for minting a fully playable juror from a name and no
+   * provider token. `updateSettings` PATCHed `trialUnlocked` — the exact field
+   * the entitlement rewrite removed BECAUSE the client could set it, which is
+   * what made the paid campaign free to anyone with curl.
+   *
+   * Neither had a caller. Both would have 404'd. They are removed rather than
+   * left as documentation, because a client method that names a closed hole is
+   * an invitation to somebody who does not know the history.
+   */
 
   me: () => request<Session>('/api/session/me'),
 
-  updateSettings: (body: { clockSeconds?: number; trialUnlocked?: boolean }) =>
-    request<{ clockSeconds: number; trialUnlocked: boolean }>('/api/session/me', {
+  /**
+   * Change the name on the public registry.
+   *
+   * The only remedy short of deleting an account, and required by App Store
+   * Guideline 1.2 for user-generated content. One change a day.
+   */
+  renameJuror: (jurorName: string) =>
+    request<{ jurorName: string; changed: boolean }>('/api/session/me/name', {
       method: 'PATCH',
-      body,
+      body: { jurorName },
     }),
 
   nextCase: () => request<ClientCase>('/api/case/next'),
@@ -520,7 +615,45 @@ export const api = {
 
   review: () => request<{ entries: ReviewEntry[] }>('/api/review'),
 
+  /**
+   * The archive — the whole record, a page at a time.
+   *
+   * Unlocks at rank 2 and had no client method at all, so the thing the gate
+   * opened was unreachable from the app. Paged because the server no longer
+   * returns an entire career in one response, and neither should a list screen
+   * ask for one.
+   */
+  history: (before?: string) =>
+    request<{ entries: HistoryEntry[]; nextCursor: string | null }>(
+      `/api/review/history${before ? `?before=${encodeURIComponent(before)}` : ''}`,
+    ),
+
   jurorRecord: () => request<JurorRecord>('/api/juror-profile'),
+
+  // ---- Reporting ----
+
+  /**
+   * Tell the court something is wrong.
+   *
+   * Required by App Store Guideline 1.2 for the juror names on the public
+   * registry, and required by judgement for the generated docket: this game
+   * ships model-written criminal accusations about invented people, set in
+   * named real jurisdictions, without a human reading them first. A reported
+   * case is quarantined immediately and leaves the docket.
+   */
+  report: (body: {
+    kind: 'case' | 'juror_name';
+    subjectId: string;
+    reason: 'real_person' | 'harmful_content' | 'offensive_name' | 'broken_case' | 'other';
+    detail?: string;
+  }) =>
+    request<{ reported: boolean; reference: string; message: string }>('/api/report', {
+      method: 'POST',
+      body,
+    }),
+
+  reportReasons: () =>
+    request<{ reasons: { key: string; label: string }[] }>('/api/report/reasons'),
 
   // ---- Store ----
 
@@ -532,6 +665,30 @@ export const api = {
       method: 'POST',
       body: { sku },
     }),
+
+  /**
+   * Hand a store receipt to the server for validation.
+   *
+   * This had no client method, which is why the money path was unreachable
+   * however complete the server side was. The flow is: the IAP SDK completes a
+   * purchase and returns a receipt (StoreKit 2's signedTransactionInfo, or
+   * Play's purchaseToken), this posts it, and the server verifies it with
+   * Apple or Google before granting anything.
+   *
+   * We never tell the server what was bought and expect to be believed — the
+   * sku is checked against the product id in the receipt, and against what
+   * Apple's own API says the transaction actually was.
+   */
+  redeemPurchase: (body: {
+    sku: string;
+    transactionId: string;
+    platform: 'ios' | 'android';
+    receipt: string;
+  }) =>
+    request<{ sku: string; granted: Entitlement | null; meritBalance: number }>(
+      '/api/store/redeem',
+      { method: 'POST', body },
+    ),
 
   restorePurchases: () =>
     request<{ restored: number; entitlements: Entitlement[] }>('/api/store/restore', {

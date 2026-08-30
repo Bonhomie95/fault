@@ -1,5 +1,5 @@
 import type { Case } from '@prisma/client';
-import { GROQ_MODEL, groq } from '../lib/groq.js';
+import { aiEnabled, completeOnce } from '../lib/groq.js';
 
 /**
  * What happened next (GDD 2.6).
@@ -18,7 +18,7 @@ export async function writeOutcome(
     return 'No consensus. Your reasoning was your own.';
   }
 
-  if (!groq) return deterministicOutcome(caseData, verdict, wasHung);
+  if (!aiEnabled) return deterministicOutcome(caseData, verdict, wasHung);
 
   const wentRight = verdict === caseData.correctVerdict;
   const prompt = `
@@ -39,17 +39,12 @@ rearrest, a life resumed.
 Include a timeframe in months. Return only the sentence.
 `.trim();
 
-  try {
-    const response = await groq.chat.completions.create({
-      model: GROQ_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 120,
-      temperature: 0.8,
-    });
-    return response.choices[0]?.message?.content?.trim() ?? deterministicOutcome(caseData, verdict, wasHung);
-  } catch {
-    return deterministicOutcome(caseData, verdict, wasHung);
-  }
+  // Through the pool, so a spent first key does not silently kill every
+  // outcome line while case generation carries on. completeOnce returns null
+  // rather than throwing — the deterministic writer is a real fallback here,
+  // not an error path, and it is written in the same voice.
+  const written = await completeOnce({ prompt, maxTokens: 120, temperature: 0.8 });
+  return written ?? deterministicOutcome(caseData, verdict, wasHung);
 }
 
 function deterministicOutcome(

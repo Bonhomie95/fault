@@ -1,10 +1,13 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
+import type { CorrectVerdict, Verdict } from '@prisma/client';
+import { reactionFor } from '../domain/reaction.js';
 import { z } from 'zod';
 import type { Witness } from '../domain/case.js';
 import { CLOCK_SECONDS, clockFor } from '../domain/clock.js';
-import { xpForVerdict, trustForVerdict } from '../domain/progression.js';
+import { rankFor, xpForVerdict, trustForVerdict } from '../domain/progression.js';
 import { meritForStreak, meritForVerdict } from '../domain/store.js';
 import { prisma } from '../lib/prisma.js';
+import { verdictLimiter } from '../middleware/limits.js';
 import { requireJuror } from '../middleware/requireJuror.js';
 import { grantMerit } from '../services/economy.js';
 import { noteCaseHeard } from '../services/ads.js';
@@ -51,7 +54,76 @@ function themesFor(accent: string, charge: string): string[] {
   return themes;
 }
 
-verdictRouter.post('/', requireJuror, async (req, res) => {
+// requireJuror BEFORE verdictLimiter, so the limiter keys on the juror rather
+// than a spoofable IP. This route previously had no limiter of its own at all
+// and leaned on the global one, which was itself keyed by IP for the same
+// ordering reason — see middleware/identify.
+/**
+ * The same answer, for a verdict that has already been recorded.
+ *
+ * Submitting a verdict is not safe to retry unless it is idempotent, and on a
+ * phone it WILL be retried: the request succeeds, the response is lost to a
+ * dropped connection or a backgrounded app, and the client asks again. The
+ * route used to answer that with 409, which the client treats as a failure —
+ * so the case is decided, the clock is dead, every retry 409s, and the player
+ * is stranded on a screen with no way forward. That was reproduced by simply
+ * playing a case.
+ *
+ * So a duplicate returns what the first call returned. Everything here is
+ * either stored on the record or deterministic from it: `meritAwarded` is a
+ * pure function of the clock, `triggerReview` of the count.
+ *
+ * Two fields are deliberately NOT replayed. Merit and XP are not granted
+ * again — the balances returned are current, not fresh awards — and
+ * `showInterstitial` is false, because an advert belongs to a verdict that
+ * just happened and not to a retry of one that already had.
+ */
+async function replayVerdict(
+  res: Response,
+  userId: string,
+  caseData: { id: string; correctVerdict: CorrectVerdict; consensusGuilty: number; consensusNotGuilty: number },
+  record: { verdict: Verdict; wasHung: boolean; timeRemaining: number; xpAwarded: number },
+) {
+  const [city, verdictCount, current] = await Promise.all([
+    getCityState(userId),
+    prisma.verdictRecord.count({ where: { userId } }),
+    prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { merit: true, xp: true } }),
+  ]);
+
+  const guilty = caseData.consensusGuilty;
+  const total = Math.max(1, guilty + caseData.consensusNotGuilty);
+
+  res.json({
+    verdict: record.verdict,
+    wasHung: record.wasHung,
+    timeRemaining: record.wasHung ? 0 : record.timeRemaining,
+    reaction: reactionFor(record.verdict, caseData.correctVerdict),
+    aftermath:
+      record.verdict === 'guilty'
+        ? 'The defendant was taken into custody.'
+        : 'The defendant left the courthouse.',
+    city,
+    triggerReview: verdictCount % REVIEW_INTERVAL === 0,
+    casesHeard: verdictCount,
+    consensus: {
+      guiltyPercent: Math.round((guilty / total) * 100),
+      sampleSize: total,
+    },
+    xpAwarded: record.xpAwarded,
+    rank: rankFor(current.xp).level,
+    promoted: false,
+    meritAwarded: meritForVerdict({
+      wasHung: record.wasHung,
+      timeRemaining: record.timeRemaining,
+      clockSeconds: CLOCK_SECONDS,
+    }),
+    merit: current.merit,
+    showInterstitial: false,
+    replayed: true,
+  });
+}
+
+verdictRouter.post('/', requireJuror, verdictLimiter, async (req, res) => {
   const { userId, user } = req.juror;
 
   const parsed = submitSchema.safeParse(req.body);
@@ -72,7 +144,9 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
     return;
   }
   if (caseData.verdict) {
-    res.status(409).json({ error: 'verdict already delivered on this case' });
+    // Already decided. Answer with the decision rather than an error — see
+    // replayVerdict for why a 409 here strands the player.
+    await replayVerdict(res, userId, caseData, caseData.verdict);
     return;
   }
 
@@ -134,9 +208,14 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
     },
     });
   } catch (err) {
+    // Two submissions in flight at once. The other one won; return what it
+    // recorded rather than failing the loser.
     if ((err as { code?: string }).code === 'P2002') {
-      res.status(409).json({ error: 'verdict already delivered on this case' });
-      return;
+      const existing = await prisma.verdictRecord.findUnique({ where: { caseId } });
+      if (existing) {
+        await replayVerdict(res, userId, caseData, existing);
+        return;
+      }
     }
     throw err;
   }
@@ -231,6 +310,16 @@ verdictRouter.post('/', requireJuror, async (req, res) => {
     verdict,
     wasHung,
     timeRemaining: wasHung ? 0 : timeRemaining,
+    /**
+     * What the accused does with their face, for the verdict screen.
+     *
+     * This is the one thing in the response that carries the truth, and it is
+     * sent as the defendant's reaction rather than as a correctness flag on
+     * purpose: the client has no business holding "you were right" as a
+     * boolean it could render as a score. See domain/reaction for what showing
+     * this costs and what it buys.
+     */
+    reaction: reactionFor(verdict, caseData.correctVerdict),
     // GDD 5: the aftermath line. Not a score — a consequence.
     aftermath:
       verdict === 'guilty'

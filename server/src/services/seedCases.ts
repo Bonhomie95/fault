@@ -33,6 +33,12 @@ export const SEED_CASES: GeneratedCase[] = [
         'Eleven years at the depot without a written warning. Sole earner for a household of five. Her supervisor was dismissed last year for falsifying the same ledgers she is now accused of altering.',
       wealth: 22,
       appearance: 28,
+      // demeanour and oddity are re-rolled per serve by
+      // stripPresentation — six authored cases have six FIXED
+      // verdicts, so a fixed presentation would be perfectly
+      // correlated with guilt. These are placeholders only.
+      demeanour: 50,
+      oddity: 50,
     },
     evidence: [
       {
@@ -101,6 +107,12 @@ export const SEED_CASES: GeneratedCase[] = [
         'Two prior cautions for public affray, both withdrawn. Known to the complainant for six years; they were once business partners in a failed transport union.',
       wealth: 18,
       appearance: 45,
+      // demeanour and oddity are re-rolled per serve by
+      // stripPresentation — six authored cases have six FIXED
+      // verdicts, so a fixed presentation would be perfectly
+      // correlated with guilt. These are placeholders only.
+      demeanour: 50,
+      oddity: 50,
     },
     evidence: [
       {
@@ -170,6 +182,12 @@ export const SEED_CASES: GeneratedCase[] = [
         'Built four hundred units of low-cost housing in {HOOD1}, then took deposits for six hundred more that were never built. Says the money went to a contractor who vanished. The contractor is real and has, in fact, vanished.',
       wealth: 84,
       appearance: 82,
+      // demeanour and oddity are re-rolled per serve by
+      // stripPresentation — six authored cases have six FIXED
+      // verdicts, so a fixed presentation would be perfectly
+      // correlated with guilt. These are placeholders only.
+      demeanour: 50,
+      oddity: 50,
     },
     evidence: [
       {
@@ -239,6 +257,12 @@ export const SEED_CASES: GeneratedCase[] = [
         'Final-year student, no prior record. Stopped at a checkpoint on the the {HOOD2} road at 23:15. The officer who searched her vehicle is the subject of two pending complaints for evidence handling.',
       wealth: 45,
       appearance: 72,
+      // demeanour and oddity are re-rolled per serve by
+      // stripPresentation — six authored cases have six FIXED
+      // verdicts, so a fixed presentation would be perfectly
+      // correlated with guilt. These are placeholders only.
+      demeanour: 50,
+      oddity: 50,
     },
     evidence: [
       {
@@ -309,6 +333,12 @@ export const SEED_CASES: GeneratedCase[] = [
         'Her stall burned three weeks after she insured it and two days after her husband filed for divorce. Nobody was hurt. The stall beside hers, owned by her husband’s sister, burned with it.',
       wealth: 52,
       appearance: 35,
+      // demeanour and oddity are re-rolled per serve by
+      // stripPresentation — six authored cases have six FIXED
+      // verdicts, so a fixed presentation would be perfectly
+      // correlated with guilt. These are placeholders only.
+      demeanour: 50,
+      oddity: 50,
     },
     evidence: [
       {
@@ -378,6 +408,12 @@ export const SEED_CASES: GeneratedCase[] = [
         'Thirty years moving cement on the the {DISTRICT} freight corridor. Paid {MONEY_SMALL} to a roads official. Does not deny paying it. Says his trucks had been held at the depot for nineteen days and his drivers had not eaten.',
       wealth: 61,
       appearance: 78,
+      // demeanour and oddity are re-rolled per serve by
+      // stripPresentation — six authored cases have six FIXED
+      // verdicts, so a fixed presentation would be perfectly
+      // correlated with guilt. These are placeholders only.
+      demeanour: 50,
+      oddity: 50,
     },
     evidence: [
       {

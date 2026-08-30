@@ -4,10 +4,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Interstitial } from '@/components/Interstitial';
-import { Fonts, Palette } from '@/constants/theme';
+import { AccusedReaction } from '@/components/scene2d/AccusedReaction';
+import { Fonts, Palette, Type } from '@/constants/theme';
 import * as haptic from '@/lib/haptics';
+import { useReducedMotion } from '@/lib/motion';
 import { play } from '@/lib/sound';
 import { useGame } from '@/store/game';
+import { useSettings } from '@/store/settings';
 
 /**
  * GDD 6, Screen 5 — Verdict Delivered.
@@ -16,7 +19,12 @@ import { useGame } from '@/store/game';
 export default function VerdictDelivered() {
   const result = useGame((s) => s.lastResult);
   const lastAccent = useGame((s) => s.lastAccent);
+  const lastDefendant = useGame((s) => s.lastDefendant);
+  const reducedMotion = useReducedMotion();
   const [phase, setPhase] = useState<'flash' | 'aftermath'>('flash');
+  // The aftermath is the payload of this screen — the consequence the whole
+  // game exists to deliver — and it ignored the player's text size.
+  const textScale = useSettings((s) => s.textScale);
   /** Shown after the player has read the aftermath and asked to move on. */
   const [showingAd, setShowingAd] = useState(false);
 
@@ -57,12 +65,36 @@ export default function VerdictDelivered() {
 
   return (
     <View style={styles.root}>
-      {/* The screen flashes the case's accent, then keeps a trace of it. */}
+      {/* The accused, reacting to what has just happened to them.
+          Behind the accent flash so the colour washes over them, and behind
+          everything else so it stays ground rather than content. Absent only
+          if the store has no defendant — an app resumed straight onto this
+          route, say — and the screen simply plays as it always did. */}
+      {lastDefendant && (
+        <AccusedReaction
+          seed={lastDefendant.portraitSeed}
+          appearance={lastDefendant.appearance}
+          reaction={result.reaction}
+          reducedMotion={reducedMotion}
+        />
+      )}
+
+      {/* The screen flashes the case's accent, then keeps a trace of it.
+          The tint lives on an inner view, and this is not a style choice.
+          Reanimated's FadeIn animates `opacity` to 1, so putting the 0.16 in
+          the same style it drives means the entering animation ends by
+          overwriting it — the "trace" became an opaque wash of the accent
+          across the whole screen. The verdict itself is drawn in that same
+          accent, so the one word this entire screen exists to deliver was
+          rendered invisible, on top of its own colour, every single time. */}
       <Animated.View
         entering={FadeIn.duration(90)}
         exiting={FadeOut.duration(600)}
-        style={[StyleSheet.absoluteFill, { backgroundColor: accent, opacity: 0.16 }]}
-      />
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      >
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: accent, opacity: 0.16 }]} />
+      </Animated.View>
 
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
@@ -78,7 +110,14 @@ export default function VerdictDelivered() {
 
           {phase === 'aftermath' && (
             <Animated.View entering={FadeIn.duration(900)} style={styles.aftermathBlock}>
-              <Text style={styles.aftermath}>{result.aftermath}</Text>
+              <Text
+                style={[
+                  styles.aftermath,
+                  { fontSize: Type.subhead * textScale, lineHeight: 29 * textScale },
+                ]}
+              >
+                {result.aftermath}
+              </Text>
 
               {/* GDD 11.4 — instant debate starter.
                   Currently unreachable: cases are per-player, so sampleSize is
@@ -129,7 +168,7 @@ const styles = StyleSheet.create({
   },
   timing: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
+    fontSize: Type.micro,
     letterSpacing: 2.2,
     color: Palette.textMuted,
     marginTop: 12,
@@ -152,7 +191,7 @@ const styles = StyleSheet.create({
   },
   earned: {
     fontFamily: Fonts.mono,
-    fontSize: 10,
+    fontSize: Type.micro,
     letterSpacing: 1.8,
     color: '#D4860A',
     textAlign: 'center',

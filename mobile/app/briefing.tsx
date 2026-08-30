@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
 import { courtCityFor } from '@/lib/press';
 import { useGame } from '@/store/game';
 import { useSettings } from '@/store/settings';
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
   },
   from: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
+    fontSize: Type.micro,
     letterSpacing: 2.6,
     color: '#6B6558',
     textAlign: 'center',
@@ -141,14 +141,14 @@ const styles = StyleSheet.create({
   },
   signatureTitle: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
+    fontSize: Type.micro,
     letterSpacing: 1.4,
     color: '#6B6558',
     marginTop: 3,
   },
   dismiss: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
+    fontSize: Type.micro,
     letterSpacing: 3,
     color: Palette.textFaint,
     textAlign: 'center',

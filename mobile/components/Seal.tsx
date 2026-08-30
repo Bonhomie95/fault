@@ -14,17 +14,36 @@ import type { Entitlement } from '@/lib/api';
  * any size, and cannot be a missing asset in production.
  */
 
-export type SealKind = 'seal_brass' | 'seal_obsidian' | 'seal_ivory';
+export type SealKind = 'patron' | 'seal_brass' | 'seal_obsidian' | 'seal_ivory';
 
 const SEALS: Record<SealKind, { ring: string; face: string; ink: string; glyph: string }> = {
   seal_brass: { ring: '#8A6A2F', face: '#C79A3C', ink: '#3A2C10', glyph: '§' },
   seal_obsidian: { ring: '#2A2A33', face: '#15151C', ink: '#8E8EA8', glyph: '§' },
   seal_ivory: { ring: '#B9B096', face: '#E8E1CC', ink: '#4A4433', glyph: '§' },
+  /**
+   * The patron's mark.
+   *
+   * This was sold for $19.99 and rendered by nothing at all — the entitlement
+   * existed in the catalogue, in the Prisma enum and in the client's type
+   * union, and no component ever read it. The blurb promised "a seal", and
+   * there was no seal.
+   *
+   * A pilcrow rather than a section mark, so it reads as a different order of
+   * thing beside the three you can buy or earn, and not merely as a fourth
+   * colour of the same object.
+   */
+  patron: { ring: '#6E5A2E', face: '#1B1810', ink: '#D9BE7A', glyph: '¶' },
 };
 
-/** The best seal a juror owns, or none. Order is preference, not value. */
+/**
+ * The best seal a juror owns, or none. Order is preference, not value.
+ *
+ * Patron sits first because it is the only one that cannot be earned, and
+ * somebody who paid for it and then earned another should not silently lose
+ * the mark they paid for.
+ */
 export function sealFrom(entitlements: Entitlement[]): SealKind | null {
-  const order: SealKind[] = ['seal_obsidian', 'seal_brass', 'seal_ivory'];
+  const order: SealKind[] = ['patron', 'seal_obsidian', 'seal_brass', 'seal_ivory'];
   return order.find((s) => entitlements.includes(s)) ?? null;
 }
 
@@ -45,7 +64,7 @@ export function Seal({ kind, size = 18 }: { kind: SealKind | null; size?: number
           borderWidth: Math.max(1, size / 14),
         },
       ]}
-      accessibilityLabel="Juror's seal"
+      accessibilityLabel={kind === 'patron' ? "Patron of the Court's seal" : "Juror's seal"}
     >
       <Text style={[styles.glyph, { color: s.ink, fontSize: size * 0.55 }]}>{s.glyph}</Text>
     </View>

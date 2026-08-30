@@ -37,10 +37,27 @@ export function countryFromLocale(): string | null {
  * Falls back to the device locale on any refusal or failure — the game must
  * never be blocked by this.
  */
+/**
+ * The whole lookup, not just the fix.
+ *
+ * The timeout used to cover only getCurrentPositionAsync and
+ * reverseGeocodeAsync, leaving `requestForegroundPermissionsAsync` outside it.
+ * That is the call that actually hung: on a simulator with no simulated
+ * location — and, in the field, on a device where the permission sheet is
+ * interrupted — it can simply never settle, and the sign-in sits on a spinner
+ * forever with no error and no way back. I watched it happen for a full
+ * minute before killing the app.
+ *
+ * This function's own docstring promises the game is "never blocked by this".
+ * A promise like that has to cover every await inside it, or it is only a
+ * promise about the awaits somebody remembered.
+ */
+const LOOKUP_TIMEOUT_MS = 8000;
+
 export async function resolveCountry(): Promise<CountryResult> {
   const fallback = countryFromLocale();
 
-  try {
+  const lookup = (async (): Promise<CountryResult> => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== Location.PermissionStatus.GRANTED) {
       return { code: fallback, source: 'declined' };
@@ -51,17 +68,25 @@ export async function resolveCountry(): Promise<CountryResult> {
     const position = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.Lowest,
     });
-
     const places = await Location.reverseGeocodeAsync({
       latitude: position.coords.latitude,
       longitude: position.coords.longitude,
     });
 
-    // From here on the coordinates are gone. Only `isoCountryCode` survives.
-    const code = places[0]?.isoCountryCode ?? null;
+    // From here on the coordinates are gone. Only isoCountryCode survives.
+    const code = places[0]?.isoCountryCode;
     if (!code) return { code: fallback, source: 'unavailable' };
 
     return { code: code.toUpperCase(), source: 'gps' };
+  })();
+
+  try {
+    return await Promise.race([
+      lookup,
+      new Promise<CountryResult>((resolve) =>
+        setTimeout(() => resolve({ code: fallback, source: 'unavailable' }), LOOKUP_TIMEOUT_MS),
+      ),
+    ]);
   } catch {
     return { code: fallback, source: 'unavailable' };
   }

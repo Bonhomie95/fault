@@ -14,6 +14,7 @@ import {
 } from '@/lib/api';
 import type { ProviderToken } from '@/lib/auth';
 import { resolveCountry } from '@/lib/location';
+import { reportError, setReportingUser } from '@/lib/report';
 import { storage } from '@/lib/storage';
 
 const TOKEN_KEY = 'fault.session.tokens';
@@ -32,6 +33,16 @@ interface GameState {
   /** The decided case's accent, kept alive after activeCase is cleared so the
    *  verdict screen can still flash the colour the case arrived in. */
   lastAccent: string | null;
+  /**
+   * The person who was just judged, for the same reason.
+   *
+   * `activeCase` is cleared the moment a verdict lands — correctly, since the
+   * trial is over and nothing should be able to re-read a decided dossier. But
+   * the verdict screen now shows the accused reacting, and it cannot draw a
+   * face it no longer has. Only what a portrait needs is kept: no evidence, no
+   * witnesses, no charge.
+   */
+  lastDefendant: { portraitSeed: number; appearance: number } | null;
   city: CityState | null;
   standing: Standing | null;
 
@@ -65,6 +76,7 @@ export const useGame = create<GameState>((set, get) => ({
 
   activeCase: null,
   lastResult: null,
+  lastDefendant: null,
   lastAccent: null,
   city: null,
   standing: null,
@@ -97,6 +109,7 @@ export const useGame = create<GameState>((set, get) => ({
 
       setTokens(JSON.parse(raw));
       const session: Session = await api.me();
+      setReportingUser(session.userId);
       set({
         jurorId: session.userId,
         jurorName: session.jurorName,
@@ -107,8 +120,11 @@ export const useGame = create<GameState>((set, get) => ({
         hasBriefed: (session.casesHeard ?? 0) > 0,
         bootstrapping: false,
       });
-    } catch {
-      // Tokens the server will not honour are worse than none.
+    } catch (err) {
+      // Tokens the server will not honour are worse than none. Worth
+      // reporting even so: a bootstrap that fails for everyone is an outage,
+      // and this catch used to make it invisible.
+      reportError('bootstrap', err);
       setTokens(null);
       await storage.remove(TOKEN_KEY).catch(() => {});
       set({ bootstrapping: false });
@@ -126,6 +142,9 @@ export const useGame = create<GameState>((set, get) => ({
     const result = await api.signIn({
       provider: token.provider,
       token: token.token,
+      // The nonce the server issued for this attempt, carried back so it can
+      // check that the provider signed THIS sign-in and not a replayed one.
+      ...(token.nonce ? { nonce: token.nonce } : {}),
       jurorName,
       ...(country.code ? { country: country.code } : {}),
       // The player's own day is where streaks and daily missions end.
@@ -133,6 +152,7 @@ export const useGame = create<GameState>((set, get) => ({
     });
 
     await adoptSession(result);
+    setReportingUser(result.userId);
     set({ jurorId: result.userId, jurorName: result.jurorName, hasBriefed: false });
     await get().refreshStanding();
     await get().refreshWallet();
@@ -147,9 +167,11 @@ export const useGame = create<GameState>((set, get) => ({
       const result = await api.signIn({
         provider: token.provider,
         token: token.token,
+        ...(token.nonce ? { nonce: token.nonce } : {}),
         timezone: deviceTimezone(),
       });
       await adoptSession(result);
+      setReportingUser(result.userId);
       set({
         jurorId: result.userId,
         jurorName: result.jurorName,
@@ -172,8 +194,11 @@ export const useGame = create<GameState>((set, get) => ({
     if (!get().jurorId) return;
     try {
       set({ standing: await api.standing() });
-    } catch {
-      // Standing is a display concern; never block the room on it.
+    } catch (err) {
+      // Standing is a display concern; never block the room on it — but a
+      // display concern that fails silently forever is how a broken endpoint
+      // goes unnoticed for a month.
+      reportError('refreshStanding', err);
     }
   },
 
@@ -182,8 +207,8 @@ export const useGame = create<GameState>((set, get) => ({
     try {
       const session = await api.me();
       set({ merit: session.merit, entitlements: session.entitlements });
-    } catch {
-      /* display only */
+    } catch (err) {
+      reportError('refreshWallet', err);
     }
   },
 
@@ -209,7 +234,16 @@ export const useGame = create<GameState>((set, get) => ({
       ...(verdict ? { verdict } : {}),
     });
 
-    set({ lastResult: result, lastAccent: activeCase.accent, city: result.city, activeCase: null });
+    set({
+      lastResult: result,
+      lastAccent: activeCase.accent,
+      lastDefendant: {
+        portraitSeed: activeCase.defendant.portraitSeed,
+        appearance: activeCase.defendant.appearance,
+      },
+      city: result.city,
+      activeCase: null,
+    });
     void get().refreshStanding();
     void get().refreshWallet();
     return result;
@@ -225,10 +259,12 @@ export const useGame = create<GameState>((set, get) => ({
   signOut: async () => {
     try {
       await api.signOut();
-    } catch {
+    } catch (err) {
       // Signing out locally matters more than telling the server about it.
+      reportError('signOut', err);
     }
     setTokens(null);
+    setReportingUser(null);
     await storage.remove(TOKEN_KEY).catch(() => {});
     set({ jurorId: null, jurorName: null, activeCase: null, standing: null, city: null });
   },

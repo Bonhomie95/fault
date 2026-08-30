@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { COUNTRIES, districtFor, profileFor } from '../domain/jurisdiction.js';
+import { checkJurorName, NAME_MAX } from '../domain/jurorName.js';
+import { log } from '../lib/log.js';
 import { prisma } from '../lib/prisma.js';
 import { verifyApple, verifyDevice, verifyGoogle, type VerifiedIdentity } from '../services/auth.js';
 import { getCityState } from '../services/cityState.js';
+import { consumeNonce, issueNonce, nonceStoreReady } from '../services/nonces.js';
 import { issueTokens, revokeAll, rotateRefresh } from '../services/tokens.js';
-import { authLimiter } from '../middleware/limits.js';
+import { authLimiter, nonceLimiter, refreshLimiter } from '../middleware/limits.js';
 import { requireJuror } from '../middleware/requireJuror.js';
 
 export const authRouter = Router();
@@ -15,10 +18,23 @@ const signInSchema = z.object({
   /** Apple identityToken / Google id_token / a device id in dev. */
   token: z.string().min(1),
   /**
+   * The nonce this server issued for this attempt, from GET /api/auth/nonce.
+   *
+   * Optional in the schema only so the device provider (dev, never production)
+   * does not have to fetch one. Both real providers require it — see `verify`.
+   */
+  nonce: z.string().min(16).optional(),
+  /**
    * Chosen by the player, always — we never adopt the provider's display name.
    * Required on first sign-in, ignored afterwards.
+   *
+   * Length is checked properly in domain/jurorName; the bound here is only a
+   * cheap guard so a megabyte of text never reaches the normaliser. It is
+   * deliberately looser than NAME_MAX, because trimming and NFKC folding can
+   * shorten a string and the player should get the real message rather than a
+   * bare 400.
    */
-  jurorName: z.string().trim().min(1).max(40).optional(),
+  jurorName: z.string().min(1).max(NAME_MAX * 4).optional(),
   /**
    * ISO alpha-2, reverse-geocoded on the device. Only the country reaches us:
    * the personalisation is country-level, so coordinates would be data the
@@ -30,10 +46,45 @@ const signInSchema = z.object({
   timezone: z.string().max(64).optional(),
 });
 
-async function verify(provider: string, token: string): Promise<VerifiedIdentity> {
-  if (provider === 'apple') return verifyApple(token);
-  if (provider === 'google') return verifyGoogle(token);
-  return verifyDevice(token);
+/**
+ * A nonce, for one sign-in attempt.
+ *
+ * Unauthenticated by necessity — this is the step before an identity exists.
+ * On its own limiter rather than the sign-in one: an attempt now costs two
+ * requests, and sharing a bucket would halve how many an IP gets (see
+ * middleware/limits).
+ */
+authRouter.get('/nonce', nonceLimiter, async (_req, res) => {
+  if (!(await nonceStoreReady())) {
+    // Redis is a degradable cache everywhere else in this codebase. Not here:
+    // a nonce store that silently forgets is a nonce check that silently
+    // passes, which is worse than no check because it looks like one.
+    res.status(503).json({
+      error: 'sign_in_unavailable',
+      message: 'The court cannot swear anyone in right now. Try again shortly.',
+    });
+    return;
+  }
+  res.json(await issueNonce());
+});
+
+async function verify(
+  provider: string,
+  token: string,
+  nonce: string | undefined,
+): Promise<VerifiedIdentity> {
+  if (provider === 'device') return verifyDevice(token);
+
+  // Both real providers must present a nonce this server issued and has not
+  // already spent. Consuming it here — before the token is verified — means a
+  // replay cannot burn attempts against a nonce that is still good.
+  if (!nonce) throw new Error('sign-in nonce is required');
+  if (!(await consumeNonce(nonce))) {
+    throw new Error('sign-in nonce is unknown, expired, or already used');
+  }
+
+  if (provider === 'apple') return verifyApple(token, nonce);
+  return verifyGoogle(token, nonce);
 }
 
 /**
@@ -49,14 +100,14 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
     return;
   }
 
-  const { provider, token, jurorName, country, timezone } = parsed.data;
+  const { provider, token, nonce, jurorName, country, timezone } = parsed.data;
 
   let identity: VerifiedIdentity;
   try {
-    identity = await verify(provider, token);
+    identity = await verify(provider, token, nonce);
   } catch (err) {
     // Never echo the provider's error back — it can leak configuration.
-    console.warn('[auth] verification failed:', (err as Error).message);
+    log.warn('sign-in verification failed', { provider, err: (err as Error).message });
     res.status(401).json({ error: 'could not verify that sign-in' });
     return;
   }
@@ -97,13 +148,22 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
     return;
   }
 
+  // The name goes on a public registry, so it is filtered and normalised
+  // before it is stored — see domain/jurorName. `check.value` is what gets
+  // written, never the raw input.
+  const check = checkJurorName(jurorName);
+  if (!check.ok) {
+    res.status(400).json({ error: 'juror_name_rejected', reason: check.reason, message: check.message });
+    return;
+  }
+
   const code = (country ?? 'NO').toUpperCase();
   const profile = profileFor(code);
   const localeTag = profile.localeTag;
 
   const user = await prisma.user.create({
     data: {
-      jurorName,
+      jurorName: check.value,
       homeCountry: code,
       currentCountry: code,
       localeTag,
@@ -138,7 +198,7 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
  * Access tokens last 30 minutes; without this the player is signed out
  * mid-case twice an hour.
  */
-authRouter.post('/refresh', async (req, res) => {
+authRouter.post('/refresh', refreshLimiter, async (req, res) => {
   const parsed = z.object({ refreshToken: z.string().min(10) }).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'refreshToken required' });

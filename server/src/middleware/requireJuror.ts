@@ -41,7 +41,20 @@ export async function requireJuror(req: Request, res: Response, next: NextFuncti
     return;
   }
 
-  const userId = await verifyAccessToken(token);
+  /**
+   * Reuse the signature check `identify` already did, if it ran.
+   *
+   * That middleware verifies the same token, with the same issuer, audience
+   * and expiry, before the rate limiter so the limiter has a key. Verifying it
+   * again here is a second HMAC on every authenticated request for an answer
+   * we already have.
+   *
+   * The fallback is not optional and not defensive clutter: routers can be
+   * mounted without the app-level chain (the limiter tests do exactly that),
+   * and a middleware that silently authenticates nobody when its neighbour is
+   * missing is worse than one that repeats a little work.
+   */
+  const userId = req.rateKeyUserId ?? (await verifyAccessToken(token));
   if (!userId) {
     // Expired or forged — the client cannot tell which, and should just try a
     // refresh and then a sign-in.

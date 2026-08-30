@@ -7,6 +7,8 @@ expo-env.d.ts
 *.log
 .claude
 .vscode
+ios/
+android/
 
 
 # Secrets — the Groq key and DB URL live here
@@ -23,3 +25,23 @@ expo-env.d.ts
 server/generated/
 expo-env.d.ts
 # @end expo-cli
+
+# Rendered portraits and the Python bytecode from the Blender pipeline.
+# The renders are build output — reproducible from tools/portraits with a
+# fixed seed — and a full library is hundreds of megabytes.
+mobile/assets/portraits/
+tools/**/__pycache__/
+
+# Redis writes its snapshot into whatever directory it was started from, which
+# is the server directory if you ran `redis-server` there. It is a database
+# file, not source.
+dump.rdb
+
+# The suspect models are NOT ignored, deliberately.
+#
+# Metro resolves `require('@/assets/suspect/*.glb')` at bundle time, so a
+# missing file is a build error rather than a missing texture — the app does
+# not start without them. Reproducing them needs Blender, MPFB2 and a 268MB
+# MakeHuman asset pack, which is not a reasonable thing to ask of a fresh
+# checkout. They are build output that has to be in the tree; git LFS would be
+# the better home if this grows.

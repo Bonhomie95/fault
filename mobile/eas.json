@@ -1,0 +1,53 @@
+{
+  "cli": {
+    "version": ">= 5.9.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "//": [
+      "There was no build configuration at all. Every build was a manual local",
+      "one on one Mac, and the Android release keystore existed only on that",
+      "machine — lose it and the Play listing can never be updated again. EAS",
+      "holds the credentials, which is the actual fix for that.",
+      "",
+      "EXPO_PUBLIC_API_URL is set per profile and MUST be. lib/api throws at",
+      "startup in a non-dev build when it is missing, deliberately: the",
+      "alternative is an app that ships pointing at localhost and fails every",
+      "request on every device with no clue why."
+    ],
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": { "simulator": true },
+      "env": {
+        "EXPO_PUBLIC_API_URL": ""
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://staging.example.invalid"
+      }
+    },
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.example.invalid"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "//": "appleId, ascAppId and appleTeamId come from App Store Connect.",
+        "language": "en-US"
+      },
+      "android": {
+        "//": "Path to a Play service-account key. Never commit the file itself.",
+        "track": "internal"
+      }
+    }
+  }
+}

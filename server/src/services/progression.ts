@@ -20,43 +20,112 @@ import { computeJurorStats } from './jurorProfile.js';
  * submit: the player learns what a verdict cost them at the same moment they
  * learn what it *did* (GDD 2.6). The number and the story arrive together, or
  * the number is just a spoiler with a delay.
+ *
+ * CLAIM FIRST, THEN APPLY — and the order is the correctness.
+ *
+ * This used to read the pending rows, read the user, sum, and write an
+ * absolute trust value. Two concurrent settles could interleave so that the
+ * second read the pending rows BEFORE the first marked them applied, but read
+ * the user's trust AFTER the first had already lowered it — and then applied
+ * the same deltas a second time on top. Trust gates the promotion ladder, so
+ * double-applying a run of wrongful convictions is not a rounding error; it is
+ * a career.
+ *
+ * `UPDATE ... RETURNING` is the primitive that fixes it. The claim and the
+ * read are one statement, so a row can only ever be handed to one caller, and
+ * the deltas that come back are exactly the ones this call is responsible for.
+ * The trust write is then a relative increment clamped in SQL, so it composes
+ * with anything else landing at the same time instead of overwriting it.
  */
 export async function settleTrust(userId: string): Promise<{
   applied: number;
   delta: number;
   trust: number;
 }> {
-  const pending = await prisma.verdictRecord.findMany({
-    where: { userId, trustApplied: false },
-    select: { id: true, trustDelta: true },
+  return prisma.$transaction(async (tx) => {
+    // Atomically take ownership of every unsettled verdict and get its delta
+    // back in the same breath.
+    const claimed = await tx.$queryRaw<{ trustDelta: number }[]>`
+      UPDATE verdicts
+         SET "trustApplied" = true
+       WHERE "userId" = ${userId}
+         AND "trustApplied" = false
+      RETURNING "trustDelta"
+    `;
+
+    if (claimed.length === 0) {
+      const user = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { trust: true },
+      });
+      return { applied: 0, delta: 0, trust: user.trust };
+    }
+
+    const delta = claimed.reduce((sum, v) => sum + v.trustDelta, 0);
+
+    // Relative, and clamped where the value lives. GREATEST/LEAST mirrors
+    // clampTrust exactly — keep them in step.
+    const [row] = await tx.$queryRaw<{ trust: number }[]>`
+      UPDATE users
+         SET trust = GREATEST(0, LEAST(100, trust + ${delta}))
+       WHERE id = ${userId}
+      RETURNING trust
+    `;
+
+    return { applied: claimed.length, delta, trust: row?.trust ?? clampTrust(delta) };
   });
-
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  if (pending.length === 0) return { applied: 0, delta: 0, trust: user.trust };
-
-  const delta = pending.reduce((sum, v) => sum + v.trustDelta, 0);
-  const trust = clampTrust(user.trust + delta);
-
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: userId }, data: { trust } }),
-    prisma.verdictRecord.updateMany({
-      where: { id: { in: pending.map((v) => v.id) } },
-      data: { trustApplied: true },
-    }),
-  ]);
-
-  return { applied: pending.length, delta, trust };
 }
 
-/** Rank is derived from XP, never stored as truth. */
+/**
+ * Rank is derived from XP, never stored as truth.
+ *
+ * The increment is atomic. This used to read `user.xp`, add, and write the sum
+ * back — a lost-update race in which two awards landing together both read the
+ * same starting value and the second overwrote the first, so one of them was
+ * simply gone. XP is service, and service the player performed and did not get
+ * paid for is the one kind of bug this economy must not have.
+ *
+ * `increment` makes Postgres do the addition, so concurrent awards compose.
+ * The rank is then derived from the value the database actually landed on
+ * rather than from anything computed here, which is also what makes `promoted`
+ * honest under concurrency.
+ */
 export async function awardXp(userId: string, amount: number): Promise<{ rank: number; promoted: boolean }> {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  const before = rankFor(user.xp).level;
-  const xp = Math.max(0, user.xp + amount);
-  const after = rankFor(xp).level;
+  // XP is service, and service is only ever earned. Every caller today passes
+  // a positive amount — xpForVerdict floors at 0, missions are positive — so a
+  // negative here is a bug in the caller, and refusing it says so. The
+  // alternative (clamping after the fact) needs a second absolute write, and
+  // an absolute write is exactly the lost-update this function exists to
+  // avoid.
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error(`awardXp requires a non-negative amount, got ${amount}`);
+  }
 
-  await prisma.user.update({ where: { id: userId }, data: { xp, rank: after } });
-  return { rank: after, promoted: after > before };
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { xp: { increment: amount } },
+    select: { xp: true, rank: true },
+  });
+
+  // The value this increment started from, derived from the value it landed
+  // on — not from a separate read.
+  //
+  // Reading `xp` first and comparing was still racy: two awards crossing a
+  // rank boundary together both read the same starting value and both claimed
+  // the promotion. Subtracting our own contribution from the post-increment
+  // total is exact for this caller no matter what else landed alongside it,
+  // and costs one fewer round trip.
+  const rankBefore = rankFor(updated.xp - amount).level;
+  const rankAfter = rankFor(updated.xp).level;
+
+  // `rank` is denormalised for display — nothing derives logic from it, every
+  // decision uses rankFor(xp). So only write it when it actually moved, which
+  // on the overwhelming majority of awards means not at all.
+  if (rankAfter !== updated.rank) {
+    await prisma.user.update({ where: { id: userId }, data: { rank: rankAfter } });
+  }
+
+  return { rank: rankAfter, promoted: rankAfter > rankBefore };
 }
 
 export interface StandingView {

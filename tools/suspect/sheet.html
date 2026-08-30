@@ -1,0 +1,80 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>suspect sheet</title>
+<style>html,body{margin:0;background:#0B0B0C;color:#bbb;font:11px ui-monospace,monospace}
+#grid{display:grid;gap:2px}
+figure{margin:0;position:relative}
+figcaption{position:absolute;bottom:2px;left:4px;text-shadow:0 1px 2px #000}</style>
+<div id="grid"></div>
+<script type="importmap">
+{"imports":{"three":"/mobile/node_modules/three/build/three.module.js",
+            "three/addons/":"/mobile/node_modules/three/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const q = new URLSearchParams(location.search);
+const MODELS = (q.get('m') || 'f_young_af,f_mid_ca,f_young_as,m_young_af,m_mid_ca,m_old_as').split(',');
+const SHAPES = (q.get('s') || '').split(',');
+const cols = parseInt(q.get('cols') || '3', 10);
+const CW = parseInt(q.get('w') || '260', 10), CH = parseInt(q.get('h') || '420', 10);
+const headScreen = parseFloat(q.get('hs') || '0.20'), eyesScreen = parseFloat(q.get('es') || '0.34');
+const grid = document.getElementById('grid');
+grid.style.gridTemplateColumns = `repeat(${cols}, ${CW}px)`;
+
+const heights = (m, v) => { const p = m.geometry.getAttribute('position');
+  let top = -Infinity, bot = Infinity;
+  for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld);
+    if (v.y > top) top = v.y; if (v.y < bot) bot = v.y; }
+  return { top, bot, mid: (top + bot) / 2 }; };
+
+const cache = new Map();
+async function load(name) {
+  if (!cache.has(name)) cache.set(name, fetch(`/mobile/assets/suspect/${name}.glb`).then(r => r.arrayBuffer()));
+  return cache.get(name);
+}
+for (const name of MODELS) for (const shape of SHAPES) {
+  const fig = document.createElement('figure');
+  const cap = document.createElement('figcaption');
+  cap.textContent = shape ? `${name} · ${shape}` : name;
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(1); renderer.setSize(CW, CH);
+  fig.appendChild(renderer.domElement); fig.appendChild(cap); grid.appendChild(fig);
+
+  const scene = new THREE.Scene(); scene.background = new THREE.Color('#101014');
+  const FOV = 34;
+  const camera = new THREE.PerspectiveCamera(FOV, CW / CH, 0.01, 50);
+  camera.position.z = 1 / headScreen / (2 * Math.tan((FOV * Math.PI) / 360));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+  const k = new THREE.DirectionalLight(0xFFF0DD, 2.6); k.position.set(0.8, 1.4, 1.6); scene.add(k);
+  const r = new THREE.DirectionalLight(0x8FA8D8, 0.9); r.position.set(-1.6, 0.4, -1.2); scene.add(r);
+  const root = new THREE.Group(); root.position.y = (0.5 - eyesScreen) / headScreen; scene.add(root);
+
+  const buf = await load(name);
+  await new Promise((done) => new GLTFLoader().parse(buf.slice(0), '', (gltf) => {
+    const v = new THREE.Vector3(); const all = []; let eyeMesh = null; const morphs = [];
+    gltf.scene.traverse((o) => { if (o.isMesh) { all.push(o);
+      if (o.morphTargetDictionary) morphs.push(o);
+      if (/(^|\.)eyes$/i.test(o.name)) eyeMesh = o; } });
+    gltf.scene.updateMatrixWorld(true);
+    const crownY = Math.max(...all.map((m) => heights(m, v).top));
+    const eyes = eyeMesh ? heights(eyeMesh, v).mid : 0;
+    const scale = 1 / (crownY - eyes);
+    gltf.scene.scale.setScalar(scale); gltf.scene.position.set(0, -eyes * scale, 0);
+  // MIRRORS components/suspect/SuspectModel softenCutout. Keep the two the
+  // same or these pages stop telling the truth about what the app draws.
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh || /(^|\.)eyes$/i.test(o.name)) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (!m || m.alphaTest <= 0) continue;
+      m.alphaTest = 0.02; m.transparent = true; m.depthWrite = true; m.needsUpdate = true;
+    }
+  });
+    root.add(gltf.scene);
+    if (shape) for (const m of morphs) { const i = m.morphTargetDictionary[shape];
+      if (i !== undefined) m.morphTargetInfluences[i] = 1; }
+    renderer.render(scene, camera); done();
+  }, () => { cap.textContent += ' FAILED'; done(); }));
+}
+window.__ready = true;
+</script>

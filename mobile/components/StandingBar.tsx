@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
 import type { Standing } from '@/lib/api';
 import { Seal, sealFrom } from '@/components/Seal';
 import { useGame } from '@/store/game';
@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
   },
   where: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
+    fontSize: Type.micro,
     color: Palette.textMuted,
   },
   trust: {
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
   },
   trustCaption: {
     fontFamily: Fonts.mono,
-    fontSize: 7,
+    fontSize: Type.micro,
     letterSpacing: 1.8,
     color: Palette.textFaint,
   },
@@ -115,14 +115,14 @@ const styles = StyleSheet.create({
   footRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   foot: {
     fontFamily: Fonts.mono,
-    fontSize: 8,
+    fontSize: Type.micro,
     letterSpacing: 1,
     color: Palette.textFaint,
     flex: 1,
   },
   streak: {
     fontFamily: Fonts.mono,
-    fontSize: 8,
+    fontSize: Type.micro,
     letterSpacing: 1.2,
     color: '#D4860A',
   },

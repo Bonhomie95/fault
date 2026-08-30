@@ -1,7 +1,7 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
-import { Accents, Fonts, Palette, Radius, Space, Type } from '@/constants/theme';
+import { Accents, Fonts, IMPACT_LEADING, Palette, Radius, Space, Type } from '@/constants/theme';
 
 /**
  * What the player sees when a screen throws.
@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: Fonts.impact,
     fontSize: Type.title,
-    lineHeight: Type.title * 0.94,
+    lineHeight: Type.title * IMPACT_LEADING,
     color: Palette.text,
     textTransform: 'uppercase',
   },

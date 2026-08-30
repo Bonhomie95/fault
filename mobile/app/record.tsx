@@ -2,10 +2,11 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
 import { api, type JurorRecord } from '@/lib/api';
 import { newspaperFor } from '@/lib/press';
 import { useGame } from '@/store/game';
+import { useSettings } from '@/store/settings';
 
 /**
  * GDD 6, Screen 7 — Juror Record. Unlocks after case 10.
@@ -18,6 +19,10 @@ export default function Record() {
   const district = useGame((s) => s.standing?.district);
   const [record, setRecord] = useState<JurorRecord | null>(null);
   const [locked, setLocked] = useState(false);
+  // GDD 8 lists text size first among settings. It reached the case screen
+  // and stopped there — which left the one screen that is nothing but a
+  // paragraph about the player fixed at one size.
+  const textScale = useSettings((s) => s.textScale);
 
   useEffect(() => {
     if (!jurorId) {
@@ -48,7 +53,14 @@ export default function Record() {
               </Text>
 
               {/* The profile the game wrote about you. Post-worthy (GDD 11.2). */}
-              <Text style={styles.profile}>{record.profile}</Text>
+              <Text
+                style={[
+                  styles.profile,
+                  { fontSize: Type.subhead * textScale, lineHeight: 30 * textScale },
+                ]}
+              >
+                {record.profile}
+              </Text>
 
               <View style={styles.trajectoryBlock}>
                 <Text style={styles.trajectoryTitle}>THE CITY UNDER YOUR TENURE</Text>
@@ -105,7 +117,7 @@ const styles = StyleSheet.create({
   spinner: { marginTop: 40 },
   kicker: {
     fontFamily: Fonts.mono,
-    fontSize: 8,
+    fontSize: Type.micro,
     letterSpacing: 2.6,
     color: Palette.textMuted,
   },
@@ -118,7 +130,7 @@ const styles = StyleSheet.create({
   },
   byline: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
+    fontSize: Type.micro,
     letterSpacing: 1.8,
     color: Palette.textMuted,
     marginTop: 14,
@@ -149,7 +161,7 @@ const styles = StyleSheet.create({
   },
   trajectoryTitle: {
     fontFamily: Fonts.mono,
-    fontSize: 8,
+    fontSize: Type.micro,
     letterSpacing: 2.4,
     color: Palette.textMuted,
     marginBottom: 6,
@@ -157,7 +169,7 @@ const styles = StyleSheet.create({
   trajectoryRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   trajectoryLabel: {
     fontFamily: Fonts.mono,
-    fontSize: 10,
+    fontSize: Type.micro,
     color: Palette.textMuted,
     width: 106,
   },
@@ -169,7 +181,7 @@ const styles = StyleSheet.create({
   trajectoryFill: { height: 3, backgroundColor: Palette.text },
   trajectoryValue: {
     fontFamily: Fonts.mono,
-    fontSize: 10,
+    fontSize: Type.micro,
     color: Palette.text,
     width: 24,
     textAlign: 'right',

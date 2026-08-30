@@ -2,9 +2,11 @@ import type { Tier } from '@prisma/client';
 import { ACCENTS, generatedCaseSchema, structureKeyFor, TWIN_GAP, type GeneratedCase } from '../domain/case.js';
 import type { CityMetrics } from '../domain/city.js';
 import { aiEnabled, availableCount, classifyError, GROQ_MODEL, leaseKey } from '../lib/groq.js';
+import { log } from '../lib/log.js';
 import { prisma } from '../lib/prisma.js';
 import { caseQueueKey, redis } from '../lib/redis.js';
 import { districtFor, profileFor, tierLabel } from '../domain/jurisdiction.js';
+import { stripPresentation } from '../domain/presentation.js';
 import { deriveCaseMood, deriveFactions } from './cityEffects.js';
 import { localizeCase } from './localizeCase.js';
 import { echoRolesFor, getEligibleCharacters, type PoolCharacter } from './characterPool.js';
@@ -18,19 +20,58 @@ export { structureKeyFor, TWIN_GAP };
 /**
  * Buffer sizing, against two real limits.
  *
- * A case costs roughly 1.7k prompt + 1.2k completion ≈ 3k tokens. Groq's free
- * tier caps BOTH:
- *   - 12,000 tokens per minute  → about 4 cases a minute
- *   - 100,000 tokens per DAY    → about 33 cases a day, total, for everyone
+ * MEASURED, not estimated. A case on openai/gpt-oss-120b at low reasoning
+ * effort costs about 830 tokens in total — not the ~3,000 this comment used to
+ * claim for llama-3.3. Groq's free tier caps both:
+ *   - 12,000 tokens per minute → roughly 14 cases a minute
+ *   - 100,000 tokens per DAY   → roughly 120 cases a day, per key
  *
- * The daily cap is the one that matters and it is brutal: a single engaged
- * player can exhaust the entire free tier in one sitting, after which every
- * juror on the server drops to the fallback docket. This is a billing decision
- * disguised as a constant — FAULT needs a paid tier to exist as a product.
+ * With five keys that is ~600 cases a day rather than the ~165 the old
+ * arithmetic gave, which is a real difference: it is the gap between a handful
+ * of players and a small beta. The daily cap is still the binding constraint
+ * and a paid tier is still what this needs to be a product — but the ceiling
+ * is three and a half times higher than anyone thought, and it moved because
+ * the model changed, not because anything was optimised.
  *
  * The GDD (4.3) specifies batches of five. Three is what the budget affords.
  * On a paid tier, raise BATCH_SIZE and drop SPACING_MS.
  */
+/**
+ * The completion budget, and why it is not 2000.
+ *
+ * It was, with a comment explaining that a case lands around 1.2k tokens so
+ * reserving 3k was waste. That reasoning was correct for llama-3.3, and it
+ * silently became wrong.
+ *
+ * The models Groq offers now are REASONING models, and their reasoning tokens
+ * count against max_tokens before a single character of the answer is emitted.
+ * At 2000 the model thought, ran out of budget mid-object, and Groq returned
+ * `json_validate_failed` with an empty completion — which this code logged as
+ * a generic error and fell back from. Every case, silently.
+ *
+ * 6000 is comfortably above what a case actually consumes end to end (~830
+ * total at low reasoning effort) and cheap to reserve, because it is a CAP and
+ * not a spend.
+ */
+const MAX_COMPLETION_TOKENS = 6000;
+
+/**
+ * Reasoning effort, for the models that take it.
+ *
+ * Low, and this is not a corner cut. Measured against the real case schema,
+ * `openai/gpt-oss-120b` at low effort was simultaneously the fastest (1.6s vs
+ * 2.7s at medium) and the CHEAPEST (832 total tokens vs 1382) — and both
+ * produced a valid case. The extra thinking was buying nothing here: the
+ * structure is pinned by the schema and the hard decisions (which names, how
+ * ambiguous, which echo, which twin) are all made server-side before the model
+ * is asked anything.
+ *
+ * Sent only to models that understand it; others reject unknown parameters.
+ */
+function reasoningParams(): Record<string, string> {
+  return /gpt-oss/.test(GROQ_MODEL) ? { reasoning_effort: 'low' } : {};
+}
+
 const BATCH_SIZE = 3;
 const REFILL_BELOW = 2;
 /** Spacing exists for the per-minute cap; it does nothing for the daily one. */
@@ -384,7 +425,57 @@ function retryAfterMs(message: string): number | null {
  * juror in Oslo breaks the premise far more than a short wait does. Generation
  * happens in the background buffer anyway, where nobody is watching a clock.
  */
-async function generateOne(ctx: GenerationContext, attempt = 0): Promise<GeneratedCase | null> {
+/**
+ * How long one generation may take before we stop waiting.
+ *
+ * There was no timeout at all. The Groq SDK will wait as long as the socket
+ * stays open, which on the request path meant a player could be held past
+ * their client's own 15-second limit with no ceiling above it.
+ */
+const GENERATION_TIMEOUT_MS = 20_000;
+
+/**
+ * How long a player may be kept waiting for a case, in total.
+ *
+ * The client gives up at 15 seconds, and a case that arrives after that is a
+ * case nobody sees, generated at full token cost. Ten leaves margin for the
+ * round trip and the database write that follows, and comfortably fits two or
+ * three attempts at the ~2s a generation actually takes — so one malformed
+ * roll no longer costs the player a real case.
+ */
+const URGENT_BUDGET_MS = 10_000;
+
+interface GenerateOptions {
+  /**
+   * Whether a human is waiting on this.
+   *
+   * On the background refill nobody is watching, so retries and rate-limit
+   * sleeps are free and worth having. On the request path they are the
+   * opposite of free — see nextCase.
+   */
+  urgent?: boolean;
+  /**
+   * Epoch ms after which an urgent generation gives up, whatever it is doing.
+   *
+   * A BUDGET, not an attempt count, and the distinction turned out to matter.
+   * The first version of this fix gave the request path a single attempt — and
+   * a single attempt is hostage to one bad roll: the model returns two
+   * evidence items instead of three, the schema rejects it, and the player is
+   * handed the fallback docket despite there being eight seconds and four
+   * healthy keys still available. I watched that happen.
+   *
+   * Bound the thing the player actually experiences (time), not the thing they
+   * cannot see (attempts). A retry that fits inside the deadline costs them
+   * nothing; one that does not never starts.
+   */
+  deadline?: number;
+}
+
+async function generateOne(
+  ctx: GenerationContext,
+  opts: GenerateOptions = {},
+  attempt = 0,
+): Promise<GeneratedCase | null> {
   if (!aiEnabled) return null;
 
   // A key per attempt: a retry after a rate limit should land on a *different*
@@ -395,19 +486,37 @@ async function generateOne(ctx: GenerationContext, attempt = 0): Promise<Generat
     return null;
   }
 
+  // An urgent generation is capped by the wall clock, not by a retry count.
+  // Whatever is left of the budget is how long this attempt may take; when the
+  // budget is gone the caller falls back instantly.
+  const remainingMs = opts.deadline ? opts.deadline - Date.now() : GENERATION_TIMEOUT_MS;
+  if (opts.urgent && remainingMs <= 500) {
+    lease.release('ok'); // nothing was spent, so the key is still healthy
+    return null;
+  }
+
+  const timeoutMs = opts.urgent
+    ? Math.min(remainingMs, GENERATION_TIMEOUT_MS)
+    : GENERATION_TIMEOUT_MS;
+  // Retries on the urgent path are governed by the deadline check above, so
+  // the count only needs to be high enough not to be the binding constraint.
+  const maxAttempts = MAX_ATTEMPTS;
+
   try {
-    const response = await lease.client.chat.completions.create({
-      model: GROQ_MODEL,
-      messages: [
-        { role: 'system', content: buildSystemPrompt(ctx) },
-        { role: 'user', content: 'Generate the next case file. Return only the JSON object.' },
-      ],
-      temperature: 0.9,
-      // A case JSON lands around 1.2k tokens; reserving 3k just inflates the
-      // rate-limit accounting for nothing.
-      max_tokens: 2000,
-      response_format: { type: 'json_object' },
-    });
+    const response = await lease.client.chat.completions.create(
+      {
+        model: GROQ_MODEL,
+        messages: [
+          { role: 'system', content: buildSystemPrompt(ctx) },
+          { role: 'user', content: 'Generate the next case file. Return only the JSON object.' },
+        ],
+        temperature: 0.9,
+        max_tokens: MAX_COMPLETION_TOKENS,
+        response_format: { type: 'json_object' },
+        ...reasoningParams(),
+      },
+      { timeout: timeoutMs },
+    );
 
     // The call itself succeeded, so the key is healthy whatever the content
     // turns out to be. Say so before any content check can return early.
@@ -418,13 +527,13 @@ async function generateOne(ctx: GenerationContext, attempt = 0): Promise<Generat
 
     const parsed = generatedCaseSchema.safeParse(JSON.parse(raw));
     if (!parsed.success) {
-      console.warn('[caseGenerator] schema reject:', parsed.error.issues[0]?.message);
+      log.warn('case rejected by schema', { issue: parsed.error.issues[0]?.message });
       // A malformed case is usually a bad roll, not a broken prompt.
-      return attempt < MAX_ATTEMPTS ? generateOne(ctx, attempt + 1) : null;
+      return attempt < maxAttempts ? generateOne(ctx, opts, attempt + 1) : null;
     }
     if (violatesPolicy(parsed.data)) {
-      console.warn('[caseGenerator] content filter rejected a case');
-      return attempt < MAX_ATTEMPTS ? generateOne(ctx, attempt + 1) : null;
+      log.warn('case rejected by content filter');
+      return attempt < maxAttempts ? generateOne(ctx, opts, attempt + 1) : null;
     }
 
     // The model reaches for "ambiguous" whenever it is allowed to, and an
@@ -432,8 +541,8 @@ async function generateOne(ctx: GenerationContext, attempt = 0): Promise<Generat
     // ignored the instruction, try again rather than accept a case that
     // quietly breaks progression.
     const isAmbiguous = parsed.data.correct_verdict === 'ambiguous';
-    if (isAmbiguous !== ctx.wantAmbiguous && attempt < MAX_ATTEMPTS) {
-      return generateOne(ctx, attempt + 1);
+    if (isAmbiguous !== ctx.wantAmbiguous && attempt < maxAttempts) {
+      return generateOne(ctx, opts, attempt + 1);
     }
 
     // The names are ours, not the model's — see enforceCast. This also
@@ -441,42 +550,73 @@ async function generateOne(ctx: GenerationContext, attempt = 0): Promise<Generat
     // when one is due.
     const cast = enforceCast(parsed.data, ctx.castNames, ctx.mustEcho);
 
+    // And so is the body. appearance/demeanour/oddity are re-rolled here from
+    // a source that has never seen correct_verdict — see domain/presentation.
+    // The model writes the person; the server decides how they look, stand and
+    // unsettle, because a model asked to be uncorrelated with guilt is a model
+    // that will quietly make the guilty shifty and report that it did not.
+    stripPresentation(cast);
+
     // The twin must actually be a twin, or the consistency probe is measuring
     // two unrelated cases and calling the juror inconsistent for noticing.
-    if (ctx.twinOf && structureKeyFor(parsed.data) !== ctx.twinOf.structureKey) {
-      if (attempt < MAX_ATTEMPTS) return generateOne(ctx, attempt + 1);
-      console.warn('[caseGenerator] twin did not match; shipping as an ordinary case');
+    if (ctx.twinOf && structureKeyFor(cast) !== ctx.twinOf.structureKey) {
+      if (attempt < maxAttempts) return generateOne(ctx, opts, attempt + 1);
+      log.warn('twin did not match; shipping as an ordinary case');
     }
     if (isAmbiguous !== ctx.wantAmbiguous) {
       // Out of retries: rather than ship a case that lies about its own
       // answer, take the verdict the evidence actually points at.
-      const strength = parsed.data.evidence_strength;
+      const strength = cast.evidence_strength;
       if (!ctx.wantAmbiguous && Math.abs(strength) >= 0.2) {
-        parsed.data.correct_verdict = strength > 0 ? 'guilty' : 'not_guilty';
+        cast.correct_verdict = strength > 0 ? 'guilty' : 'not_guilty';
       }
     }
 
-    return parsed.data;
+    /**
+     * `cast`, not `parsed.data`.
+     *
+     * This line said `return parsed.data`, and that quietly threw away every
+     * correction above it. `enforceCast` does a JSON round-trip and returns a
+     * NEW object; it never mutates its argument. So the server-assigned names
+     * were computed, the echo was guaranteed, the presentation was re-rolled —
+     * and then the MODEL'S original object was shipped instead.
+     *
+     * Everything the surrounding comments describe as load-bearing was inert:
+     *
+     *   - the cast names never applied, so the model's own naming stood. Two
+     *     consecutive cases both came back as "Astrid Pedersen" while I was
+     *     testing this, which is the exact collision `pickCast` exists to
+     *     prevent — and a name IS the Echo System's identity key, so a
+     *     collision merges two strangers into one person in the pool.
+     *   - a required echo was not actually guaranteed to be present.
+     *   - the character_pool_additions rewrite never happened.
+     */
+    return cast;
   } catch (err) {
     const message = (err as Error).message ?? '';
     const kind = classifyError(message);
     lease.release(kind);
 
-    if (attempt < MAX_ATTEMPTS) {
+    if (attempt < maxAttempts) {
       // A spent key is not a reason to wait — it is a reason to use another
       // one. Only pause when the whole pool is busy at the minute level.
-      if (kind === 'day-limit') return generateOne(ctx, attempt + 1);
+      if (kind === 'day-limit') return generateOne(ctx, opts, attempt + 1);
 
       const wait = retryAfterMs(message);
       if (wait !== null) {
         // With keys to spare, hop straight to the next rather than sleeping.
-        if (availableCount() > 0) return generateOne(ctx, attempt + 1);
+        if (availableCount() > 0) return generateOne(ctx, opts, attempt + 1);
+        // Sleeping is for the background refill only. On the request path a
+        // rate-limit backoff is guaranteed to outlast any sane deadline, and
+        // waiting it out is exactly the behaviour that was charging players
+        // for the server being busy.
+        if (opts.urgent) return null;
         await sleep(wait * (attempt + 1));
-        return generateOne(ctx, attempt + 1);
+        return generateOne(ctx, opts, attempt + 1);
       }
     }
 
-    console.error('[caseGenerator] groq error:', message.slice(0, 300));
+    log.error('groq generation failed', { urgent: opts.urgent === true, err: message.slice(0, 300) });
     return null;
   }
 }
@@ -820,15 +960,42 @@ export async function nextCase(
     if (parsed.success) return { generated: parsed.data, source: 'cache' };
   }
 
+  /**
+   * A buffer miss, with a player waiting.
+   *
+   * This used to call generateOne with the full retry policy: up to four
+   * attempts, and on a rate limit `sleep(wait * (attempt + 1))` from an
+   * eight-second floor. Worst case it blocked the request for well over a
+   * minute, with no timeout on the Groq call underneath it.
+   *
+   * The client gives up at fifteen seconds. So the player saw "The court did
+   * not answer" — while this function carried on, finished, and the route
+   * created the case and stamped servedAt. On the retry they were handed that
+   * case with the generation latency already deducted from their 120 seconds.
+   * The player was charged, in the only currency this game has, for the server
+   * being slow.
+   *
+   * `urgent` means one attempt and an eight-second ceiling. If it does not
+   * land in that window, the authored docket does — instantly. A cold buffer
+   * should cost the player texture, never clock.
+   */
   const ctx = await buildContext(userId, caseNumber, city, place);
-  const live = await generateOne(ctx);
+  const live = await generateOne(ctx, {
+    urgent: true,
+    deadline: Date.now() + URGENT_BUDGET_MS,
+  });
   if (live) return { generated: live, source: 'live' };
 
-  // Everything AI is spent or broken. The authored docket, moved to wherever
-  // this juror actually lives — see localizeCase.
+  // Everything AI is spent, slow, or broken. The authored docket, moved to
+  // wherever this juror actually lives — see localizeCase.
+  log.info('serving fallback docket', { userId, caseNumber, keysLeft: availableCount() });
+
   const profile = profileFor(place.country);
   return {
-    generated: localizeCase(seedCaseFor(caseNumber), {
+    // The authored docket gets a fresh roll too. Six hand-written cases have
+    // six FIXED verdicts, so a fixed presentation on each would be perfectly
+    // correlated with guilt for anyone who played them twice.
+    generated: stripPresentation(localizeCase(seedCaseFor(caseNumber), {
       profile,
       district: place.district,
       court: place.court,
@@ -836,11 +1003,9 @@ export async function nextCase(
       // Per juror and per case: two players see different casts, and one
       // player revisiting a case sees the same one.
       seed: hashSeed(`${userId}:${caseNumber}`),
-    }),
+    })),
     source: 'fallback',
   };
-
-  return { generated: seedCaseFor(caseNumber), source: 'fallback' };
 }
 
 export const accentHexFor = (accent: GeneratedCase['accent']) => ACCENTS[accent];

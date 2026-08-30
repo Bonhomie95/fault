@@ -1,6 +1,6 @@
 import { app } from './app.js';
 import { env } from './lib/env.js';
-import { aiEnabled, keyCount } from './lib/groq.js';
+import { aiEnabled, checkModelAvailable, keyCount } from './lib/groq.js';
 import { log } from './lib/log.js';
 import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
@@ -11,6 +11,28 @@ const server = app.listen(env.PORT, () => {
     aiEnabled ? 'case generation: groq' : 'case generation: hand-authored docket',
     aiEnabled ? { model: env.GROQ_MODEL, keys: keyCount, capacityPerDay: keyCount * 33 } : {},
   );
+
+  /**
+   * Confirm the model still exists.
+   *
+   * Not a formality. The configured model had been retired by the provider,
+   * every generation was 404ing, every juror was silently receiving the same
+   * six fallback cases, and /health still reported groq:true with five keys
+   * available — because the keys WERE fine. Nothing in the system was wrong
+   * except the one thing nothing checked.
+   *
+   * Behind the listen callback so a slow provider never delays the port
+   * opening, and non-fatal because the fallback docket is a designed mode.
+   */
+  if (aiEnabled) {
+    void checkModelAvailable().then((result) => {
+      if (result.ok) return;
+      log.error('CASE GENERATION IS DEGRADED — every case will be the fallback docket', {
+        reason: result.reason,
+        ...(result.available ? { availableModels: result.available } : {}),
+      });
+    });
+  }
 });
 
 /**

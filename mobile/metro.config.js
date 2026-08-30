@@ -29,4 +29,13 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   return (defaultResolveRequest ?? context.resolveRequest)(context, moduleName, platform);
 };
 
+/**
+ * .glb is an asset, not source.
+ *
+ * Metro's default asset list is images and fonts; a binary glTF resolves as a
+ * module and fails. Registering the extension is what lets `require('...glb')`
+ * hand back something expo-asset can download and read.
+ */
+config.resolver.assetExts = [...config.resolver.assetExts, 'glb', 'gltf', 'bin'];
+
 module.exports = config;

@@ -63,33 +63,30 @@ export const SKUS: Sku[] = [
     grants: 'no_ads',
     kind: 'unlock',
   },
-  {
-    id: 'pack_corporate',
-    title: 'The Files: Corporate Malfeasance',
-    blurb: 'Ten hand-authored cases. Boardrooms, shell companies, and the paperwork that outlives the people.',
-    priceMinor: 199,
-    meritPrice: 2500,
-    grants: 'pack_corporate',
-    kind: 'pack',
-  },
-  {
-    id: 'pack_cold_case',
-    title: 'The Files: Cold Cases',
-    blurb: 'Ten hand-authored cases. Evidence that has been sitting in a box longer than some of the witnesses have been alive.',
-    priceMinor: 199,
-    meritPrice: 2500,
-    grants: 'pack_cold_case',
-    kind: 'pack',
-  },
-  {
-    id: 'pack_political',
-    title: 'The Files: Political Corruption',
-    blurb: 'Ten hand-authored cases. Everyone in the room has something to lose and none of it is liberty.',
-    priceMinor: 199,
-    meritPrice: 2500,
-    grants: 'pack_political',
-    kind: 'pack',
-  },
+  // ---- Case packs ----
+  //
+  // NOT FOR SALE, and they were.
+  //
+  // `pack_corporate`, `pack_cold_case` and `pack_political` sat here at $1.99
+  // and 2,500 Merit each, described as "Ten hand-authored cases". Those three
+  // entitlement values appear in exactly three places in this repository: this
+  // catalogue, the Prisma enum, and the mobile type union. Nothing reads them.
+  // There is no generator branch, no case source, no gate. A player who spent
+  // 2,500 Merit — about five days of rewarded views — received a database row
+  // and zero cases.
+  //
+  // Which is the exact thing the comment forty lines below forbids, about the
+  // cosmetics: "selling a cosmetic nothing renders is taking money for a
+  // promise, and the whole point of this catalogue is that it does not do
+  // that." The seals were held to that rule. The packs were not, and the only
+  // difference was that nobody had noticed.
+  //
+  // They come back the day there are cases behind them, exactly as room_oak
+  // and stock_vellum come back the day the room can change. The entitlements
+  // stay in the schema; a SKU is a promise and a schema entry is not.
+  //
+  // store.test.ts now proves this: every `grants` value in SKUS must be
+  // referenced somewhere outside this file.
   {
     id: 'merit_small',
     title: '1,200 Merit',
@@ -155,8 +152,13 @@ export const SKUS: Sku[] = [
   {
     id: 'patron',
     title: 'Patron of the Court',
+    // The blurb used to promise "a seal, a line in the credits". There was no
+    // seal — nothing read this entitlement at all — and there is no credits
+    // screen. The seal is real now (mobile/components/Seal.tsx); the credits
+    // line is not, so it is no longer promised. Put it back in the copy on the
+    // day there is a screen to put it on.
     blurb:
-      'For people who want the game to keep existing. A seal, a line in the credits, and nothing else — no advantage, because there is nothing here worth having an advantage in.',
+      'For people who want the game to keep existing. A seal beside your name on the public registry, and nothing else — no advantage, because there is nothing here worth having an advantage in.',
     priceMinor: 1999,
     // Not earnable, and not pretending to be: this is a donation with a badge.
     meritPrice: null,

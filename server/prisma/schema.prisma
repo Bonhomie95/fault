@@ -125,7 +125,15 @@ model User {
   id           String   @id @default(cuid())
   /// Chosen by the player, always. The OAuth provider's display name is never
   /// adopted — you pick who you are in the jury room.
+  ///
+  /// Filtered and normalised on the way in (domain/jurorName): this string is
+  /// published on the public leaderboard, so it is user-generated content and
+  /// is treated as such.
   jurorName    String
+  /// When the name last changed, for the rename cooldown. Null means never.
+  /// A name that can change every few seconds cannot be reported by anyone,
+  /// because it will not be the same name by the time a human looks.
+  nameChangedAt DateTime?
   createdAt    DateTime @default(now())
   lastSeenAt   DateTime @default(now())
 
@@ -187,10 +195,47 @@ model User {
   cases        Case[]
   verdicts     VerdictRecord[]
   characters   Character[]
+  reports      ContentReport[]
   cityState    CityState?
   jurorProfile JurorProfile?
 
   @@map("users")
+}
+
+/// A player telling us something is wrong.
+///
+/// Required by App Store Guideline 1.2 for the juror names on the public
+/// registry, and required by common sense for the generated docket: this
+/// server writes criminal accusations about invented people, set in named real
+/// jurisdictions, without a human reading them first. The system prompt and
+/// the content filter are good-faith controls, not guarantees, and the only
+/// thing that matters when one fails is that there was a way to be told.
+///
+/// Deliberately kept after the account it refers to is gone — `reporterId` is
+/// nulled rather than cascaded — because a report about a case is evidence
+/// about the generator, and it outlives the person who filed it.
+model ContentReport {
+  id         String    @id @default(cuid())
+
+  reporterId String?
+  reporter   User?     @relation(fields: [reporterId], references: [id], onDelete: SetNull)
+
+  /// "case" | "juror_name"
+  kind       String
+  /// The case id, or the user id whose name is being reported.
+  subjectId  String
+  reason     String
+  detail     String?   @db.Text
+
+  reviewedAt DateTime?
+  /// What was done about it, in a human's words.
+  resolution String?   @db.Text
+
+  createdAt  DateTime  @default(now())
+
+  @@index([reviewedAt, createdAt])
+  @@index([kind, subjectId])
+  @@map("content_reports")
 }
 
 /// Refresh tokens, stored hashed — a database dump should not be a pile of
@@ -362,8 +407,26 @@ model CityState {
   mediaPressure        Float    @default(50)
 
   activeFactions       String[] @default([])
+
+  /// The six dials collapsed to the one scalar both boards sort on
+  /// (domain/peace.peaceIndex), stored rather than computed per query.
+  ///
+  /// The boards used to derive this inline in SQL, which meant ranking one
+  /// player required building the ENTIRE ranking — sequential scan, hash join,
+  /// full sort, window aggregate — and discarding every row but theirs. Fine
+  /// at 25 players; a million-row sort per request at a million.
+  ///
+  /// Stored and indexed, a rank is `count(*) where peaceIndex > mine`: an
+  /// index range count, which Postgres answers without touching the rows.
+  ///
+  /// Default 50 is not arbitrary — it is what peaceIndex() returns for the
+  /// all-50 starting city, so a freshly created row is already correct.
+  /// services/cityState is the only writer, and it recomputes on every write.
+  peaceIndex           Float    @default(50)
+
   updatedAt            DateTime @updatedAt
 
+  @@index([peaceIndex])
   @@map("city_state")
 }
 
@@ -394,10 +457,19 @@ model Case {
   /// socioeconomic_bias and to pick the city effect.
   defendantWealth     Float          @default(50)
   /// How sympathetic this defendant *looks* — 0 unsettling, 100 disarming.
-  /// Drives the 3D face and nothing else the player can read. Paired with the
+  /// Drives the face and nothing else the player can read. Paired with the
   /// verdict it measures appearance_bias: whether a face changed your mind.
-  /// Deliberately uncorrelated with guilt at generation time.
+  /// Rolled server-side, blind to the verdict (domain/presentation).
   defendantAppearance Float          @default(50)
+  /// BODY LANGUAGE — 0 closed and defensive, 100 open and still.
+  /// The second thing a juror reads off a person and the second thing that
+  /// means nothing. Measures demeanour_bias.
+  defendantDemeanour  Float          @default(50)
+  /// ODDITY — 0 unremarkable, 100 openly strange.
+  /// The uncanny axis: a gaze that does not quite land, a face fractionally
+  /// out of true. Measures oddity_bias — the bias people are least willing to
+  /// admit to and least able to justify to a defendant.
+  defendantOddity     Float          @default(50)
 
   evidence            Json           // Evidence[]
   witnesses           Json           // Witness[]
@@ -429,6 +501,11 @@ model Case {
   /// Null until first served. Re-serving the same pending case does NOT reset
   /// it — that was the reload exploit.
   servedAt            DateTime?
+
+  /// Withheld from the docket pending review, set the moment a player reports
+  /// it. Not a delete: the case IS the evidence about how the generator went
+  /// wrong, and deleting it destroys the only record of that.
+  quarantinedAt       DateTime?
 
   createdAt           DateTime       @default(now())
 
@@ -497,6 +574,16 @@ model Character {
 
   createdAt      DateTime      @default(now())
 
+  /// A name IS this person's identity, so one juror cannot hold two rows for
+  /// the same name.
+  ///
+  /// addToCharacterPool does findFirst-then-create, which two concurrent
+  /// writes both pass — and the result is not a duplicate row, it is a person
+  /// split in half: half their echoes point at one row and half at the other,
+  /// their fate and echoCount diverge, and the "PREVIOUSLY BEFORE YOU" note
+  /// starts referring to a stranger. The constraint is what actually prevents
+  /// that; the upsert in the service is the graceful path to the same rule.
+  @@unique([userId, name])
   @@index([userId, lastUsedCase])
   @@map("characters")
 }
@@ -515,11 +602,21 @@ model JurorProfile {
   /// The seventh measurement: do you acquit the ones who look harmless?
   /// Positive = convicts unsettling-looking defendants more readily.
   appearanceBias    Float    @default(0)
+  /// The eighth: do you convict the ones who sit closed and will not open up?
+  /// Positive = convicts closed, defensive defendants more readily.
+  demeanourBias     Float    @default(0)
+  /// The ninth, and the one nobody wants to see: do you convict the strange?
+  /// Positive = convicts defendants who strike you as odd more readily.
+  oddityBias        Float    @default(0)
 
   totalCases        Int      @default(0)
   /// Groq-written prose profile (GDD 7.5). Regenerated at each review break.
   writtenProfile    String?  @db.Text
   updatedAt         DateTime @updatedAt
 
+  /// The leaderboard filters on `totalCases >= MIN_CASES_TO_RANK` and had no
+  /// index for it, so qualifying every player meant a sequential scan of this
+  /// table on every board request.
+  @@index([totalCases])
   @@map("juror_profiles")
 }

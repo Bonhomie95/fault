@@ -1,0 +1,56 @@
+{
+  "reactions": [
+    "broken",
+    "stricken",
+    "smirk",
+    "relief",
+    "unreadable"
+  ],
+  "trial": [
+    "tense",
+    "pleading",
+    "defiant",
+    "ashamed",
+    "startled"
+  ],
+  "channels": [
+    "blink",
+    "gazeLeft",
+    "gazeRight",
+    "gazeUp",
+    "gazeDown",
+    "slump"
+  ],
+  "archetypes": [
+    {
+      "name": "f_young_af",
+      "file": "f_young_af.glb",
+      "bytes": 4169400
+    },
+    {
+      "name": "f_mid_ca",
+      "file": "f_mid_ca.glb",
+      "bytes": 4037532
+    },
+    {
+      "name": "f_young_as",
+      "file": "f_young_as.glb",
+      "bytes": 4029324
+    },
+    {
+      "name": "m_young_af",
+      "file": "m_young_af.glb",
+      "bytes": 4546596
+    },
+    {
+      "name": "m_mid_ca",
+      "file": "m_mid_ca.glb",
+      "bytes": 4609060
+    },
+    {
+      "name": "m_old_as",
+      "file": "m_old_as.glb",
+      "bytes": 4456692
+    }
+  ]
+}

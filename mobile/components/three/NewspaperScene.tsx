@@ -1,6 +1,9 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import type { Group } from 'three';
 import { Canvas, useFrame } from '@/lib/r3f';
+import { PaperFallback } from './PaperFallback';
+import { glUsable } from './glCapability';
 
 /**
  * The assignment, landing on a desk.
@@ -79,20 +82,31 @@ function Newspaper() {
 }
 
 export function NewspaperScene() {
+  // Starts null (unknown) so the canvas gets one chance to introduce itself.
+  // PaperFallback is behind it the whole time, so there is nothing to see
+  // during that moment either way.
+  const [usable, setUsable] = useState<boolean | null>(null);
+
   return (
-    <Canvas
-      shadows
-      camera={{ position: [0, 0.1, 3.5], fov: 40 }}
-      gl={{ antialias: true }}
-      style={{ flex: 1 }}
-    >
-      <color attach="background" args={['#0D0D0D']} />
-      <ambientLight intensity={0.5} />
-      {/* a desk lamp, off to one side */}
-      <directionalLight position={[-2, 3, 4]} intensity={1.4} castShadow />
-      <pointLight position={[2, 1, 2]} intensity={0.5} color="#D4860A" />
-      <fog attach="fog" args={['#0D0D0D', 4, 9]} />
-      <Newspaper />
-    </Canvas>
+    <View style={StyleSheet.absoluteFill}>
+      <PaperFallback />
+      {usable !== false && (
+        <Canvas
+          shadows
+          camera={{ position: [0, 0.1, 3.5], fov: 40 }}
+          gl={{ antialias: true }}
+          onCreated={({ gl }) => setUsable(glUsable(gl))}
+          style={{ flex: 1 }}
+        >
+          <color attach="background" args={['#0D0D0D']} />
+          <ambientLight intensity={0.5} />
+          {/* a desk lamp, off to one side */}
+          <directionalLight position={[-2, 3, 4]} intensity={1.4} castShadow />
+          <pointLight position={[2, 1, 2]} intensity={0.5} color="#D4860A" />
+          <fog attach="fog" args={['#0D0D0D', 4, 9]} />
+          <Newspaper />
+        </Canvas>
+      )}
+    </View>
   );
 }

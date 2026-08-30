@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Fonts, Palette } from '@/constants/theme';
+import { Fonts, Palette, Type } from '@/constants/theme';
 import { Seal, sealFrom } from '@/components/Seal';
 import { api, type Board, type BoardView } from '@/lib/api';
 import { useGame } from '@/store/game';
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: { paddingHorizontal: 20, paddingTop: 8, gap: 3 },
   title: { fontFamily: Fonts.display, fontSize: 30, color: Palette.text },
-  subtitle: { fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 1.4, color: Palette.textMuted },
+  subtitle: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.4, color: Palette.textMuted },
   tabs: { flexDirection: 'row', marginTop: 16, paddingHorizontal: 20, gap: 4 },
   tab: {
     flex: 1,
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontFamily: Fonts.mono,
-    fontSize: 9,
+    fontSize: Type.micro,
     letterSpacing: 1.6,
     color: Palette.textFaint,
   },
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   name: { fontFamily: Fonts.monoBold, fontSize: 13, color: Palette.text },
-  meta: { fontFamily: Fonts.mono, fontSize: 8, letterSpacing: 0.8, color: Palette.textMuted },
+  meta: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 0.8, color: Palette.textMuted },
   index: { fontFamily: Fonts.mono, fontSize: 12, color: Palette.text, width: 40, textAlign: 'right' },
   youText: { color: '#D4860A' },
   youBar: {
@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
   unranked: {
     flex: 1,
     fontFamily: Fonts.mono,
-    fontSize: 10,
+    fontSize: Type.micro,
     lineHeight: 16,
     color: Palette.textMuted,
   },

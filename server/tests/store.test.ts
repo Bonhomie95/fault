@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   CAMPAIGN_TRIAL_CASES,
   MERIT,
@@ -67,6 +70,89 @@ describe('the store cannot sell an advantage', () => {
         false,
         `${sku.id} grants something that sounds like an advantage`,
       );
+    }
+  });
+});
+
+describe('the store cannot sell a promise', () => {
+  /**
+   * The rule the audit found broken.
+   *
+   * Three case packs sat in this catalogue at $1.99 / 2,500 Merit each,
+   * advertised as "Ten hand-authored cases". Their entitlement values appeared
+   * in exactly three places in the repository — this catalogue, the Prisma
+   * enum, and the mobile type union — and nothing read them. A player could
+   * buy one and receive a database row.
+   *
+   * The catalogue's own comments forbid exactly this, for cosmetics: "selling
+   * a cosmetic nothing renders is taking money for a promise". The seals were
+   * held to the rule and the packs were not, because the rule lived in a
+   * comment and comments do not run.
+   *
+   * This runs.
+   */
+  /**
+   * Both halves of the repository, because "is this thing real" is a question
+   * only the client can answer for a cosmetic. The seals, for instance, exist
+   * entirely in mobile/components/Seal.tsx — a server-only search would call
+   * them unbuilt and be wrong.
+   *
+   * Directories that may not exist (a server-only checkout, CI before the
+   * mobile install) are skipped rather than failing the suite: this test is
+   * about what IS referenced, and a missing tree cannot prove a negative. The
+   * companion test below is the one that holds the line unconditionally.
+   */
+  const ROOTS = [
+    fileURLToPath(new URL('../src', import.meta.url)),
+    fileURLToPath(new URL('../../mobile/app', import.meta.url)),
+    fileURLToPath(new URL('../../mobile/components', import.meta.url)),
+    fileURLToPath(new URL('../../mobile/lib', import.meta.url)),
+    fileURLToPath(new URL('../../mobile/store', import.meta.url)),
+  ];
+
+  /** Every source file under a root, minus the places that merely DECLARE. */
+  function sourceFiles(dir: string): string[] {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return []; // tree not present in this checkout
+    }
+
+    return entries.flatMap((entry) => {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) return sourceFiles(full);
+      if (!/\.tsx?$/.test(entry.name)) return [];
+      // Declaration sites do not count as uses of themselves: the catalogue
+      // that defines the SKU, and the client type union that mirrors the enum.
+      if (full.endsWith(join('domain', 'store.ts'))) return [];
+      if (full.endsWith(join('lib', 'api.ts'))) return [];
+      return [full];
+    });
+  }
+
+  it('grants nothing that no code anywhere reads', () => {
+    const corpus = ROOTS.flatMap(sourceFiles)
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+
+    for (const sku of SKUS) {
+      if (!sku.grants) continue; // Merit bundles grant a balance, not a thing
+      assert.ok(
+        corpus.includes(sku.grants),
+        `${sku.id} is for sale and grants "${sku.grants}", which nothing outside the ` +
+          `catalogue ever reads. Either build the thing or take it off the shelf.`,
+      );
+    }
+  });
+
+  it('keeps unbuilt entitlements out of the catalogue entirely', () => {
+    // The correct handling, already applied to the room finishes and dossier
+    // stocks: they exist in the schema and are deliberately absent from SKUS.
+    // A schema entry is a plan; a SKU is a promise.
+    const forSale = new Set(SKUS.map((s) => s.grants));
+    for (const unbuilt of ['pack_corporate', 'pack_cold_case', 'pack_political', 'room_oak', 'room_concrete', 'stock_onionskin', 'stock_vellum']) {
+      assert.ok(!forSale.has(unbuilt as never), `${unbuilt} is on sale with nothing behind it`);
     }
   });
 });

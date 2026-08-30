@@ -1,13 +1,12 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
 import { CityScene } from '@/components/three/CityScene';
 import { Button } from '@/components/Button';
-import { Accents, Elevation, Fonts, Palette, Radius, Space, Type } from '@/constants/theme';
+import { Accents, Elevation, Fonts, IMPACT_LEADING, Palette, Radius, Space, Type } from '@/constants/theme';
 import { ApiError } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
@@ -103,11 +102,18 @@ export default function Lobby() {
             />
           </View>
 
-          {gate && (
-            <Animated.Text entering={FadeIn} style={styles.gate}>
-              {gate}
-            </Animated.Text>
-          )}
+          {/* NOT an entering animation, deliberately.
+              This is the only thing on the screen that explains why the one
+              button that matters did nothing — the trial docket is closed and
+              the case was refused with a 402. Wrapped in `Animated.Text
+              entering={FadeIn}` it was mounted, laid out, given its colour and
+              left at `visibility: hidden` forever, so the player saw a button
+              that did nothing at all and no reason why. Adding a duration does
+              not fix it; the same is true of the notices on the store and
+              career screens, and they are plain Text for the same reason. A
+              message a player has to read does not get to depend on an
+              animation running. */}
+          {gate && <Text style={styles.gate}>{gate}</Text>}
 
           {city && (
             <View style={styles.pulse}>
@@ -128,14 +134,25 @@ export default function Lobby() {
           <View style={styles.links}>
             <LobbyLink label="The career" onPress={() => router.push('/career')} />
             <LobbyLink label="The cities" onPress={() => router.push('/boards')} />
-            {/* GDD Screen 3 — gated on rank, not on being right. */}
+            {/* GDD Screen 3 — gated on rank, not on being right.
+
+                This pointed at /review, which is the Dossier Review BREAK —
+                a different screen with a side effect. Opening it calls
+                GET /api/review, which marks the last ten outcomes as seen and
+                settles every pending trust delta. So tapping "Review past
+                cases" from the lobby quietly cashed in the player's standing
+                early and burned the outcome reveals the next real break was
+                supposed to deliver, which is the one beat the whole delayed-
+                consequence design exists to protect.
+
+                /archive is the read-only record, and has no side effects. */}
             <LobbyLink
               label="Review past cases"
               locked={standing ? !standing.unlocks.caseArchive : false}
               lockedNote={
-                standing ? `OPENS TO JURORS OF RANK ${standing.unlocks.caseArchive ? '' : '2'}` : undefined
+                standing && !standing.unlocks.caseArchive ? 'OPENS TO JURORS OF RANK 2' : undefined
               }
-              onPress={() => router.push('/review')}
+              onPress={() => router.push('/archive')}
             />
             <LobbyLink
               label="Juror record"
@@ -223,7 +240,7 @@ const styles = StyleSheet.create({
   docket: {
     fontFamily: Fonts.impact,
     fontSize: Type.hero,
-    lineHeight: Type.hero * 0.92,
+    lineHeight: Type.hero * IMPACT_LEADING,
     letterSpacing: 0.5,
     color: Palette.text,
     textTransform: 'uppercase',
@@ -266,7 +283,7 @@ const styles = StyleSheet.create({
   caseFileLabel: {
     fontFamily: Fonts.impact,
     fontSize: Type.title,
-    lineHeight: Type.title * 0.94,
+    lineHeight: Type.title * IMPACT_LEADING,
     color: Palette.text,
     textTransform: 'uppercase',
   },

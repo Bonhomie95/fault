@@ -90,6 +90,23 @@ export interface PurchaseResult {
 }
 
 /**
+ * A verified receipt that belongs to somebody else's account.
+ *
+ * Its own error type because the route has to tell these apart: an
+ * unverifiable receipt is "we could not confirm that purchase", and this is
+ * "that purchase is real and it is not yours". The second one is worth
+ * logging, because at any volume it means either receipt sharing or a player
+ * who has managed to end up with two accounts and one purchase — and those
+ * need different answers.
+ */
+export class ReceiptOwnedByAnotherAccount extends Error {
+  constructor() {
+    super('receipt_belongs_to_another_account');
+    this.name = 'ReceiptOwnedByAnotherAccount';
+  }
+}
+
+/**
  * Buy something with Merit.
  *
  * The server prices it. The client sends a sku id and nothing else — it never
@@ -133,8 +150,26 @@ export async function redeemPurchase(opts: {
 
   const already = await prisma.purchase.findUnique({ where: { transactionId } });
   if (already) {
-    // Not an error: Apple and Google both replay transactions legitimately on
-    // restore. Idempotent means the second one is simply a no-op.
+    // WHOSE purchase, though.
+    //
+    // This used to check only that the transaction id existed, and return
+    // success either way — which meant a receipt already redeemed by ANOTHER
+    // account got a cheerful `{ granted: 'campaign' }` and no entitlement row.
+    // Safe in the sense that nothing leaked, and terrible in every other
+    // sense: the client is told the purchase worked, the thing never appears,
+    // and that is indistinguishable from "I paid and got nothing". It arrives
+    // as a support ticket rather than an error, which is the worst way for a
+    // payments bug to reach you.
+    if (already.userId !== userId) {
+      throw new ReceiptOwnedByAnotherAccount();
+    }
+
+    // Same juror: this is the restore path, and it is supposed to be boring.
+    // Apple and Google both replay transactions legitimately, so the second
+    // one is a no-op — but it still re-grants, because "already recorded" and
+    // "already granted" are different facts and a half-finished first attempt
+    // is exactly when someone hits restore.
+    if (sku.grants) await grantEntitlement(userId, sku.grants, 'store');
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     return { sku: sku.id, granted: sku.grants, meritBalance: user.merit };
   }

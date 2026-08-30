@@ -1,5 +1,7 @@
 import { prisma } from '../lib/prisma.js';
-import { GROQ_MODEL, groq } from '../lib/groq.js';
+import { aiEnabled, completeOnce } from '../lib/groq.js';
+import { redis } from '../lib/redis.js';
+import { biasFor, describeBias, type PresentationChannel } from '../domain/presentation.js';
 
 export interface JurorStats {
   convictionRate: number;
@@ -11,6 +13,10 @@ export interface JurorStats {
   /** Positive = convicts unsettling-looking defendants more readily than
    *  disarming ones. The face is the only difference the game controls for. */
   appearanceBias: number;
+  /** Positive = convicts defendants who sit closed and defensive more readily. */
+  demeanourBias: number;
+  /** Positive = convicts the unremarkable; negative = convicts the strange. */
+  oddityBias: number;
   totalCases: number;
   notablePatterns: string[];
 }
@@ -41,10 +47,85 @@ function listSentence(items: string[]): string {
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
 }
 
+/**
+ * Exactly the columns the maths below touches, and nothing else.
+ *
+ * This used to be `include: { case: true }` — the whole Case row per verdict,
+ * which drags along `evidence` and `witnesses` (JSON blobs holding the full
+ * dossier), plus the long-text background, arguments and titles. None of it is
+ * read here. At case 200 that is roughly a megabyte of JSON deserialised for a
+ * function that wants seven numbers, and computeJurorStats is called on every
+ * verdict, again on every case generation, and again on every foreign
+ * application — so the cost lands two or three times per case and grows
+ * linearly with the length of the career.
+ *
+ * That is the worst possible performance shape: it punishes your most engaged
+ * players and leaves new ones feeling fine, so it never shows up in testing.
+ */
+const STATS_SELECT = {
+  verdict: true,
+  timeRemaining: true,
+  wasHung: true,
+  case: {
+    select: {
+      evidenceStrength: true,
+      defendantWealth: true,
+      defendantAppearance: true,
+      defendantDemeanour: true,
+      defendantOddity: true,
+      correctVerdict: true,
+      structureKey: true,
+    },
+  },
+} as const;
+
+/**
+ * Memoised stats, keyed by how many verdicts they were computed from.
+ *
+ * Delivering one verdict used to run this whole computation two or three
+ * times: once from updateJurorProfile on the verdict itself, once from
+ * buildContext when the next case is generated, and once more on any foreign
+ * application. Identical input, identical output, three full passes over the
+ * career.
+ *
+ * The key includes the verdict count, which is what makes this safe to cache
+ * without any invalidation logic: a new verdict changes the count, so it
+ * cannot read a stale entry. There is no path where the count is unchanged and
+ * the answer is different — every input to these statistics arrives as a
+ * verdict row, and cases are immutable once judged.
+ *
+ * Redis is an optimisation here and nothing more. A miss, or an outage, costs
+ * a recomputation and no correctness.
+ */
+const STATS_TTL_SECONDS = 15 * 60;
+const statsKey = (userId: string, count: number) => `stats:${userId}:${count}`;
+
 export async function computeJurorStats(userId: string): Promise<JurorStats> {
+  // One cheap indexed count decides whether the cached answer is still the
+  // right answer. Cheaper by far than the scan it guards.
+  const count = await prisma.verdictRecord.count({ where: { userId } });
+
+  try {
+    const cached = await redis.get(statsKey(userId, count));
+    if (cached) return JSON.parse(cached) as JurorStats;
+  } catch {
+    /* cache is an optimisation, never a dependency */
+  }
+
+  const stats = await computeJurorStatsUncached(userId);
+
+  await redis
+    .set(statsKey(userId, count), JSON.stringify(stats), 'EX', STATS_TTL_SECONDS)
+    .catch(() => {});
+
+  return stats;
+}
+
+/** The maths itself, always from the verdict rows. Exported for tests. */
+export async function computeJurorStatsUncached(userId: string): Promise<JurorStats> {
   const verdicts = await prisma.verdictRecord.findMany({
     where: { userId },
-    include: { case: true },
+    select: STATS_SELECT,
     orderBy: { createdAt: 'asc' },
   });
 
@@ -58,6 +139,8 @@ export async function computeJurorStats(userId: string): Promise<JurorStats> {
       pressureAccuracy: 0,
       gutAccuracy: 0,
       appearanceBias: 0,
+      demeanourBias: 0,
+      oddityBias: 0,
       totalCases: 0,
       notablePatterns: [],
     };
@@ -85,16 +168,22 @@ export async function computeJurorStats(userId: string): Promise<JurorStats> {
   const socioeconomicBias =
     poor.length === 0 || wealthy.length === 0 ? 0 : poorConvictionRate - wealthyConvictionRate;
 
-  // appearance_bias: the same measurement, run on the face instead of the
-  // bank balance. Appearance is uncorrelated with guilt at generation time,
-  // so any gap here is the juror, not the docket.
-  const unsettling = verdicts.filter((v) => v.case.defendantAppearance <= UNSETTLING_AT);
-  const disarming = verdicts.filter((v) => v.case.defendantAppearance >= DISARMING_AT);
-  const appearanceBias =
-    unsettling.length === 0 || disarming.length === 0
-      ? 0
-      : pct(unsettling.filter((v) => v.verdict === 'guilty').length, unsettling.length) -
-        pct(disarming.filter((v) => v.verdict === 'guilty').length, disarming.length);
+  // The three presentation channels, measured by ONE function.
+  //
+  // appearance used to have its own inline calculation here. Now that there
+  // are three of them, sharing `biasFor` is not tidiness — it is the only way
+  // to be sure the face, the body and the strangeness are scored on identical
+  // terms. Three hand-rolled versions would drift, and a drifted channel is a
+  // finding the Juror Record states about somebody that is not true.
+  //
+  // All three are rolled blind to the verdict at generation (see
+  // domain/presentation), so any gap here is the juror and not the docket.
+  const channel = (pick: (c: (typeof verdicts)[number]['case']) => number) =>
+    verdicts.map((v) => ({ convicted: v.verdict === 'guilty', value: pick(v.case) }));
+
+  const appearanceBias = biasFor(channel((c) => c.defendantAppearance), 'appearance');
+  const demeanourBias = biasFor(channel((c) => c.defendantDemeanour), 'demeanour');
+  const oddityBias = biasFor(channel((c) => c.defendantOddity), 'oddity');
 
   // consistency: same structure in, same verdict out (GDD 2.5).
   const byStructure = new Map<string, string[]>();
@@ -138,10 +227,14 @@ export async function computeJurorStats(userId: string): Promise<JurorStats> {
     notablePatterns.push(`left ${hung} verdict${hung === 1 ? '' : 's'} to the clock`);
   if (socioeconomicBias > 20) notablePatterns.push('convicts poor defendants more readily');
   if (socioeconomicBias < -20) notablePatterns.push('convicts wealthy defendants more readily');
-  if (appearanceBias > 20)
-    notablePatterns.push('convicts defendants they find unsettling to look at more readily');
-  if (appearanceBias < -20)
-    notablePatterns.push('acquits defendants they find unsettling to look at more readily');
+  for (const [name, score] of [
+    ['appearance', appearanceBias],
+    ['demeanour', demeanourBias],
+    ['oddity', oddityBias],
+  ] as [PresentationChannel, number][]) {
+    const line = describeBias(name, score);
+    if (line) notablePatterns.push(line);
+  }
   if (pairs > 0 && consistencyScore < 60)
     notablePatterns.push('gives different verdicts to structurally identical cases');
   const overall = accuracyOf(verdicts);
@@ -157,6 +250,8 @@ export async function computeJurorStats(userId: string): Promise<JurorStats> {
     pressureAccuracy,
     gutAccuracy,
     appearanceBias,
+    demeanourBias,
+    oddityBias,
     totalCases: total,
     notablePatterns,
   };
@@ -197,6 +292,8 @@ export async function updateJurorProfile(userId: string) {
       pressureAccuracy: stats.pressureAccuracy,
       gutAccuracy: stats.gutAccuracy,
       appearanceBias: stats.appearanceBias,
+      demeanourBias: stats.demeanourBias,
+      oddityBias: stats.oddityBias,
       totalCases: stats.totalCases,
     },
     update: {
@@ -207,9 +304,38 @@ export async function updateJurorProfile(userId: string) {
       pressureAccuracy: stats.pressureAccuracy,
       gutAccuracy: stats.gutAccuracy,
       appearanceBias: stats.appearanceBias,
+      demeanourBias: stats.demeanourBias,
+      oddityBias: stats.oddityBias,
       totalCases: stats.totalCases,
     },
   });
+}
+
+/**
+ * The same paragraph, written without a model.
+ *
+ * Pulled out of writeJurorProfile so it can serve as a real fallback rather
+ * than only as the no-key path. It is the shipping voice whenever generation
+ * is unavailable — a spent pool, a timeout, a bad response — and the previous
+ * behaviour in those cases was to return the string "No profile available." on
+ * a screen whose entire reason to exist is a paragraph about the player.
+ */
+function deterministicProfile(jurorName: string, stats: JurorStats): string {
+  const acquittals = Math.round(((100 - stats.convictionRate) / 100) * stats.totalCases);
+  const leaning =
+    stats.convictionRate > 60
+      ? 'convict more often than not' // agrees with the plural "They"
+      : stats.convictionRate < 40
+        ? 'acquit more often than not'
+        : 'split evenly between conviction and acquittal';
+
+  return [
+    `Juror ${jurorName} has presided over ${stats.totalCases} case${stats.totalCases === 1 ? '' : 's'}, with a conviction rate of ${Math.round(stats.convictionRate)}%.`,
+    `They ${leaning}, and have acquitted ${acquittals} defendant${acquittals === 1 ? '' : 's'}.`,
+    stats.notablePatterns.length > 0
+      ? `Court records note that this juror ${listSentence(stats.notablePatterns)}.`
+      : 'Court records note no irregularity in their reasoning.',
+  ].join(' ');
 }
 
 /** GDD 7.5 — a journalist's paragraph about you, not a stats screen. */
@@ -217,26 +343,7 @@ export async function writeJurorProfile(userId: string, jurorName: string): Prom
   const stats = await computeJurorStats(userId);
   if (stats.totalCases === 0) return 'This juror has not yet heard a case.';
 
-  const acquittals = Math.round(((100 - stats.convictionRate) / 100) * stats.totalCases);
-
-  if (!groq) {
-    // Deterministic fallback keeps the same voice when AI is off. This is the
-    // shipping path whenever GROQ_API_KEY is unset, so it has to read like
-    // prose a journalist filed, not like a template.
-    const leaning =
-      stats.convictionRate > 60
-        ? 'convict more often than not' // agrees with the plural "They"
-        : stats.convictionRate < 40
-          ? 'acquit more often than not'
-          : 'split evenly between conviction and acquittal';
-    return [
-      `Juror ${jurorName} has presided over ${stats.totalCases} case${stats.totalCases === 1 ? '' : 's'}, with a conviction rate of ${Math.round(stats.convictionRate)}%.`,
-      `They ${leaning}, and have acquitted ${acquittals} defendant${acquittals === 1 ? '' : 's'}.`,
-      stats.notablePatterns.length > 0
-        ? `Court records note that this juror ${listSentence(stats.notablePatterns)}.`
-        : 'Court records note no irregularity in their reasoning.',
-    ].join(' ');
-  }
+  if (!aiEnabled) return deterministicProfile(jurorName, stats);
 
   const prompt = `
 Write a 3-sentence factual profile of a juror based on these statistics.
@@ -250,12 +357,13 @@ Notable: ${stats.notablePatterns.join(', ') || 'none'}
 Return only the profile text, no other content.
 `.trim();
 
-  const response = await groq.chat.completions.create({
-    model: GROQ_MODEL,
-    messages: [{ role: 'user', content: prompt }],
-    max_tokens: 250,
-    temperature: 0.7,
-  });
-
-  return response.choices[0]?.message?.content?.trim() ?? 'No profile available.';
+  // Through the pool. This used to call `groq` — keys[0] — directly, so the
+  // written profile stopped working the moment the first key hit its daily cap
+  // even though four others were idle.
+  //
+  // On failure it falls back to the deterministic writer rather than to "No
+  // profile available.", which was the old behaviour and is a strange thing to
+  // show on a screen whose entire purpose is a paragraph about the player.
+  const written = await completeOnce({ prompt, maxTokens: 250, temperature: 0.7 });
+  return written ?? deterministicProfile(jurorName, stats);
 }
