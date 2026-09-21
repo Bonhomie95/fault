@@ -1,4 +1,5 @@
 import type { MissionKind } from '@prisma/client';
+import { rankFor } from '../domain/progression.js';
 import { prisma } from '../lib/prisma.js';
 
 /**
@@ -21,69 +22,169 @@ export interface MissionDef {
   description: string;
   target: number;
   xp: number;
+  /** Merit paid on claim, alongside the XP. */
+  merit: number;
+  /** Not offered below this rank — a mission about districts needs districts. */
+  minRank?: number;
+  /**
+   * How this verdict moves the mission.
+   *
+   *   'add'    progress += n
+   *   'max'    progress = max(progress, n)   — milestones like "reach rank 5"
+   *   'streak' progress += n, but n === 0 resets to 0 — "in a row" missions
+   */
+  mode?: 'add' | 'max' | 'streak';
+  /** What this verdict is worth to the mission. Never reads correctness. */
+  count: (s: MissionSignal) => number;
 }
 
-export const MISSIONS: MissionDef[] = [
-  // ---- daily ----
-  {
-    key: 'daily_hear_three',
-    kind: 'daily',
-    title: 'Sit the day’s docket',
-    description: 'Hear three cases today.',
-    target: 3,
-    xp: 60,
-  },
-  {
-    key: 'daily_deliberate',
-    kind: 'daily',
-    title: 'Read before you decide',
-    description: 'Deliver two verdicts having used most of the clock.',
-    target: 2,
-    xp: 50,
-  },
-  {
-    key: 'daily_no_hung',
-    kind: 'daily',
-    title: 'Decide it yourself',
-    description: 'Hear three cases without letting the clock decide one.',
-    target: 3,
-    xp: 45,
-  },
-  // ---- weekly ----
-  {
-    key: 'weekly_docket',
-    kind: 'weekly',
-    title: 'A week on the bench',
-    description: 'Hear fifteen cases this week.',
-    target: 15,
-    xp: 260,
-  },
-  {
-    key: 'weekly_examine',
-    kind: 'weekly',
-    title: 'Handle the evidence',
-    description: 'Deliver ten verdicts with the clock still running.',
-    target: 10,
-    xp: 200,
-  },
-  // ---- career ----
-  {
-    key: 'career_hundred',
-    kind: 'career',
-    title: 'One hundred cases',
-    description: 'Hear one hundred cases.',
-    target: 100,
-    xp: 900,
-  },
-  {
-    key: 'career_consistency',
-    kind: 'career',
-    title: 'The same facts, the same answer',
-    description: 'Hear fifty cases.',
-    target: 50,
-    xp: 500,
-  },
+/**
+ * Everything a mission is allowed to know about a verdict.
+ *
+ * Read the list for what is NOT here: whether the verdict was right. Missions
+ * reward how a juror SITS — reading the file, not letting the clock decide,
+ * taking harder rooms, holding a city together — and never which way they
+ * voted or whether it matched the truth. A mission that paid for right answers
+ * would teach the player to hunt the answer instead of weigh the evidence.
+ */
+export interface MissionSignal {
+  wasHung: boolean;
+  timeRemaining: number;
+  clockSeconds: number;
+  /** violent | financial | systemic | passion */
+  mood?: string;
+  /** Exhibits opened before the verdict, 0..3. Reported by the client. */
+  examined?: number;
+  /** Witnesses read, 0..2. Reported by the client. */
+  witnesses?: number;
+  /** Whether the arguments tab was read. */
+  arguments?: boolean;
+  /** The district difficulty the case was heard in, 1..5. */
+  difficulty?: number;
+  /** A returning face was in the case. */
+  echo?: boolean;
+  /** The city's dials after the verdict. */
+  city?: { crimeRate: number; judicialTrust: number; organizedCrimePower: number; policeIntegrity: number };
+  rank?: number;
+  streak?: number;
+  districtsOpen?: number;
+}
+
+const decided = (s: MissionSignal) => !s.wasHung;
+const used = (s: MissionSignal) => s.clockSeconds - s.timeRemaining;
+const fullFile = (s: MissionSignal) =>
+  decided(s) && (s.examined ?? 0) >= 3 && (s.witnesses ?? 0) >= 2 && Boolean(s.arguments);
+
+/**
+ * The DAILY pool. Three are drawn per player per day (see activeKeys), so two
+ * players rarely have the same three and nobody has the same three twice in a
+ * row. Keys are stable forever — progress rows are keyed by them.
+ */
+export const DAILY: MissionDef[] = [
+  { key: 'daily_hear_three', kind: 'daily', title: 'Sit the day’s docket', description: 'Hear three cases today.', target: 3, xp: 60, merit: 30, count: () => 1 },
+  { key: 'daily_hear_five', kind: 'daily', title: 'A long day in court', description: 'Hear five cases today.', target: 5, xp: 110, merit: 60, minRank: 3, count: () => 1 },
+  { key: 'daily_deliberate', kind: 'daily', title: 'Read before you decide', description: 'Deliver two verdicts having used at least half the clock.', target: 2, xp: 50, merit: 25, count: (s) => (decided(s) && used(s) >= s.clockSeconds / 2 ? 1 : 0) },
+  { key: 'daily_no_hung', kind: 'daily', title: 'Decide it yourself', description: 'Hear three cases in a row without letting the clock decide one.', target: 3, xp: 45, merit: 25, mode: 'streak', count: (s) => (s.wasHung ? 0 : 1) },
+  { key: 'daily_examine_all', kind: 'daily', title: 'Handle every exhibit', description: 'Open all three exhibits before deciding, twice.', target: 2, xp: 55, merit: 30, count: (s) => (decided(s) && (s.examined ?? 0) >= 3 ? 1 : 0) },
+  { key: 'daily_hear_witnesses', kind: 'daily', title: 'Hear them both out', description: 'Read both witnesses before deciding, twice.', target: 2, xp: 50, merit: 25, count: (s) => (decided(s) && (s.witnesses ?? 0) >= 2 ? 1 : 0) },
+  { key: 'daily_arguments', kind: 'daily', title: 'Let counsel speak', description: 'Read the closing arguments before two verdicts.', target: 2, xp: 40, merit: 20, count: (s) => (decided(s) && s.arguments ? 1 : 0) },
+  { key: 'daily_full_file', kind: 'daily', title: 'The whole file', description: 'Read every exhibit, both witnesses and the arguments — then decide.', target: 1, xp: 70, merit: 40, count: (s) => (fullFile(s) ? 1 : 0) },
+  { key: 'daily_with_time', kind: 'daily', title: 'A steady hand', description: 'Decide three cases with at least twenty seconds to spare.', target: 3, xp: 45, merit: 20, count: (s) => (decided(s) && s.timeRemaining >= 20 ? 1 : 0) },
+  { key: 'daily_nerve', kind: 'daily', title: 'Nerve', description: 'Decide a case in its final fifteen seconds — without letting it hang.', target: 1, xp: 55, merit: 30, count: (s) => (decided(s) && s.timeRemaining <= 15 ? 1 : 0) },
+  { key: 'daily_violent', kind: 'daily', title: 'Blood on the file', description: 'Hear a case of violence.', target: 1, xp: 40, merit: 20, count: (s) => (s.mood === 'violent' ? 1 : 0) },
+  { key: 'daily_financial', kind: 'daily', title: 'Follow the money', description: 'Hear a financial case.', target: 1, xp: 40, merit: 20, count: (s) => (s.mood === 'financial' ? 1 : 0) },
+  { key: 'daily_systemic', kind: 'daily', title: 'The system on trial', description: 'Hear a case about power and institutions.', target: 1, xp: 40, merit: 20, count: (s) => (s.mood === 'systemic' ? 1 : 0) },
+  { key: 'daily_passion', kind: 'daily', title: 'Crimes of the heart', description: 'Hear a crime of passion.', target: 1, xp: 40, merit: 20, count: (s) => (s.mood === 'passion' ? 1 : 0) },
+  { key: 'daily_away_court', kind: 'daily', title: 'Travelling juror', description: 'Hear two cases outside your home district.', target: 2, xp: 70, merit: 45, minRank: 3, count: (s) => ((s.difficulty ?? 1) > 1 ? 1 : 0) },
+  { key: 'daily_hard_room', kind: 'daily', title: 'The hard room', description: 'Hear a case in a district rated Hard or worse.', target: 1, xp: 90, merit: 55, minRank: 6, count: (s) => ((s.difficulty ?? 1) >= 4 ? 1 : 0) },
+  { key: 'daily_crime_watch', kind: 'daily', title: 'Hold the line', description: 'Deliver two verdicts while city crime is below 50.', target: 2, xp: 60, merit: 30, count: (s) => (decided(s) && (s.city?.crimeRate ?? 100) < 50 ? 1 : 0) },
+  { key: 'daily_trust', kind: 'daily', title: 'A court people believe', description: 'Deliver two verdicts while judicial trust is 50 or higher.', target: 2, xp: 60, merit: 30, count: (s) => (decided(s) && (s.city?.judicialTrust ?? 0) >= 50 ? 1 : 0) },
+  { key: 'daily_echo', kind: 'daily', title: 'A face you know', description: 'Sit a case where someone from your past docket returns.', target: 1, xp: 80, merit: 40, minRank: 3, count: (s) => (s.echo ? 1 : 0) },
 ];
+
+export const WEEKLY: MissionDef[] = [
+  { key: 'weekly_docket', kind: 'weekly', title: 'A week on the bench', description: 'Hear fifteen cases this week.', target: 15, xp: 260, merit: 150, count: () => 1 },
+  { key: 'weekly_examine', kind: 'weekly', title: 'Handle the evidence', description: 'Deliver ten verdicts with the clock still running.', target: 10, xp: 200, merit: 120, count: (s) => (decided(s) ? 1 : 0) },
+  { key: 'weekly_full_file', kind: 'weekly', title: 'Thorough', description: 'Read the whole file before deciding, five times this week.', target: 5, xp: 240, merit: 140, count: (s) => (fullFile(s) ? 1 : 0) },
+  { key: 'weekly_no_hung', kind: 'weekly', title: 'Ten clean verdicts', description: 'Ten cases in a row with no hung verdict.', target: 10, xp: 250, merit: 150, mode: 'streak', count: (s) => (s.wasHung ? 0 : 1) },
+  { key: 'weekly_crime', kind: 'weekly', title: 'Clean streets', description: 'Deliver six verdicts while crime is below 45.', target: 6, xp: 280, merit: 170, count: (s) => (decided(s) && (s.city?.crimeRate ?? 100) < 45 ? 1 : 0) },
+  { key: 'weekly_syndicate', kind: 'weekly', title: 'Break the Syndicate', description: 'Deliver five verdicts while organised crime is below 50.', target: 5, xp: 280, merit: 170, minRank: 3, count: (s) => (decided(s) && (s.city?.organizedCrimePower ?? 100) < 50 ? 1 : 0) },
+  { key: 'weekly_police', kind: 'weekly', title: 'Clean hands', description: 'Deliver five verdicts while police integrity is 55 or higher.', target: 5, xp: 260, merit: 160, minRank: 3, count: (s) => (decided(s) && (s.city?.policeIntegrity ?? 0) >= 55 ? 1 : 0) },
+  { key: 'weekly_tour', kind: 'weekly', title: 'Circuit judge', description: 'Hear six cases outside your home district.', target: 6, xp: 320, merit: 200, minRank: 3, count: (s) => ((s.difficulty ?? 1) > 1 ? 1 : 0) },
+  { key: 'weekly_hard', kind: 'weekly', title: 'Notorious', description: 'Hear three cases in a Notorious district.', target: 3, xp: 400, merit: 260, minRank: 8, count: (s) => ((s.difficulty ?? 1) >= 5 ? 1 : 0) },
+  { key: 'weekly_every_kind', kind: 'weekly', title: 'Every kind of case', description: 'Hear two cases of violence and two financial cases.', target: 4, xp: 220, merit: 130, count: (s) => (s.mood === 'violent' || s.mood === 'financial' ? 1 : 0) },
+  { key: 'weekly_steady', kind: 'weekly', title: 'Unhurried', description: 'Decide eight cases with at least half the clock used.', target: 8, xp: 230, merit: 140, count: (s) => (decided(s) && used(s) >= s.clockSeconds / 2 ? 1 : 0) },
+];
+
+/**
+ * CAREER: milestones, always visible, paid once, never rotated.
+ */
+export const CAREER: MissionDef[] = [
+  { key: 'career_first', kind: 'career', title: 'Sworn in', description: 'Deliver your first verdict.', target: 1, xp: 50, merit: 100, count: () => 1 },
+  { key: 'career_ten', kind: 'career', title: 'Ten cases', description: 'Hear ten cases.', target: 10, xp: 150, merit: 200, count: () => 1 },
+  { key: 'career_twentyfive', kind: 'career', title: 'Regular', description: 'Hear twenty-five cases.', target: 25, xp: 300, merit: 300, count: () => 1 },
+  { key: 'career_consistency', kind: 'career', title: 'Fifty cases', description: 'Hear fifty cases.', target: 50, xp: 500, merit: 450, count: () => 1 },
+  { key: 'career_hundred', kind: 'career', title: 'One hundred cases', description: 'Hear one hundred cases.', target: 100, xp: 900, merit: 800, count: () => 1 },
+  { key: 'career_twofifty', kind: 'career', title: 'Institution', description: 'Hear two hundred and fifty cases.', target: 250, xp: 1800, merit: 1500, count: () => 1 },
+  { key: 'career_fivehundred', kind: 'career', title: 'Part of the building', description: 'Hear five hundred cases.', target: 500, xp: 3500, merit: 3000, count: () => 1 },
+  { key: 'career_rank3', kind: 'career', title: 'Seasoned', description: 'Reach rank 3.', target: 3, xp: 0, merit: 200, mode: 'max', count: (s) => s.rank ?? 0 },
+  { key: 'career_rank5', kind: 'career', title: 'Presiding', description: 'Reach rank 5.', target: 5, xp: 0, merit: 400, mode: 'max', count: (s) => s.rank ?? 0 },
+  { key: 'career_rank8', kind: 'career', title: 'Senior bench', description: 'Reach rank 8.', target: 8, xp: 0, merit: 800, mode: 'max', count: (s) => s.rank ?? 0 },
+  { key: 'career_rank12', kind: 'career', title: 'Chief Juror', description: 'Reach the top rank.', target: 12, xp: 0, merit: 2000, mode: 'max', count: (s) => s.rank ?? 0 },
+  { key: 'career_streak7', kind: 'career', title: 'A week of service', description: 'Sit cases seven days in a row.', target: 7, xp: 300, merit: 350, mode: 'max', count: (s) => s.streak ?? 0 },
+  { key: 'career_streak30', kind: 'career', title: 'A month of service', description: 'Sit cases thirty days in a row.', target: 30, xp: 1200, merit: 1500, mode: 'max', count: (s) => s.streak ?? 0 },
+  { key: 'career_districts3', kind: 'career', title: 'Three courts', description: 'Open three districts.', target: 3, xp: 200, merit: 300, mode: 'max', count: (s) => s.districtsOpen ?? 1 },
+  { key: 'career_districts5', kind: 'career', title: 'The whole map', description: 'Open five districts.', target: 5, xp: 600, merit: 700, mode: 'max', count: (s) => s.districtsOpen ?? 1 },
+  { key: 'career_full_file_25', kind: 'career', title: 'Never skim', description: 'Read the whole file before deciding, 25 times.', target: 25, xp: 500, merit: 500, count: (s) => (fullFile(s) ? 1 : 0) },
+  { key: 'career_clean_25', kind: 'career', title: 'Twenty-five clean', description: 'Twenty-five cases in a row without a hung verdict.', target: 25, xp: 600, merit: 600, mode: 'streak', count: (s) => (s.wasHung ? 0 : 1) },
+  { key: 'career_hard_10', kind: 'career', title: 'Hard rooms', description: 'Hear ten cases in Hard or Notorious districts.', target: 10, xp: 700, merit: 800, minRank: 6, count: (s) => ((s.difficulty ?? 1) >= 4 ? 1 : 0) },
+  { key: 'career_echoes', kind: 'career', title: 'They come back', description: 'Face five returning names.', target: 5, xp: 400, merit: 450, count: (s) => (s.echo ? 1 : 0) },
+];
+
+export const MISSIONS: MissionDef[] = [...DAILY, ...WEEKLY, ...CAREER];
+const BY_KEY = new Map(MISSIONS.map((m) => [m.key, m]));
+
+export const DAILY_OFFERED = 3;
+export const WEEKLY_OFFERED = 2;
+
+function hash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** A seeded draw of `n` from a pool, stable for this player and period. */
+function draw(pool: MissionDef[], n: number, seed: string, rank: number): MissionDef[] {
+  const eligible = pool.filter((m) => (m.minRank ?? 1) <= rank);
+  return [...eligible]
+    .map((m) => ({ m, k: hash(`${seed}:${m.key}`) }))
+    .sort((a, b) => a.k - b.k)
+    .slice(0, n)
+    .map((x) => x.m);
+}
+
+/**
+ * The missions on offer to this player right now.
+ *
+ * The first daily is always "sit the day's docket" — every day should have one
+ * mission a player can finish just by playing. The rest are drawn.
+ */
+export function activeMissions(userId: string, rank: number, day: string, week: string): MissionDef[] {
+  const anchor = BY_KEY.get('daily_hear_three')!;
+  const dailies = [
+    anchor,
+    ...draw(DAILY.filter((m) => m !== anchor), DAILY_OFFERED - 1, `${userId}:${day}`, rank),
+  ];
+  const weeklies = draw(WEEKLY, WEEKLY_OFFERED, `${userId}:${week}`, rank);
+  return [...dailies, ...weeklies, ...CAREER.filter((m) => (m.minRank ?? 1) <= rank)];
+}
+
+export function missionMerit(key: string): number {
+  return BY_KEY.get(key)?.merit ?? 0;
+}
 
 /**
  * The player's own calendar day.
@@ -164,72 +265,42 @@ export async function recordDocketDay(userId: string): Promise<{ streak: number;
   return { streak, isNewDay: true };
 }
 
-export interface VerdictSignal {
-  verdict: 'guilty' | 'not_guilty';
-  wasHung: boolean;
-  timeRemaining: number;
-  clockSeconds: number;
-}
+/** What the verdict route passes in. */
+export type VerdictSignal = MissionSignal & { verdict: 'guilty' | 'not_guilty' };
 
-/** Advance whatever this verdict earned. Direction of the verdict is ignored. */
 export async function tickMissions(userId: string, signal: VerdictSignal) {
-  const { timezone } = await prisma.user.findUniqueOrThrow({
+  const { timezone, xp } = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { timezone: true },
+    select: { timezone: true, xp: true },
   });
-  const used = signal.clockSeconds - signal.timeRemaining;
-  const deliberated = !signal.wasHung && used >= signal.clockSeconds / 2;
-  const decidedInTime = !signal.wasHung;
+  const rank = signal.rank ?? rankFor(xp).level;
+  const active = activeMissions(userId, rank, dayKey(timezone), weekKey());
 
-  const increments: Record<string, number> = {
-    daily_hear_three: 1,
-    weekly_docket: 1,
-    career_hundred: 1,
-    career_consistency: 1,
-    daily_deliberate: deliberated ? 1 : 0,
-    weekly_examine: decidedInTime ? 1 : 0,
-    // Letting the clock decide resets this one rather than advancing it.
-    daily_no_hung: signal.wasHung ? -Number.MAX_SAFE_INTEGER : 1,
-  };
+  const moves = active
+    .map((def) => ({ def, n: def.count({ ...signal, rank }) }))
+    .filter(({ def, n }) => n !== 0 || def.mode === 'streak');
+  if (moves.length === 0) return;
 
-  // One read for every mission, then one write each — instead of a
-  // read-then-write per mission, serially.
-  //
-  // This loop was doing findUnique + upsert for each of seven missions: up to
-  // fifteen sequential round trips inside POST /api/verdict, which was already
-  // the heaviest write path in the game at roughly thirty-eight. Each one waits
-  // for the last, so it is fifteen network latencies stacked end to end for
-  // work that touches at most seven small rows.
-  //
-  // The reads collapse to a single findMany. The writes stay separate — each
-  // upsert has different data — but they go out together rather than in
-  // lockstep, so it is one round trip's worth of waiting instead of seven.
-  const advancing = MISSIONS.filter((def) => (increments[def.key] ?? 0) !== 0);
-  if (advancing.length === 0) return;
-
-  const periods = [...new Set(advancing.map((def) => periodFor(def.kind, timezone)))];
-
+  const periods = [...new Set(moves.map(({ def }) => periodFor(def.kind, timezone)))];
   const existing = await prisma.missionProgress.findMany({
-    where: {
-      userId,
-      key: { in: advancing.map((def) => def.key) },
-      period: { in: periods },
-    },
+    where: { userId, key: { in: moves.map(({ def }) => def.key) }, period: { in: periods } },
   });
-
   const byKeyPeriod = new Map(existing.map((row) => [`${row.key}:${row.period}`, row]));
   const now = new Date();
 
   await Promise.all(
-    advancing.map((def) => {
-      const inc = increments[def.key]!;
+    moves.map(({ def, n }) => {
       const period = periodFor(def.kind, timezone);
       const prior = byKeyPeriod.get(`${def.key}:${period}`);
-
+      // A finished mission stays finished — a hung verdict after completing
+      // "three in a row" does not take the reward back.
+      if (prior && prior.progress >= def.target) return Promise.resolve();
       const base = prior?.progress ?? 0;
-      const progress = Math.max(0, Math.min(def.target, inc < 0 ? 0 : base + inc));
+      const mode = def.mode ?? 'add';
+      const next =
+        mode === 'max' ? Math.max(base, n) : mode === 'streak' && n === 0 ? 0 : base + n;
+      const progress = Math.max(0, Math.min(def.target, next));
       const completedAt = progress >= def.target ? (prior?.completedAt ?? now) : null;
-
       return prisma.missionProgress.upsert({
         where: { userId_key_period: { userId, key: def.key, period } },
         create: { userId, key: def.key, kind: def.kind, period, progress, target: def.target, completedAt },
@@ -239,96 +310,105 @@ export async function tickMissions(userId: string, signal: VerdictSignal) {
   );
 }
 
-export interface MissionView extends MissionDef {
+export interface MissionView {
+  key: string;
+  kind: MissionKind;
+  title: string;
+  description: string;
+  target: number;
+  xp: number;
+  merit: number;
   progress: number;
   complete: boolean;
   claimed: boolean;
+  /** When this mission's period ends, for the countdown on the card. */
+  endsAt: string | null;
+}
+
+function endOfDayUtc(timezone: string): Date {
+  // Good enough for a countdown: the next local midnight, computed by walking
+  // forward until the local day key changes.
+  const today = dayKey(timezone);
+  const t = new Date();
+  t.setUTCMinutes(0, 0, 0);
+  for (let i = 0; i < 26; i++) {
+    t.setUTCHours(t.getUTCHours() + 1);
+    if (dayKey(timezone, t) !== today) return t;
+  }
+  return new Date(Date.now() + 86400000);
+}
+
+function endOfWeekUtc(): Date {
+  const now = new Date();
+  const day = now.getUTCDay() || 7;
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + (8 - day)));
+  return end;
 }
 
 export async function missionsFor(userId: string): Promise<MissionView[]> {
-  const { timezone } = await prisma.user.findUniqueOrThrow({
+  const { timezone, xp } = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { timezone: true },
+    select: { timezone: true, xp: true },
   });
-  const periods = [dayKey(timezone), weekKey(), 'career'];
+  const day = dayKey(timezone);
+  const week = weekKey();
+  const active = activeMissions(userId, rankFor(xp).level, day, week);
   const rows = await prisma.missionProgress.findMany({
-    where: { userId, period: { in: periods } },
+    where: { userId, period: { in: [day, week, 'career'] } },
   });
-
-  return MISSIONS.map((def) => {
+  const dayEnd = endOfDayUtc(timezone).toISOString();
+  const weekEnd = endOfWeekUtc().toISOString();
+  const views = active.map((def) => {
     const row = rows.find((r) => r.key === def.key && r.period === periodFor(def.kind, timezone));
     const progress = row?.progress ?? 0;
     return {
-      ...def,
+      key: def.key,
+      kind: def.kind,
+      title: def.title,
+      description: def.description,
+      target: def.target,
+      xp: def.xp,
+      merit: def.merit,
       progress,
       complete: progress >= def.target,
       claimed: row?.claimed ?? false,
+      endsAt: def.kind === 'daily' ? dayEnd : def.kind === 'weekly' ? weekEnd : null,
     };
   });
+  // Career: claimed milestones fall away, and only the next handful show, so
+  // the list is a to-do rather than a trophy cabinet.
+  const career = views.filter((v) => v.kind === 'career' && !v.claimed);
+  const shownCareer = [
+    ...career.filter((v) => v.complete),
+    ...career.filter((v) => !v.complete).sort((a, b) => b.progress / b.target - a.progress / a.target).slice(0, 4),
+  ];
+  return [...views.filter((v) => v.kind !== 'career'), ...shownCareer];
 }
 
-/**
- * Claim a finished mission's XP. Idempotent — a mission pays once.
- *
- * The claim is a CONDITIONAL update, not a read-then-write.
- *
- * It used to read the row, check `row.claimed`, then update by id with no
- * condition — so two requests arriving together both passed the check, both
- * wrote `claimed: true`, and both returned `def.xp`. Double pay, from a plain
- * double tap on a flaky connection.
- *
- * The correct pattern was already in this codebase, in tokens.rotateRefresh:
- * make the database do the checking with `updateMany` and a WHERE that
- * includes the condition, then trust `count`. Exactly one caller can win a row
- * that way, because the row can only transition once.
- */
 export async function claimMission(userId: string, key: string): Promise<number> {
-  const def = MISSIONS.find((m) => m.key === key);
+  const def = BY_KEY.get(key);
   if (!def) return 0;
-
   const { timezone } = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
     select: { timezone: true },
   });
   const period = periodFor(def.kind, timezone);
-
+  // Conditional update: two claims arriving together cannot both pay.
   const claimed = await prisma.missionProgress.updateMany({
-    where: {
-      userId,
-      key,
-      period,
-      claimed: false,
-      // Completeness is part of the condition too, so a claim cannot race a
-      // tickMissions that has not yet pushed progress over the line.
-      progress: { gte: def.target },
-    },
+    where: { userId, key, period, claimed: false, progress: { gte: def.target } },
     data: { claimed: true },
   });
-
-  // Zero rows means: no such mission instance, not finished yet, or somebody
-  // else already took it. All three are "nothing to claim" from here.
-  return claimed.count === 1 ? def.xp : 0;
+  // Returns XP for compatibility; a milestone with no XP still counts as paid.
+  return claimed.count === 1 ? Math.max(1, def.xp) : 0;
 }
 
-/**
- * Put a claim back.
- *
- * Only for the caller that took it and then failed to pay out — see the
- * mission claim route. Claiming marks the row before the XP is awarded, so a
- * failure between those two steps leaves a mission that says "paid" and a
- * player who was not. This is the compensation for that, and it is deliberately
- * not exported as anything more general: unclaiming a mission somebody WAS paid
- * for is a duplication bug wearing a helpful name.
- */
 export async function unclaimMission(userId: string, key: string): Promise<void> {
-  const def = MISSIONS.find((m) => m.key === key);
+  const def = BY_KEY.get(key);
   if (!def) return;
-
   const { timezone } = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
     select: { timezone: true },
   });
-
   await prisma.missionProgress.updateMany({
     where: { userId, key, period: periodFor(def.kind, timezone), claimed: true },
     data: { claimed: false },

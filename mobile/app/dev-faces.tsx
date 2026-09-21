@@ -1,3 +1,4 @@
+import { Redirect } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg from 'react-native-svg';
 import { StandaloneFace } from '@/components/scene2d/CourtroomScene';
@@ -14,7 +15,7 @@ import { Fonts, Palette, Type } from '@/constants/theme';
  * place in the app to look at one. This renders a spread of seeds across the
  * appearance axis, at the size the defendant tab uses, and stays put.
  *
- * It is not linked from anywhere and returns nothing outside __DEV__, so it
+ * It is not linked from anywhere and redirects home outside __DEV__, so it
  * cannot appear in a release build. Delete the file if it stops earning its
  * place.
  */
@@ -22,7 +23,10 @@ const SEEDS = [3, 7, 11, 19, 23, 31, 44, 57, 68, 79, 88, 97];
 const APPEARANCE = [18, 50, 82];
 
 export default function DevFaces() {
-  if (!__DEV__) return null;
+  // Redirect rather than render nothing: expo-router still registers this
+  // route in a release build, and a deep link to it (fault://dev-…) used to
+  // land on a blank black screen with no way out.
+  if (!__DEV__) return <Redirect href="/" />;
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>

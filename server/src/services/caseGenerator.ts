@@ -7,6 +7,9 @@ import { prisma } from '../lib/prisma.js';
 import { caseQueueKey, redis } from '../lib/redis.js';
 import { districtFor, profileFor, tierLabel } from '../domain/jurisdiction.js';
 import { stripPresentation } from '../domain/presentation.js';
+import { ambiguityBumpFor, currentDistrictFor, districtLadder } from '../domain/districts.js';
+import { rankFor } from '../domain/progression.js';
+import { presentsFeminine } from '../domain/nameGender.js';
 import { deriveCaseMood, deriveFactions } from './cityEffects.js';
 import { localizeCase } from './localizeCase.js';
 import { echoRolesFor, getEligibleCharacters, type PoolCharacter } from './characterPool.js';
@@ -95,6 +98,7 @@ function violatesPolicy(c: GeneratedCase): boolean {
     c.defendant.background,
     ...c.evidence.map((e) => e.description),
     ...c.witnesses.map((w) => w.testimony),
+    ...c.courtroom_lines.map((l) => l.text),
   ].join(' ');
   return BLOCKED_PATTERNS.some((p) => p.test(haystack));
 }
@@ -110,6 +114,8 @@ export interface PlaceContext {
   nameRegister: string;
   tier: Tier;
   tierLabel: string;
+  /** 1 home court .. 5 notorious. See domain/districts. */
+  difficulty: number;
 }
 
 interface GenerationContext {
@@ -233,12 +239,23 @@ them. That recognition is the whole point.
 
   // Names are assigned, not requested. See castNames.
   const cast = ctx.castNames;
+  // Each person's presentation, from their name — the app renders a woman as
+  // a woman, so the text must not call her "a man of my word". Unisex names
+  // say nothing, and the model may choose.
+  const who = (name: string) => {
+    const f = presentsFeminine(name);
+    return f === null ? '' : f ? '  (a woman)' : '  (a man)';
+  };
+  const defendantName = ctx.mustEcho ? ctx.mustEcho.name : cast.defendant;
   const usedText = `
 THE CAST OF THIS CASE — USE THESE NAMES EXACTLY, AND NO OTHERS:
 
-  defendant  : ${ctx.mustEcho ? ctx.mustEcho.name : cast.defendant}
-  witness 1  : ${cast.witnesses[0]}
-  witness 2  : ${cast.witnesses[1]}
+  defendant  : ${defendantName}${who(defendantName)}
+  witness 1  : ${cast.witnesses[0]}${who(cast.witnesses[0])}
+  witness 2  : ${cast.witnesses[1]}${who(cast.witnesses[1])}
+
+Where a person is marked (a woman) or (a man), write them that way — in the
+background, the testimony and every courtroom line they speak.
 
 Copy them character for character into the "name" fields and into
 character_pool_additions. Do not invent names, do not substitute, do not add a
@@ -358,6 +375,26 @@ ${
   not. Never describe the defendant's looks in "background"; the face is shown,
   not narrated.
 
+- Writes "courtroom_lines": 9 to 12 short things people SAY OUT LOUD in the
+  room while the juror deliberates. This is the drama — make the juror doubt
+  what they just read. Mix:
+    * the defendant interrupting when an exhibit is examined (cue "e1".."e3"),
+      disputing it, explaining it away, or turning it back on someone
+    * the defendant appealing straight to the juror (cue "open" and "late")
+    * each witness digging in when called (cue "witness1"/"witness2"), sure of
+      themselves — including the one who is lying
+    * counsel jabbing across the room (speaker "prosecution"/"defence", cue
+      "arguments" or an exhibit cue)
+  Lines should sway or unsettle: confident half-truths, a sharp question, an
+  accusation against a witness, a detail that sounds important and might not
+  be, an emotional plea.
+  THE RULE THAT MATTERS: every line must be something the speaker would say
+  whether the defendant is guilty OR innocent. Never confess, never hint at
+  the true verdict, never reveal a witness's lie or its tell (a witness never
+  admits, or half-admits, lying or being unsure), never introduce a new fact
+  that settles the case. A juror who believes the loudest voice must
+  be following nothing. Each line at most 20 words, in the voice of the person.
+
 Return ONLY valid JSON matching this exact schema, no prose, no markdown fence:
 {
   "title": "The State v. <name>",
@@ -377,7 +414,8 @@ Return ONLY valid JSON matching this exact schema, no prose, no markdown fence:
   "defence_argument": "string",
   "correct_verdict": "guilty" | "not_guilty" | "ambiguous",
   "evidence_strength": number (-1.0 to 1.0),
-  "character_pool_additions": [ { "name": "string", "role": "defendant" | "witness" | "prosecutor" | "defender" | "victim", "themes": ["string"] } ]
+  "character_pool_additions": [ { "name": "string", "role": "defendant" | "witness" | "prosecutor" | "defender" | "victim", "themes": ["string"] } ],
+  "courtroom_lines": [ { "speaker": "defendant" | "witness1" | "witness2" | "prosecution" | "defence", "cue": "open" | "e1" | "e2" | "e3" | "witness1" | "witness2" | "arguments" | "late", "tone": "pleading" | "defiant" | "tense" | "ashamed" | "startled" | "calm", "text": "string" } ]
 }
 Exactly 3 evidence items and exactly 2 witnesses.
 `.trim();
@@ -684,7 +722,11 @@ async function buildContext(
     characterPool,
     caseNumber,
     place,
-    wantAmbiguous: twinOf ? false : Math.random() < ambiguityTargetFor(caseNumber),
+    // Harder districts are more often genuinely unanswerable — that is what
+    // makes them hard, since the clock is the same everywhere.
+    wantAmbiguous: twinOf
+      ? false
+      : Math.random() < ambiguityTargetFor(caseNumber) + ambiguityBumpFor(place.difficulty ?? 1),
     mustEcho,
     twinOf,
     usedNames,
@@ -992,8 +1034,8 @@ export async function nextCase(
 
   const profile = profileFor(place.country);
   return {
-    // The authored docket gets a fresh roll too. Six hand-written cases have
-    // six FIXED verdicts, so a fixed presentation on each would be perfectly
+    // The authored docket gets a fresh roll too. Hand-written cases have
+    // FIXED verdicts, so a fixed presentation on each would be perfectly
     // correlated with guilt for anyone who played them twice.
     generated: stripPresentation(localizeCase(seedCaseFor(caseNumber), {
       profile,
@@ -1020,10 +1062,22 @@ export function placeForUser(user: {
   homeDistrict: string | null;
   currentCountry: string | null;
   currentTier: Tier;
+  currentDistrict?: string | null;
+  xp?: number;
 }): PlaceContext {
   const country = (user.currentCountry ?? user.homeCountry ?? 'NO').toUpperCase();
   const profile = profileFor(country);
-  const district = user.homeDistrict ?? districtFor(country, user.id);
+  const home = user.homeDistrict ?? districtFor(country, user.id);
+  // The seat the player chose, if they have opened it; home otherwise.
+  const seat = {
+    rank: rankFor(user.xp ?? 0).level,
+    homeCountry: user.homeCountry,
+    currentCountry: user.currentCountry,
+    homeDistrict: home,
+    currentDistrict: user.currentDistrict ?? null,
+  };
+  const district = currentDistrictFor(seat);
+  const difficulty = districtLadder(seat).find((d) => d.name === district)?.difficulty ?? 1;
 
   return {
     country,
@@ -1035,6 +1089,7 @@ export function placeForUser(user: {
     nameRegister: profile.nameRegister,
     tier: user.currentTier,
     tierLabel: tierLabel(user.currentTier, country),
+    difficulty,
   };
 }
 

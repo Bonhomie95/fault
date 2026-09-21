@@ -27,5 +27,6 @@ import type { WebGLRenderer } from 'three';
  * that renders half a page is worse than one that renders a clean flat one.
  */
 export function glUsable(gl: WebGLRenderer): boolean {
-  return gl.extensions.has('EXT_color_buffer_float');
+  const ok = gl.extensions.has('EXT_color_buffer_float');
+  return ok;
 }

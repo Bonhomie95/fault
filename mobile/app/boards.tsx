@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,7 +14,9 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Fonts, Palette, Type } from '@/constants/theme';
 import { Seal, sealFrom } from '@/components/Seal';
-import { api, type Board, type BoardView } from '@/lib/api';
+import { api, ApiError, type Board, type BoardEntry, type BoardView } from '@/lib/api';
+import * as haptic from '@/lib/haptics';
+import { storage } from '@/lib/storage';
 import { useGame } from '@/store/game';
 
 /**
@@ -27,6 +30,27 @@ import { useGame } from '@/store/game';
  * position if they are on it, and otherwise just states the number. You should
  * never have to scroll 4,000 rows to find yourself.
  */
+/**
+ * Names this player has chosen not to see, by the row's `ref`.
+ *
+ * Local only, deliberately. Hiding is a personal remedy that should work the
+ * instant it is asked for, whether or not a moderator ever agrees — the
+ * report is what reaches us. Capped because it lives in secure storage, which
+ * on Android warns past 2kb, and nobody needs to hide more than a screenful.
+ */
+const HIDDEN_KEY = 'fault.boards.hidden';
+const HIDDEN_MAX = 60;
+
+async function loadHidden(): Promise<string[]> {
+  try {
+    const raw = await storage.get(HIDDEN_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function Boards() {
   const jurorId = useGame((s) => s.jurorId);
   const mySeal = sealFrom(useGame((s) => s.entitlements));
@@ -36,6 +60,79 @@ export default function Boards() {
 
   const scroller = useRef<ScrollView>(null);
   const youOffset = useRef<number | null>(null);
+  const [hidden, setHidden] = useState<string[]>([]);
+
+  useEffect(() => {
+    void loadHidden().then(setHidden);
+  }, []);
+
+  const hide = useCallback((ref: string) => {
+    setHidden((prev) => {
+      const next = [ref, ...prev.filter((r) => r !== ref)].slice(0, HIDDEN_MAX);
+      void storage.set(HIDDEN_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const unhide = useCallback((ref: string) => {
+    setHidden((prev) => {
+      const next = prev.filter((r) => r !== ref);
+      void storage.set(HIDDEN_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  /**
+   * Report or hide a name on the registry.
+   *
+   * App Store Guideline 1.2: user-generated content that other players see
+   * must be reportable, and the juror name is exactly that — chosen by one
+   * player, published to all of them. Long-press rather than a button on
+   * every row, because a hundred report buttons make the board read like a
+   * complaints desk; the hint under the tabs and the accessibility action
+   * make it discoverable.
+   *
+   * Reporting also hides the name for the reporter, immediately: whatever a
+   * moderator decides later, the person who was offended should not have to
+   * keep looking at it.
+   */
+  const onRowAction = useCallback(
+    (entry: BoardEntry) => {
+      const ref = entry.ref;
+      if (!ref || entry.you) return;
+      haptic.tapLight();
+
+      if (hidden.includes(ref)) {
+        Alert.alert('Hidden name', 'Show this juror’s name again?', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Show it', onPress: () => unhide(ref) },
+        ]);
+        return;
+      }
+
+      Alert.alert(entry.jurorName, 'What would you like to do about this name?', [
+        {
+          text: 'Report as offensive',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await api.report({ kind: 'juror_name', subjectId: ref, reason: 'offensive_name' });
+              hide(ref);
+              Alert.alert('Reported', `${res.message} The name is hidden for you.`);
+            } catch (err) {
+              Alert.alert(
+                'Not filed',
+                err instanceof ApiError ? err.message : 'The report could not be filed.',
+              );
+            }
+          },
+        },
+        { text: 'Hide it for me', onPress: () => hide(ref) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    },
+    [hidden, hide, unhide],
+  );
 
   useEffect(() => {
     if (!jurorId) {
@@ -86,6 +183,10 @@ export default function Boards() {
           />
         </View>
 
+        {view && view.top.length > 0 && (
+          <Text style={styles.hint}>Press and hold a name to report or hide it.</Text>
+        )}
+
         {loading && <ActivityIndicator color={Palette.text} style={styles.loading} />}
 
         {!loading && !view && <Text style={styles.empty}>The registry could not be reached.</Text>}
@@ -102,30 +203,46 @@ export default function Boards() {
               </Text>
             )}
 
-            {view.top.map((entry) => (
-              <View
-                key={`${entry.rank}-${entry.jurorName}`}
-                onLayout={entry.you ? onYouLayout : undefined}
-                style={[styles.row, entry.you && styles.rowYou]}
-              >
-                <Text style={[styles.rank, entry.you && styles.youText]}>
-                  {String(entry.rank).padStart(3, ' ')}
-                </Text>
-                <View style={styles.rowMain}>
-                  <Text style={[styles.name, entry.you && styles.youText]} numberOfLines={1}>
-                    {entry.jurorName}
-                    {entry.you ? '  — you' : ''}
+            {view.top.map((entry) => {
+              const isHidden = !!entry.ref && hidden.includes(entry.ref);
+              const actionable = !!entry.ref && !entry.you;
+              return (
+                <Pressable
+                  key={`${entry.rank}-${entry.ref ?? entry.jurorName}`}
+                  onLayout={entry.you ? onYouLayout : undefined}
+                  onLongPress={actionable ? () => onRowAction(entry) : undefined}
+                  delayLongPress={400}
+                  style={[styles.row, entry.you && styles.rowYou]}
+                  accessibilityLabel={`Rank ${entry.rank}, ${isHidden ? 'hidden name' : entry.jurorName}`}
+                  accessibilityActions={
+                    actionable
+                      ? [{ name: 'report', label: isHidden ? 'Show name' : 'Report or hide name' }]
+                      : undefined
+                  }
+                  onAccessibilityAction={actionable ? () => onRowAction(entry) : undefined}
+                >
+                  <Text style={[styles.rank, entry.you && styles.youText]}>
+                    {String(entry.rank).padStart(3, ' ')}
                   </Text>
-                  <Text style={styles.meta}>
-                    {entry.verdict}
-                    {entry.country ? ` · ${entry.country}` : ''} · {entry.casesHeard} cases
+                  <View style={styles.rowMain}>
+                    <Text
+                      style={[styles.name, entry.you && styles.youText, isHidden && styles.hiddenName]}
+                      numberOfLines={1}
+                    >
+                      {isHidden ? 'name hidden' : entry.jurorName}
+                      {entry.you ? '  — you' : ''}
+                    </Text>
+                    <Text style={styles.meta}>
+                      {entry.verdict}
+                      {entry.country ? ` · ${entry.country}` : ''} · {entry.casesHeard} cases
+                    </Text>
+                  </View>
+                  <Text style={[styles.index, entry.you && styles.youText]}>
+                    {entry.peaceIndex.toFixed(1)}
                   </Text>
-                </View>
-                <Text style={[styles.index, entry.you && styles.youText]}>
-                  {entry.peaceIndex.toFixed(1)}
-                </Text>
-              </View>
-            ))}
+                </Pressable>
+              );
+            })}
           </ScrollView>
         )}
 
@@ -223,6 +340,14 @@ const styles = StyleSheet.create({
     color: Palette.textFaint,
   },
   loading: { marginTop: 40 },
+  hint: {
+    fontFamily: Fonts.mono,
+    fontSize: Type.micro,
+    color: Palette.textFaint,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+  },
+  hiddenName: { color: Palette.textFaint, fontStyle: 'italic' },
   empty: {
     fontFamily: Fonts.mono,
     fontSize: 11,

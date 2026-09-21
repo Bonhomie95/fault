@@ -1,0 +1,15 @@
+# Everything the image builds itself, and everything that must never be baked
+# into one. .env* in particular: secrets arrive as host environment variables,
+# and an image with a .env inside is a secret published to every registry it
+# is pushed to.
+node_modules
+dist
+generated
+.env*
+!.env.example
+tests
+*.log
+dump.rdb
+.DS_Store
+Dockerfile
+.dockerignore

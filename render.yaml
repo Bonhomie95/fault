@@ -1,0 +1,119 @@
+# Render Blueprint for the FAULT API.
+#
+#   Render dashboard > New > Blueprint > pick this repo.
+#
+# Creates the API (Docker, from server/Dockerfile), a Postgres database and a
+# Key Value (Redis-compatible) instance, and wires the connection strings in.
+# Every value marked `sync: false` is a secret or a per-deployment choice that
+# Render will ask for on first apply — see DEPLOY.md for what to put in each.
+#
+# Plans are the smallest paid tiers: the free web tier sleeps after 15 minutes
+# idle, and a juror whose first request of the day takes 50 seconds to wake the
+# server has been told the court is closed.
+
+services:
+  - type: web
+    name: fault-api
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    # Only server changes redeploy the API; a mobile-only commit should not.
+    buildFilter:
+      paths:
+        - server/**
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fault-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: fault-redis
+          property: connectionString
+
+      # ---- sessions ----
+      # 48+ characters. NOT generateValue: Render's generated values are 256
+      # bits base64 (44 chars), which env.ts refuses in production.
+      # node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+      - key: JWT_SECRET
+        sync: false
+      # Render puts its own proxy in front of the service. Confirm the hop count
+      # (see server/.env.example) before relying on IP-keyed rate limits.
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      # Browser origins only; the app sends none. Must be non-empty in
+      # production. The service's own URL is a safe value.
+      - key: CORS_ORIGINS
+        sync: false
+      # Leave empty on Render: RENDER_EXTERNAL_URL is used. Set it once a
+      # custom domain (e.g. https://api.fault.game) is attached.
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: SUPPORT_EMAIL
+        sync: false
+
+      # ---- case generation ----
+      - key: GROQ_API_KEYS
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+
+      # ---- identity ----
+      - key: APPLE_BUNDLE_ID
+        value: com.bonhomie95.fault
+      - key: GOOGLE_CLIENT_IDS
+        sync: false
+      - key: ALLOW_GUEST_AUTH
+        value: "true"
+      - key: ALLOW_DEV_AUTH
+        value: "false"
+      # Sign in with Apple revocation (a "Sign in with Apple" key, not the IAP key).
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_SIGNIN_KEY_ID
+        sync: false
+      - key: APPLE_SIGNIN_PRIVATE_KEY
+        sync: false
+
+      # ---- payments ----
+      - key: APPLE_ISSUER_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: ANDROID_PACKAGE_NAME
+        value: com.bonhomie95.fault
+      - key: ALLOW_FAKE_PURCHASES
+        value: "false"
+      - key: ADS_SERVER_VERIFIED
+        value: "false"
+      - key: DISABLE_RATE_LIMITS
+        value: "false"
+
+  - type: keyvalue
+    name: fault-redis
+    plan: starter
+    region: frankfurt
+    # Nonces and the case buffer live here; eviction would silently forget a
+    # sign-in nonce mid-flow.
+    maxmemoryPolicy: noeviction
+    # Private network only: no public access.
+    ipAllowList: []
+
+databases:
+  - name: fault-db
+    databaseName: fault
+    plan: basic-256mb
+    region: frankfurt
+    postgresMajorVersion: "16"
+    ipAllowList: []

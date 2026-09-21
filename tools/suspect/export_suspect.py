@@ -2,7 +2,7 @@
 Export the accused as a real-time 3D model.
 
     blender --background --python tools/suspect/export_suspect.py -- \
-        --out mobile/assets/suspect
+        --out tools/suspect/build
 
 Produces one .glb per archetype. Each carries an upper body — head, neck,
 shoulders, arms and hands, which is as much as the courtroom camera ever sees —
@@ -190,6 +190,18 @@ CHANNELS = {
     # Body only. Demeanour is a continuous axis, so the shoulders have to roll
     # by an amount rather than snap to a pose.
     "slump": {},
+    # Mouth shapes for speech. Three are enough to read as talking rather than
+    # as a jaw on a hinge: open (A), rounded (O) and spread (E). They are
+    # dialled on top of whatever expression the face is already holding, so
+    # a defiant mouth talks defiantly. Kept small — a shouted "A" is comedy.
+    "talkA": {"jawOpen": 0.3, "mouthLowerDownLeft": 0.3, "mouthLowerDownRight": 0.3},
+    "talkO": {"jawOpen": 0.16, "mouthFunnel": 0.55, "mouthPucker": 0.3},
+    "talkE": {
+        "jawOpen": 0.1,
+        "mouthStretchLeft": 0.35, "mouthStretchRight": 0.35,
+        "mouthUpperUpLeft": 0.2, "mouthUpperUpRight": 0.2,
+        "mouthLowerDownLeft": 0.2, "mouthLowerDownRight": 0.2,
+    },
 }
 
 
@@ -204,20 +216,47 @@ ARCHETYPES = [
     # MPFB's `gender` macro is a blend, not a switch, and 0.15 reads as
     # androgynous rather than female — the jaw and brow only resolve near the
     # ends of the range. These sit close to the extremes on purpose.
-    # `wears` tints the garment. MakeHuman ships four outfits, one of them
-    # branded and one a cropped sports top, which leaves ONE that a person
-    # would wear to be sentenced in — so all six are in the same suit and the
-    # difference between them has to come from somewhere. It is a multiply
-    # against the texture, so it can only deepen: kept gentle, because the
-    # shirt and tie are painted on the same sheet as the jacket and a strong
-    # colour dyes the collar with it.
-    #                                                                  hair                    wears
-    {"name": "f_young_af",  "gender": 0.05, "age": 0.28, "race": "african",   "hair": (0.09, 0.06, 0.05), "wears": (0.62, 0.66, 0.78)},
-    {"name": "f_mid_ca",    "gender": 0.06, "age": 0.58, "race": "caucasian", "hair": (0.30, 0.19, 0.11), "wears": (0.80, 0.74, 0.70)},
-    {"name": "f_young_as",  "gender": 0.04, "age": 0.34, "race": "asian",     "hair": (0.07, 0.05, 0.05), "wears": (0.70, 0.76, 0.72)},
-    {"name": "m_young_af",  "gender": 0.95, "age": 0.30, "race": "african",   "hair": (0.06, 0.05, 0.04), "wears": (0.74, 0.72, 0.80)},
-    {"name": "m_mid_ca",    "gender": 0.96, "age": 0.62, "race": "caucasian", "hair": (0.14, 0.10, 0.07), "wears": (0.86, 0.86, 0.88)},
-    {"name": "m_old_as",    "gender": 0.94, "age": 0.86, "race": "asian",     "hair": (0.42, 0.40, 0.39), "wears": (0.72, 0.70, 0.66)},
+    #
+    # Twenty people, spread over presentation x age x ancestry, each with their
+    # OWN hair and outfit pinned. The first cast let `dress` pick, and with one
+    # textured hairstyle per presentation and one courtroom-appropriate outfit,
+    # every woman came out in the same long hair and striped blouse and every
+    # man in the same suit — a room of clones. `hair_asset` / `clothes` name the
+    # MakeHuman asset directly; `gray` asks the renderer to grey the hair,
+    # because a tint MULTIPLIES a dark texture and can only make it darker.
+    #
+    # NOT worn by anyone: female_casualsuit01/02 and male_casualsuit02/04 are
+    # T-shirts with the MakeHuman logo printed on the chest, and the bob cuts
+    # (and braid01 and short03) sweep across one eye, and afro01's texture
+    # renders as a blotchy helmet at portrait size — in a game about reading a face, that hides half
+    # of it. Men's shirts and jackets fit onto a woman's body well enough
+    # (MakeHuman fits garments by base-mesh vertex), and with a tint they are
+    # most of the variety a courtroom needs. Ponytail01 reads as slicked-back
+    # short hair from the front, so the women wearing it keep the blouse —
+    # otherwise a woman's name lands on a face the eye reads as a man's.
+    #
+    # `wears` tints the garment (a multiply, so it can only deepen).
+    #   name            gender age   race         hair_asset   clothes                 gray
+    {"name": "f_young_af",   "gender": 0.05, "age": 0.28, "race": "african",   "hair_asset": "ponytail01",     "clothes": "female_elegantsuit01",  "hair": (0.09, 0.06, 0.05), "wears": (0.66, 0.74, 0.86)},
+    {"name": "f_young_af_b", "gender": 0.04, "age": 0.33, "race": "african",   "hair_asset": "long01",    "clothes": "female_elegantsuit01", "hair": (0.07, 0.05, 0.05), "wears": (0.80, 0.70, 0.66)},
+    {"name": "f_mid_af",     "gender": 0.05, "age": 0.58, "race": "african",   "hair_asset": "ponytail01",      "clothes": "female_elegantsuit01",  "hair": (0.06, 0.05, 0.05), "wears": (0.86, 0.80, 0.62)},
+    {"name": "f_old_af",     "gender": 0.05, "age": 0.84, "race": "african",   "hair_asset": "short02",      "clothes": "female_elegantsuit01", "hair": (0.40, 0.39, 0.38), "wears": (0.78, 0.68, 0.66), "gray": True},
+    {"name": "f_young_as",   "gender": 0.04, "age": 0.30, "race": "asian",     "hair_asset": "ponytail01", "clothes": "female_elegantsuit01",  "hair": (0.07, 0.05, 0.05), "wears": (0.70, 0.86, 0.78)},
+    {"name": "f_mid_as",     "gender": 0.05, "age": 0.56, "race": "asian",     "hair_asset": "long01",      "clothes": "female_elegantsuit01", "hair": (0.06, 0.05, 0.05), "wears": (0.76, 0.72, 0.80)},
+    {"name": "f_old_as",     "gender": 0.05, "age": 0.86, "race": "asian",     "hair_asset": "short04",      "clothes": "male_casualsuit03",  "hair": (0.42, 0.41, 0.40), "wears": (0.72, 0.70, 0.66), "gray": True},
+    {"name": "f_young_ca",   "gender": 0.05, "age": 0.30, "race": "caucasian", "hair_asset": "long01",     "clothes": "male_casualsuit05",  "hair": (0.20, 0.13, 0.08), "wears": (0.76, 0.72, 0.80)},
+    {"name": "f_mid_ca",     "gender": 0.06, "age": 0.58, "race": "caucasian", "hair_asset": "ponytail01",      "clothes": "female_elegantsuit01", "hair": (0.30, 0.19, 0.11), "wears": (0.80, 0.74, 0.70)},
+    {"name": "f_old_ca",     "gender": 0.06, "age": 0.86, "race": "caucasian", "hair_asset": "short02",      "clothes": "male_casualsuit01",  "hair": (0.62, 0.60, 0.58), "wears": (0.70, 0.66, 0.74), "gray": True},
+    {"name": "m_young_af",   "gender": 0.95, "age": 0.30, "race": "african",   "hair_asset": "short02",    "clothes": "male_casualsuit05",    "hair": (0.06, 0.05, 0.04), "wears": (0.74, 0.72, 0.80)},
+    {"name": "m_young_af_b", "gender": 0.96, "age": 0.26, "race": "african",   "hair_asset": "short04",     "clothes": "male_elegantsuit01",   "hair": (0.05, 0.04, 0.04), "wears": (0.66, 0.70, 0.74)},
+    {"name": "m_mid_af",     "gender": 0.95, "age": 0.55, "race": "african",   "hair_asset": "short04",    "clothes": "male_elegantsuit01",   "hair": (0.05, 0.04, 0.04), "wears": (0.80, 0.80, 0.84)},
+    {"name": "m_old_af",     "gender": 0.94, "age": 0.86, "race": "african",   "hair_asset": "short01",    "clothes": "male_casualsuit01",    "hair": (0.40, 0.40, 0.39), "wears": (0.72, 0.70, 0.66), "gray": True},
+    {"name": "m_young_as",   "gender": 0.95, "age": 0.28, "race": "asian",     "hair_asset": "short02",    "clothes": "male_casualsuit05",    "hair": (0.06, 0.05, 0.05), "wears": (0.72, 0.74, 0.78)},
+    {"name": "m_mid_as",     "gender": 0.95, "age": 0.50, "race": "asian",     "hair_asset": "short01",    "clothes": "male_elegantsuit01",   "hair": (0.06, 0.05, 0.05), "wears": (0.80, 0.80, 0.84)},
+    {"name": "m_old_as",     "gender": 0.94, "age": 0.86, "race": "asian",     "hair_asset": "short02",    "clothes": "male_worksuit01",      "hair": (0.42, 0.40, 0.39), "wears": (0.72, 0.70, 0.66), "gray": True},
+    {"name": "m_young_ca",   "gender": 0.95, "age": 0.27, "race": "caucasian", "hair_asset": "short04",    "clothes": "male_casualsuit01",    "hair": (0.35, 0.24, 0.14), "wears": (0.70, 0.74, 0.70)},
+    {"name": "m_mid_ca",     "gender": 0.96, "age": 0.62, "race": "caucasian", "hair_asset": "short01",    "clothes": "male_elegantsuit01",   "hair": (0.14, 0.10, 0.07), "wears": (0.86, 0.86, 0.88)},
+    {"name": "m_old_ca",     "gender": 0.95, "age": 0.86, "race": "caucasian", "hair_asset": "short01",    "clothes": "male_casualsuit03",    "hair": (0.55, 0.54, 0.52), "wears": (0.74, 0.72, 0.70), "gray": True},
 ]
 
 
@@ -1507,10 +1546,20 @@ def dress(human, spec: dict, seed: int):
     feminine = spec["gender"] < 0.5
     picked = []
 
+    pins = {"hair": spec.get("hair_asset"), "clothes": spec.get("clothes")}
+
     def choose(subdir, contains=None, gendered=False, exclude=()):
         paths = [p for p in asset_paths(subdir)
                  if textures_present(companion_material(p))
                  and os.path.splitext(os.path.basename(p))[0] not in exclude]
+        # A pinned asset wins when it is installed; otherwise fall through to
+        # the seeded pick rather than failing the export.
+        pinned = pins.get(subdir)
+        if pinned:
+            exact = [p for p in paths if os.path.splitext(os.path.basename(p))[0] == pinned]
+            if exact:
+                return exact[0]
+            print(f"  ! pinned {subdir} {pinned} not installed; picking instead")
         if gendered:
             paths = [p for p in paths if matches_gender(os.path.basename(p), feminine)] or paths
         if contains:
@@ -2172,7 +2221,7 @@ def build_one(spec: dict, out_dir: str):
 
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    out_dir = "mobile/assets/suspect"
+    out_dir = "tools/suspect/build"
     only = None
     for i, a in enumerate(argv):
         if a == "--out":

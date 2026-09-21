@@ -4,9 +4,35 @@ import Constants from 'expo-constants';
  * The API base. On a device, localhost is the device — so we borrow the host
  * that Metro itself is served from, which is the dev machine's LAN address.
  */
+/**
+ * Why a release build cannot talk to the court, or null if it can.
+ *
+ * This used to be a `throw` at module load. That is loud in development and
+ * the opposite in a release build: the throw happens while the JS bundle is
+ * still importing, before the root ErrorBoundary exists, so the player gets
+ * a splash screen that never goes away and nobody gets a message. The
+ * _layout renders a plain explanation instead when this is set.
+ *
+ * `.invalid` is covered for the same reason. eas.json ships
+ * `https://api.example.invalid` as a deliberate placeholder until the real
+ * host exists — a reserved TLD that can never resolve (RFC 2606) — and a build
+ * made before someone replaced it would otherwise fail every request as
+ * "Could not reach the court. Check your connection.", which sends the player
+ * to check a connection that is fine.
+ */
+let configError: string | null = null;
+
 function resolveBaseUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL;
-  if (fromEnv) return fromEnv;
+  if (fromEnv) {
+    if (!__DEV__ && /\.invalid(?::\d+)?(?:\/|$)/i.test(fromEnv)) {
+      configError =
+        `This build points at a placeholder server (${fromEnv}). ` +
+        'Set EXPO_PUBLIC_API_URL in eas.json to the real API host and rebuild.';
+      return '';
+    }
+    return fromEnv;
+  }
 
   const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost;
   const host = hostUri?.split(':')[0];
@@ -15,17 +41,18 @@ function resolveBaseUrl(): string {
   // A release build has no Metro host to borrow, so reaching here means
   // EXPO_PUBLIC_API_URL was never set — and the alternative is an app that
   // ships pointing at localhost and fails every request on every device with
-  // no clue why. Fail loudly at startup instead of mysteriously at runtime.
+  // no clue why.
   if (!__DEV__) {
-    throw new Error(
-      'EXPO_PUBLIC_API_URL is not set. A release build cannot infer the API host.',
-    );
+    configError =
+      'EXPO_PUBLIC_API_URL is not set. A release build cannot infer the API host.';
+    return '';
   }
 
   return 'http://localhost:4000';
 }
 
 export const API_BASE = resolveBaseUrl();
+export const API_CONFIG_ERROR: string | null = configError;
 
 export class ApiError extends Error {
   constructor(
@@ -121,6 +148,7 @@ export function setTokenPersister(fn: typeof persistTokens) {
 }
 
 async function send(path: string, method: string, body?: unknown, auth = true): Promise<Response> {
+  if (API_CONFIG_ERROR) throw new ApiError(0, 'misconfigured', API_CONFIG_ERROR);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -197,6 +225,17 @@ async function request<T>(
 
 // ---- Types mirroring the server's client-facing contract ----
 
+export type Speaker = 'defendant' | 'witness1' | 'witness2' | 'prosecution' | 'defence';
+export type Cue = 'open' | 'e1' | 'e2' | 'e3' | 'witness1' | 'witness2' | 'arguments' | 'late';
+export type Tone = 'pleading' | 'defiant' | 'tense' | 'ashamed' | 'startled' | 'calm';
+
+export interface CourtroomLine {
+  speaker: Speaker;
+  cue: Cue;
+  tone: Tone;
+  text: string;
+}
+
 export interface ClientCase {
   id: string;
   caseNumber: number;
@@ -229,6 +268,8 @@ export interface ClientCase {
     demeanour: number;
     /** 0 unremarkable .. 100 uncanny. Shapes the strangeness. */
     oddity: number;
+    /** How their name reads; null when it could be either. Absent on older servers. */
+    feminine?: boolean | null;
   };
   evidence: {
     id: string;
@@ -236,9 +277,16 @@ export interface ClientCase {
     prosecution_reading: string;
     defence_reading: string;
   }[];
-  witnesses: { name: string; role: string; testimony: string }[];
+  witnesses: { name: string; role: string; testimony: string; feminine?: boolean | null }[];
   prosecutionArgument: string;
   defenceArgument: string;
+  /**
+   * What people say out loud in the room — outbursts, witnesses digging in,
+   * counsel needling. Presentation, like the face: every line is one the
+   * speaker would say whether or not the defendant did it. Absent on older
+   * servers; the room falls back to its own lines (lib/courtroom).
+   */
+  lines?: CourtroomLine[];
   returningCharacters: { name: string; portraitSeed: number }[];
   /**
    * The window closed while the player was away.
@@ -278,6 +326,48 @@ export interface CityState {
   activeFactions: string[];
   casesHeard: number;
   chapter: number;
+  /** Stories in the papers the player has not read. */
+  unreadNews?: number;
+  /** What the city did while the player was away, oldest first. Usually empty. */
+  away?: NewsStory[];
+}
+
+/** A story in the papers. See server services/news. */
+export interface NewsStory {
+  id: string;
+  outlet: string;
+  kind:
+    | 'verdict'
+    | 'backlash'
+    | 'crime'
+    | 'protest'
+    | 'reform'
+    | 'syndicate'
+    | 'police'
+    | 'economy'
+    | 'press'
+    | 'echo'
+    | 'city';
+  headline: string;
+  body: string;
+  /** 1 local colour .. 3 front page. */
+  severity: number;
+  district: string | null;
+  read: boolean;
+  at: string;
+}
+
+/** A district on the player's map. Opens by rank. */
+export interface District {
+  name: string;
+  unlockRank: number;
+  unlocked: boolean;
+  current: boolean;
+  home: boolean;
+  difficulty: number;
+  difficultyLabel: string;
+  reward: number;
+  outlet: string;
 }
 
 export interface VerdictResult {
@@ -312,6 +402,12 @@ export interface VerdictResult {
    * the client cannot see, skip, or re-roll by force-quitting.
    */
   showInterstitial: boolean;
+  /** The front page this verdict made. Absent on older servers. */
+  headlines?: NewsStory[];
+  /** Districts this verdict's promotion opened. */
+  districtsOpened?: string[];
+  /** XP/Merit multiplier for the district it was heard in. */
+  rewardMultiplier?: number;
 }
 
 export interface ReviewEntry {
@@ -361,6 +457,14 @@ export interface Session {
   entitlements: Entitlement[];
   merit: number;
   casesHeard?: number;
+  /**
+   * The player has not accepted the CURRENT Terms and Privacy Policy. The
+   * ConsentGate blocks play until they do. Absent on older servers, which is
+   * treated as "not required".
+   */
+  consentRequired?: boolean;
+  /** The server's LEGAL_VERSION, to compare with the bundled one. */
+  legalVersion?: string;
   /**
    * Where to send a player who wants the policy, the terms, or a human.
    *
@@ -430,6 +534,8 @@ export interface Standing {
     blockedBy: string[];
   } | null;
   unlocks: { caseArchive: boolean; jurorRecord: boolean; foreignApplications: boolean };
+  /** The daily summons. Absent on older servers. */
+  daily?: { available: boolean; satToday?: boolean; merit: number; day: string };
 }
 
 export interface Mission {
@@ -439,9 +545,13 @@ export interface Mission {
   description: string;
   target: number;
   xp: number;
+  /** Merit paid alongside the XP. */
+  merit?: number;
   progress: number;
   complete: boolean;
   claimed: boolean;
+  /** When a daily or weekly expires (ISO). Null for career milestones. */
+  endsAt?: string | null;
 }
 
 export interface JurisdictionsView {
@@ -460,6 +570,8 @@ export type Board = 'peaceful' | 'lawless';
 
 export interface BoardEntry {
   rank: number;
+  /** What a report of this name is filed against. Absent on older servers. */
+  ref?: string;
   jurorName: string;
   country: string | null;
   peaceIndex: number;
@@ -489,6 +601,8 @@ export interface SignInResult {
   casesHeard?: number;
   homeCountry?: string;
   homeDistrict?: string;
+  /** See Session.consentRequired. */
+  consentRequired?: boolean;
   /** 30-minute bearer. */
   accessToken: string;
   /** Long-lived, rotated on every use, revocable server-side. */
@@ -521,8 +635,12 @@ export const api = {
    * and `message` says what to change.
    */
   signIn: (body: {
-    provider: 'apple' | 'google' | 'device';
+    provider: 'apple' | 'google' | 'guest' | 'device';
     token: string;
+    /** Apple only, so account deletion can revoke Apple's grant. */
+    authorizationCode?: string;
+    /** The LEGAL_VERSION the sign-in screen showed and the player continued past. */
+    consentVersion?: string;
     /** The nonce from signInNonce(). Required for apple and google. */
     nonce?: string;
     jurorName?: string;
@@ -555,10 +673,31 @@ export const api = {
     request<{ missions: Mission[] }>('/api/standing/missions'),
 
   claimMission: (key: string) =>
-    request<{ xp: number; rank: number }>('/api/standing/missions/claim', {
+    request<{ xp: number; rank: number; merit?: number }>('/api/standing/missions/claim', {
       method: 'POST',
       body: { key },
     }),
+
+  districts: () => request<{ districts: District[] }>('/api/standing/districts'),
+
+  selectDistrict: (district: string) =>
+    request<{ districts: District[]; standing: Standing }>('/api/standing/districts/select', {
+      method: 'POST',
+      body: { district },
+    }),
+
+  collectDaily: () =>
+    request<{ merit: number; meritTotal: number; day: string }>('/api/standing/daily', {
+      method: 'POST',
+    }),
+
+  news: (before?: string) =>
+    request<{ items: NewsStory[]; unread: number }>(
+      `/api/news${before ? `?before=${encodeURIComponent(before)}` : ''}`,
+    ),
+
+  readNews: (ids?: string[]) =>
+    request<{ ok: boolean }>('/api/news/read', { method: 'POST', body: ids ? { ids } : {} }),
 
   jurisdictions: () =>
     request<JurisdictionsView>('/api/standing/jurisdictions'),
@@ -587,6 +726,20 @@ export const api = {
   me: () => request<Session>('/api/session/me'),
 
   /**
+   * Accept the Terms and Privacy Policy, naming the version shown. A 409
+   * `legal_version_mismatch` means the server has newer papers than this
+   * build bundles — the player needs an update, not another tap.
+   */
+  acceptConsent: (version: string) =>
+    request<{ consentVersion: string; consentedAt: string }>('/api/session/consent', {
+      method: 'POST',
+      body: { version },
+    }),
+
+  /** Everything the court holds about this juror, as JSON (GDPR access). */
+  exportData: () => request<Record<string, unknown>>('/api/session/export'),
+
+  /**
    * Change the name on the public registry.
    *
    * The only remedy short of deleting an account, and required by App Store
@@ -608,7 +761,12 @@ export const api = {
    * measures both from when it served the case. The phone does not get a vote
    * on how long the phone took.
    */
-  submitVerdict: (body: { caseId: string; verdict?: 'guilty' | 'not_guilty' }) =>
+  submitVerdict: (body: {
+    caseId: string;
+    verdict?: 'guilty' | 'not_guilty';
+    /** How much of the file was read. For missions only; see server verdict.ts. */
+    read?: { examined: number; witnesses: number; arguments: boolean };
+  }) =>
     request<VerdictResult>('/api/verdict', { method: 'POST', body }),
 
   cityState: () => request<CityState>('/api/city-state'),

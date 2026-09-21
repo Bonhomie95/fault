@@ -30,7 +30,7 @@ const heights = (m, v) => { const p = m.geometry.getAttribute('position');
 
 const cache = new Map();
 async function load(name) {
-  if (!cache.has(name)) cache.set(name, fetch(`/mobile/assets/suspect/${name}.glb`).then(r => r.arrayBuffer()));
+  if (!cache.has(name)) cache.set(name, fetch(`/tools/suspect/build/${name}.glb`).then(r => r.arrayBuffer()));
   return cache.get(name);
 }
 for (const name of MODELS) for (const shape of SHAPES) {
@@ -61,7 +61,7 @@ for (const name of MODELS) for (const shape of SHAPES) {
     const eyes = eyeMesh ? heights(eyeMesh, v).mid : 0;
     const scale = 1 / (crownY - eyes);
     gltf.scene.scale.setScalar(scale); gltf.scene.position.set(0, -eyes * scale, 0);
-  // MIRRORS components/suspect/SuspectModel softenCutout. Keep the two the
+  // MIRRORS the cutout fix in tools/portraits/render_cast.py (was SuspectModel softenCutout). Keep the two the
   // same or these pages stop telling the truth about what the app draws.
   gltf.scene.traverse((o) => {
     if (!o.isMesh || /(^|\.)eyes$/i.test(o.name)) return;

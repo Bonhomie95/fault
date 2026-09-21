@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
@@ -7,10 +7,12 @@ import { StandingBar } from '@/components/StandingBar';
 import { CityScene } from '@/components/three/CityScene';
 import { Button } from '@/components/Button';
 import { Accents, Elevation, Fonts, IMPACT_LEADING, Palette, Radius, Space, Type } from '@/constants/theme';
-import { ApiError } from '@/lib/api';
+import { ApiError, api, type NewsStory } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
 import { useGame } from '@/store/game';
+import { AwayReport, DailySummons, FrontPage, MissionStrip } from '@/components/world/LobbyWorld';
+import { planReminders } from '@/lib/reminders';
 
 /**
  * GDD 6, Screen 3 — Courthouse Lobby.
@@ -27,13 +29,50 @@ export default function Lobby() {
   const loadCase = useGame((s) => s.loadCase);
   const [loading, setLoading] = useState(false);
   const [gate, setGate] = useState<string | null>(null);
+  /** Bumped whenever the lobby comes back into focus, so the papers and
+   *  missions refetch alongside the city. */
+  const [focusKey, setFocusKey] = useState(0);
+  /** What happened while the player was away — shown once, then dismissed. */
+  const [away, setAway] = useState<NewsStory[] | null>(null);
+  const refreshWallet = useGame((s) => s.refreshWallet);
 
   useFocusEffect(
     useCallback(() => {
       void refreshCity();
       void refreshStanding();
+      setFocusKey((k) => k + 1);
     }, [refreshCity, refreshStanding]),
   );
+
+  // Re-plan this phone's reminders from what is true now: whether the summons
+  // is waiting, whether the streak needs a case today, and the latest headline.
+  useEffect(() => {
+    if (!standing) return;
+    let live = true;
+    api
+      .news()
+      .then((r) => r.items[0] ?? null)
+      .catch(() => null)
+      .then((top) => {
+        if (!live) return;
+        void planReminders({
+          summonsWaiting: standing.daily?.available ?? false,
+          streak: standing.currentStreak,
+          satToday: standing.daily?.satToday ?? false,
+          headline: top ? { outlet: top.outlet, text: top.headline } : null,
+          district: standing.district,
+        });
+      });
+    return () => {
+      live = false;
+    };
+  }, [standing]);
+
+  // The city clock runs on the city-state request; if it printed anything,
+  // the player has been away long enough to be told what they missed.
+  useEffect(() => {
+    if (city?.away && city.away.length > 0) setAway(city.away);
+  }, [city?.away]);
 
   const beginCase = useCallback(async () => {
     // Guarded three ways: this check, the disabled prop, and the Busy scrim.
@@ -85,6 +124,15 @@ export default function Lobby() {
           {/* Who you are and where you sit — the record, on the way in. */}
           {standing && <StandingBar standing={standing} />}
 
+          {/* The court is calling. A reason to open the app that is not a case. */}
+          <DailySummons
+            standing={standing}
+            onCollected={() => {
+              void refreshStanding();
+              void refreshWallet?.();
+            }}
+          />
+
           {/* The one thing this screen is for. It is the only filled button on
               the page, because it is the only action that matters. */}
           <View style={styles.caseFile}>
@@ -115,6 +163,17 @@ export default function Lobby() {
               animation running. */}
           {gate && <Text style={styles.gate}>{gate}</Text>}
 
+          {/* What the city is saying about you. */}
+          <FrontPage district={standing?.district ?? null} refreshKey={focusKey} />
+
+          <MissionStrip
+            refreshKey={focusKey}
+            onClaimed={() => {
+              void refreshStanding();
+              void refreshWallet?.();
+            }}
+          />
+
           {city && (
             <View style={styles.pulse}>
               <Text style={styles.pulseTitle}>CITY PULSE</Text>
@@ -132,7 +191,8 @@ export default function Lobby() {
           )}
 
           <View style={styles.links}>
-            <LobbyLink label="The career" onPress={() => router.push('/career')} />
+            <LobbyLink label="The papers" onPress={() => router.push('/news')} />
+            <LobbyLink label="Career, courts & missions" onPress={() => router.push('/career')} />
             <LobbyLink label="The cities" onPress={() => router.push('/boards')} />
             {/* GDD Screen 3 — gated on rank, not on being right.
 
@@ -167,6 +227,8 @@ export default function Lobby() {
 
       {/* Nothing on this screen is tappable while the docket is being fetched. */}
       {loading && <Busy label="THE CLERK IS FETCHING THE FILE" />}
+
+      {away && away.length > 0 && <AwayReport stories={away} onClose={() => setAway(null)} />}
     </View>
   );
 }

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { MERIT, SKUS, skuById } from '../domain/store.js';
+import { env } from '../lib/env.js';
 import { log } from '../lib/log.js';
 import { prisma } from '../lib/prisma.js';
 import { economyLimiter } from '../middleware/limits.js';
@@ -43,7 +44,11 @@ storeRouter.get('/', requireJuror, economyLimiter, async (req, res) => {
   res.json({
     merit: user.merit,
     entitlements: owned,
-    rewardedAdsLeft: Math.max(0, MERIT.rewardedAdsPerDay - (await rewardedAdsToday(userId))),
+    // Zero while ad rewards are switched off (ADS_SERVER_VERIFIED), so no
+    // client — including an old build — offers a reward it cannot claim.
+    rewardedAdsLeft: env.ADS_SERVER_VERIFIED
+      ? Math.max(0, MERIT.rewardedAdsPerDay - (await rewardedAdsToday(userId)))
+      : 0,
     rewardedAdMerit: MERIT.rewardedAd,
     items: SKUS.map((s) => ({
       id: s.id,
@@ -169,6 +174,16 @@ storeRouter.post('/restore', requireJuror, economyLimiter, async (req, res) => {
  * should be an SSV callback from the ad network rather than the client's word.
  */
 storeRouter.post('/ad-reward', requireJuror, economyLimiter, async (req, res) => {
+  // Off until the ad network's server-side verification is wired in. The
+  // viewId below is the client's word, and paying Merit on the client's word
+  // is a faucet with the tap on the wrong side (see lib/env
+  // ADS_SERVER_VERIFIED). 404 rather than 403: to a client, this reward does
+  // not exist yet, and nothing it can do will make it exist.
+  if (!env.ADS_SERVER_VERIFIED) {
+    res.status(404).json({ error: 'ad_rewards_unavailable', message: 'Rewarded notices are not available.' });
+    return;
+  }
+
   const parsed = z.object({ viewId: z.string().min(6) }).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'viewId required' });
@@ -201,6 +216,7 @@ storeRouter.get('/ads', requireJuror, economyLimiter, async (req, res) => {
     // delivering a verdict would be the game selling the player's attention
     // during the one moment it asked them to concentrate.
     interstitialEveryNCases: noAds ? null : 3,
-    rewardedAvailable: (await rewardedAdsToday(userId)) < MERIT.rewardedAdsPerDay,
+    rewardedAvailable:
+      env.ADS_SERVER_VERIFIED && (await rewardedAdsToday(userId)) < MERIT.rewardedAdsPerDay,
   });
 });

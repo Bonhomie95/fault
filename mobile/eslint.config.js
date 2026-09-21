@@ -16,14 +16,7 @@ module.exports = defineConfig([
     //
     // Scoped to the 3D components deliberately: everywhere else the rule still
     // catches genuine typos.
-    // components/suspect is r3f too — the accused is a real model now, drawn
-    // through the same JSX intrinsics — and AccusedReaction mounts the Canvas
-    // that holds it.
-    files: [
-      'components/three/**/*.tsx',
-      'components/suspect/**/*.tsx',
-      'components/scene2d/AccusedReaction.tsx',
-    ],
+    files: ['components/three/**/*.tsx'],
     rules: { 'react/no-unknown-property': 'off' },
   },
   {

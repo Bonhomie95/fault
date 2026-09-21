@@ -20,8 +20,11 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
+import { ConsentGate } from '@/components/ConsentGate';
 import { CourtError } from '@/components/CourtError';
+import { MisconfiguredBuild } from '@/components/MisconfiguredBuild';
 import { Palette } from '@/constants/theme';
+import { API_CONFIG_ERROR } from '@/lib/api';
 import { reportFatal } from '@/lib/report';
 import { initSound } from '@/lib/sound';
 import { useGame } from '@/store/game';
@@ -64,6 +67,11 @@ export default function RootLayout() {
 
   if (!fontsLoaded || bootstrapping) return null;
 
+  // A release build pointed at no server, or at the eas.json placeholder.
+  // Say so plainly rather than failing every request as "check your
+  // connection" (see lib/api).
+  if (API_CONFIG_ERROR) return <MisconfiguredBuild reason={API_CONFIG_ERROR} />;
+
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: Palette.bg }}>
       <StatusBar style="light" />
@@ -88,7 +96,12 @@ export default function RootLayout() {
         <Stack.Screen name="boards" />
         <Stack.Screen name="store" options={{ presentation: 'modal', gestureEnabled: true }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal', gestureEnabled: true }} />
+        {/* Reachable before sign-in: the cold open asks for agreement to these. */}
+        <Stack.Screen name="legal" options={{ presentation: 'modal', gestureEnabled: true }} />
       </Stack>
+      {/* Blocks play for a signed-in juror who has not accepted the current
+          Terms and Privacy Policy. Renders nothing otherwise. */}
+      <ConsentGate />
     </GestureHandlerRootView>
   );
 }

@@ -1,54 +1,73 @@
+import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AccusedReaction } from '@/components/scene2d/AccusedReaction';
-import { REACTION_NAMES, type ReactionName } from '@/components/scene2d/expression';
-import { ARCHETYPES, archetypeFor, seedForArchetype } from '@/components/suspect/archetypes';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Actor, TRIAL_EXPRESSIONS } from '@/components/cast/Actor';
+import { EYES_PX, HEAD_PX, SPRITE_H, SPRITE_W, SPRITES } from '@/components/cast/sprites';
+import { REACTION_NAMES, type Expression } from '@/components/scene2d/expression';
 import { Fonts, Palette, Space, Type } from '@/constants/theme';
 
+const PEOPLE = Object.keys(SPRITES);
+const FACES: Expression[] = [...TRIAL_EXPRESSIONS, ...REACTION_NAMES];
+const LINE = 'I have never seen that ledger before in my life, and you know it.';
+
 /**
- * The accused, on demand — `/dev-suspect`. Development only.
+ * The cast, on demand — `/dev-suspect`. Development only.
  *
- * The reaction only happens after a verdict, which means the only way to see
- * one in the real game is to play a whole case and then wait out a two-second
- * flash. That is a poor loop for judging whether a smirk reads as a smirk, and
- * an impossible one for checking all six archetypes against all five
- * reactions. This shows any combination immediately.
+ * Every rendered person in every expression and reaction, talking or not, at
+ * the size the defendant tab shows them. The only other way to see a
+ * reaction is to play a whole case and wait out the verdict flash, which is a
+ * poor loop for judging whether a smirk reads as a smirk.
  *
- * Returns nothing outside __DEV__ and is linked from nowhere, so it cannot
+ * Redirects home outside __DEV__ and is linked from nowhere, so it cannot
  * appear in a release build.
  */
 export default function DevSuspect() {
-  const [reaction, setReaction] = useState<ReactionName>('smirk');
-  const [seed, setSeed] = useState(4);
+  const [face, setFace] = useState<Expression>('tense');
+  const [who, setWho] = useState(PEOPLE[0]!);
+  const [talking, setTalking] = useState(false);
+  const { width, height } = useWindowDimensions();
 
-  if (!__DEV__) return null;
+  // Redirect rather than render nothing: expo-router still registers this
+  // route in a release build, and a deep link to it (fault://dev-…) used to
+  // land on a blank black screen with no way out.
+  if (!__DEV__) return <Redirect href="/" />;
+
+  const k = (height * 0.16) / HEAD_PX;
 
   return (
     <View style={styles.root}>
-      <AccusedReaction seed={seed} appearance={50} reaction={reaction} reducedMotion />
+      <View
+        style={{
+          position: 'absolute',
+          left: width / 2 - EYES_PX.x * k,
+          top: height * 0.3 - EYES_PX.y * k,
+          width: SPRITE_W * k,
+          height: SPRITE_H * k,
+        }}
+      >
+        <Actor who={who} expression={face} speaking={talking ? LINE : null} ready={[face]} />
+      </View>
 
       <View style={styles.panel} pointerEvents="box-none">
-        <Text style={styles.label}>REACTION</Text>
+        <Text style={styles.label}>FACE</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-          {REACTION_NAMES.map((name) => (
-            <Pressable key={name} onPress={() => setReaction(name)} style={[styles.chip, reaction === name && styles.chipOn]}>
-              <Text style={[styles.chipText, reaction === name && styles.chipTextOn]}>{name}</Text>
+          {FACES.map((name) => (
+            <Pressable key={name} onPress={() => setFace(name)} style={[styles.chip, face === name && styles.chipOn]}>
+              <Text style={[styles.chipText, face === name && styles.chipTextOn]}>{name}</Text>
             </Pressable>
           ))}
+          <Pressable onPress={() => setTalking((t) => !t)} style={[styles.chip, talking && styles.chipOn]}>
+            <Text style={[styles.chipText, talking && styles.chipTextOn]}>talk</Text>
+          </Pressable>
         </ScrollView>
 
-        <Text style={styles.label}>ARCHETYPE · seed {seed}</Text>
+        <Text style={styles.label}>PERSON</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-          {/* Which archetype a seed produces is a hash of it, not an index —
-              see archetypeFor — so the chips carry seeds that land on each. */}
-          {ARCHETYPES.map((a) => {
-            const on = archetypeFor(seed).name === a.name;
-            return (
-              <Pressable key={a.name} onPress={() => setSeed(seedForArchetype(a.name))} style={[styles.chip, on && styles.chipOn]}>
-                <Text style={[styles.chipText, on && styles.chipTextOn]}>{a.name}</Text>
-              </Pressable>
-            );
-          })}
+          {PEOPLE.map((p) => (
+            <Pressable key={p} onPress={() => setWho(p)} style={[styles.chip, who === p && styles.chipOn]}>
+              <Text style={[styles.chipText, who === p && styles.chipTextOn]}>{p}</Text>
+            </Pressable>
+          ))}
         </ScrollView>
       </View>
     </View>

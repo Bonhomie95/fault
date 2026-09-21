@@ -121,6 +121,41 @@ const schema = z.object({
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
 
+  /**
+   * Guest accounts: play without Apple or Google.
+   *
+   * Not the dev bypass above, and not a relaxation of it. The device flow
+   * trusts whoever can NAME a device id, which is why it can never run in
+   * production. A guest is a 256-bit secret the app generated once and keeps
+   * in the keychain; the server stores only its hash (services/auth.ts). That
+   * is a credential, not a claim — as strong as a password nobody chose.
+   *
+   * Defaults to TRUE because without it a release build has no way in at all
+   * on Android until Google client ids exist, and Apple reviews an app whose
+   * only door is Sign in with Apple harshly (guideline 5.1.1(v): do not force
+   * account creation for features that do not need it). Turn it off only if
+   * abuse of free account creation becomes a real problem.
+   */
+  ALLOW_GUEST_AUTH: z
+    .string()
+    .default('true')
+    .transform((v) => v === 'true' || v === '1'),
+
+  /**
+   * Pay Merit for rewarded adverts.
+   *
+   * POST /api/store/ad-reward trusts the client's `viewId`, and a Merit
+   * faucet whose tap is on the client is a hole — the daily cap makes it
+   * survivable, not correct. So the route is OFF unless an ad network's
+   * server-side verification (SSV) callback is actually wired in and this is
+   * set true. Until then the store neither offers the button nor honours the
+   * claim, which is also the honest thing to show a store reviewer.
+   */
+  ADS_SERVER_VERIFIED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+
   /** Rate limiting off, for tests that legitimately hammer a route. */
   DISABLE_RATE_LIMITS: z
     .string()
@@ -168,19 +203,54 @@ const schema = z.object({
   APPLE_ISSUER_ID: z.string().default(''),
   APPLE_KEY_ID: z.string().default(''),
   APPLE_PRIVATE_KEY: z.string().default(''),
+  /**
+   * Sign in with Apple — for REVOKING a player's Apple authorisation when they
+   * delete their account (guideline 5.1.1(v)).
+   *
+   * Deliberately NOT the App Store Connect key above. That one is an In-App
+   * Purchase API key; Apple's /auth/token and /auth/revoke endpoints need a
+   * "Sign in with Apple" key from Certificates, Identifiers & Profiles → Keys,
+   * signed as the TEAM, and Apple will not accept one in place of the other.
+   * Sharing the variable names would make it look configured when it is not.
+   *
+   * All four empty is supported: sign-in still works, only revocation is
+   * skipped (and logged at deletion time, so the gap is visible).
+   */
+  APPLE_TEAM_ID: z.string().default(''),
+  APPLE_SIGNIN_KEY_ID: z.string().default(''),
+  APPLE_SIGNIN_PRIVATE_KEY: z.string().default(''),
+  /** The client_id Apple minted the authorization code for: the bundle id for
+   *  a native app. Falls back to APPLE_BUNDLE_ID. */
+  APPLE_CLIENT_ID: z.string().default(''),
+
   /** Google Play: a service account JSON with the androidpublisher scope. */
   GOOGLE_SERVICE_ACCOUNT_JSON: z.string().default(''),
   ANDROID_PACKAGE_NAME: z.string().default(''),
 
   // ---- Support ----
   /**
+   * This server's own public origin, e.g. https://api.fault.game.
+   *
+   * The legal documents are served by this server now (routes/legal.ts), so
+   * the privacy policy and terms URLs are derived from it rather than having
+   * to exist somewhere else first. Render sets RENDER_EXTERNAL_URL on every
+   * web service, so on Render this needs no configuration at all.
+   */
+  PUBLIC_BASE_URL: z.string().default(''),
+  RENDER_EXTERNAL_URL: z.string().default(''),
+  /**
    * Where a player is sent for the privacy policy and the terms.
    *
    * Apple requires both to be reachable from inside any app that creates
-   * accounts, and the settings screen links to whatever is here. Empty hides
-   * the links rather than shipping a dead one, and production refuses to boot
-   * without them (below) — a live game with accounts and no privacy policy is
-   * a compliance problem, not a missing nicety.
+   * accounts. They used to be required here, with no default, and production
+   * refused to boot without them — correct while the documents did not exist
+   * anywhere, but it meant the server could not start until someone had
+   * hosted a policy elsewhere.
+   *
+   * Now they default to this server's own /legal/privacy and /legal/terms
+   * (see `legalUrls` below), and the app bundles the same text for reading
+   * before sign-in. Set these only to point somewhere else, e.g. a marketing
+   * site that mirrors the documents.
    */
   PRIVACY_POLICY_URL: z.string().default(''),
   TERMS_URL: z.string().default(''),
@@ -199,6 +269,18 @@ export const env = parsed.data;
 
 export const isProduction = env.NODE_ENV === 'production';
 
+/** This server's public origin, without a trailing slash, or '' if unknown. */
+export const publicBaseUrl = (env.PUBLIC_BASE_URL || env.RENDER_EXTERNAL_URL).replace(/\/+$/, '');
+
+/**
+ * The absolute policy URLs handed to the client and pasted into the store
+ * listings. An explicit env value wins; otherwise this server's own copy.
+ */
+export const legalUrls = {
+  privacyPolicyUrl: env.PRIVACY_POLICY_URL || (publicBaseUrl ? `${publicBaseUrl}/legal/privacy` : ''),
+  termsUrl: env.TERMS_URL || (publicBaseUrl ? `${publicBaseUrl}/legal/terms` : ''),
+};
+
 // Fail at boot, not at the first request. A production server with an open
 // CORS policy or a dev-auth backdoor should refuse to start rather than run
 // and hope nobody notices.
@@ -209,10 +291,19 @@ if (isProduction) {
   if (env.DISABLE_RATE_LIMITS) problems.push('DISABLE_RATE_LIMITS must be false in production');
   if (!env.CORS_ORIGINS) problems.push('CORS_ORIGINS must be set in production');
   if (env.JWT_SECRET.length < 48) problems.push('JWT_SECRET should be at least 48 chars in production');
-  // Apple requires both to be reachable in-app from any app offering account
-  // creation, and this one does. Refusing at boot is cheaper than a rejection.
-  if (!env.PRIVACY_POLICY_URL) problems.push('PRIVACY_POLICY_URL must be set in production');
-  if (!env.TERMS_URL) problems.push('TERMS_URL must be set in production');
+  // The policy URLs are no longer a boot condition: the documents are served
+  // from /legal on this server and bundled in the app, so they exist whether
+  // or not anything is configured. What CAN be missing is an absolute URL to
+  // hand the client — that degrades the Settings links to the in-app copy,
+  // which is still compliant, so it is a warning rather than a refusal.
+  if (!legalUrls.privacyPolicyUrl || !legalUrls.termsUrl) {
+    console.warn(
+      'PUBLIC_BASE_URL is not set (and RENDER_EXTERNAL_URL is absent), so the ' +
+        'privacy policy and terms have no absolute URL. The app will show its ' +
+        'bundled copy; set PUBLIC_BASE_URL so App Store Connect can link to ' +
+        '<base>/legal/privacy.',
+    );
+  }
   if (problems.length > 0) {
     console.error('Refusing to start:\n  - ' + problems.join('\n  - '));
     process.exit(1);

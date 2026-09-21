@@ -184,6 +184,31 @@ model User {
   casesSinceAd  Int     @default(0)
   adEveryNCases Int     @default(3)
 
+  // ---- The map ----
+  /// The district the player is currently presiding in, within their current
+  /// country. Null means their home district. Other districts are UNLOCKED by
+  /// rank (domain/districts) and chosen from the career screen.
+  currentDistrict   String?
+  /// Districts opened to this player, by name, in their current country.
+  unlockedDistricts String[] @default([])
+
+  // ---- Coming back ----
+  /// The player's own day on which the daily summons was last collected.
+  lastRewardDay  String?
+  /// When the city last moved on its own. The city does not stand still while
+  /// the player is away — see services/cityClock.
+  lastCityTickAt DateTime @default(now())
+
+  // ---- Consent & accounts ----
+  /// When the player accepted the Terms and Privacy Policy, and which version.
+  consentedAt     DateTime?
+  consentVersion  String?
+  /// Sign in with Apple refresh token, kept ONLY so account deletion can revoke
+  /// it with Apple (App Store guideline 5.1.1(v)). Never sent to the client.
+  appleRefreshToken String?
+
+  news         NewsItem[]
+
   identities   AuthIdentity[]
   refreshTokens RefreshToken[]
   entitlements UserEntitlement[]
@@ -475,6 +500,8 @@ model Case {
   witnesses           Json           // Witness[]
   prosecutionArgument String         @db.Text
   defenceArgument     String         @db.Text
+  /// CourtroomLine[] — outbursts, witness asides, counsel jabs. Presentation.
+  lines               Json           @default("[]")
 
   correctVerdict      CorrectVerdict
   /// Which side the evidence actually favours, for evidence_weight scoring.
@@ -619,4 +646,45 @@ model JurorProfile {
   /// table on every board request.
   @@index([totalCases])
   @@map("juror_profiles")
+}
+
+/// What the city's papers print about the player's docket and its fallout.
+///
+/// News is the consequence layer made visible: a verdict moves the city's
+/// dials, and the dials make the news — backlash, robberies, protests, a
+/// syndicate getting bolder, a reform bill. Written by services/news, keyed to
+/// the player, and read from the lobby's front page.
+model NewsItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  /// The masthead: "The Kano Herald", "Radio Kano", "@KanoWatch".
+  outlet    String
+  kind      NewsKind
+  headline  String
+  body      String   @db.Text
+  district  String?
+  /// The case that set this off, if one did.
+  caseId    String?
+  /// 1 local colour .. 3 front page.
+  severity  Int      @default(1)
+  read      Boolean  @default(false)
+
+  @@index([userId, createdAt])
+  @@map("news_items")
+}
+
+enum NewsKind {
+  verdict
+  backlash
+  crime
+  protest
+  reform
+  syndicate
+  police
+  economy
+  press
+  echo
+  city
 }

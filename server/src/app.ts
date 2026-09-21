@@ -19,9 +19,10 @@ import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
 import { authRouter } from './routes/auth.js';
 import { caseRouter } from './routes/cases.js';
-import { cityRouter } from './routes/city.js';
+import { cityRouter, newsRouter } from './routes/city.js';
 import { jurorRouter } from './routes/jurorProfile.js';
 import { leaderboardRouter } from './routes/leaderboard.js';
+import { legalRouter } from './routes/legal.js';
 import { reportRouter } from './routes/report.js';
 import { reviewRouter } from './routes/review.js';
 import { sessionRouter } from './routes/session.js';
@@ -122,12 +123,17 @@ app.get('/health', async (_req, res) => {
   res.status(ok ? 200 : 503).json({ ok, ...checks });
 });
 
+// Public, static, and required by both stores before a build can be
+// submitted. Mounted outside /api because it is a web page, not an endpoint.
+app.use('/legal', legalRouter);
+
 app.use('/api/auth', authRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/standing', standingRouter);
 app.use('/api/case', caseRouter);
 app.use('/api/verdict', verdictRouter);
 app.use('/api/city-state', cityRouter);
+app.use('/api/news', newsRouter);
 app.use('/api/review', reviewRouter);
 app.use('/api/juror-profile', jurorRouter);
 app.use('/api/leaderboard', leaderboardRouter);

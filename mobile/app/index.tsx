@@ -18,8 +18,9 @@ import { api, ApiError } from '@/lib/api';
 import {
   googleClientId,
   isAppleAvailable,
+  isExpoGo,
+  signInAsGuest,
   signInWithApple,
-  signInWithDevice,
   signInWithGoogle,
   type ProviderToken,
   type SignInNonce,
@@ -40,6 +41,20 @@ const MASTHEAD = localNewspaper();
  * GDD 6, Screen 1 — Cold Open.
  * No logo. No tutorial. Just an assignment.
  */
+/**
+ * Why a provider sheet might have failed, in a sentence a player can act on.
+ *
+ * Apple Sign In needs an entitlement that only exists in a build of THIS app;
+ * in Expo Go the button is hosted by Expo's own bundle id and the sheet always
+ * fails. That is the single most likely reason this screen is being read, and
+ * it is not something a player could guess.
+ */
+function providerHint(): string {
+  return isExpoGo()
+    ? 'Apple and Google sign-in need a development build — use “Play as guest” here.'
+    : 'Try again, or play as guest.';
+}
+
 export default function ColdOpen() {
   const jurorId = useGame((s) => s.jurorId);
   const swearInWith = useGame((s) => s.swearInWith);
@@ -83,7 +98,7 @@ export default function ColdOpen() {
     /**
      * @param get  Opens a provider's sheet. It is handed a way to ASK for a
      *             nonce rather than a nonce, so only the providers that need
-     *             one pay for it — the device bypass has nothing to bind a
+     *             one pay for it — a guest secret has nothing to bind a
      *             nonce to, and requiring one would make local development
      *             depend on Redis being reachable just to sign in.
      */
@@ -107,13 +122,25 @@ export default function ColdOpen() {
         const message = (err as Error).message ?? '';
         // A cancelled sign-in is not an error worth shouting about.
         if (/cancel/i.test(message)) return;
-        // The nonce endpoint refuses when its store is unreachable, which is
-        // the one case where "try again shortly" is genuinely the right advice.
-        if (err instanceof ApiError && err.code === 'sign_in_unavailable') {
+
+        // SAY WHAT HAPPENED.
+        //
+        // Every ApiError already carries a sentence written for a player —
+        // lib/api turns a dead radio into "Could not reach the court. Check
+        // your connection.", the server says "Too many attempts. Try again
+        // shortly." — and this screen used to throw all of them away and
+        // print one line that fitted none of them. A juror on a phone that
+        // could not see the server, a juror who had tried twenty times, and a
+        // juror presenting a token the court genuinely refused were all told
+        // the same nothing, and so was anybody trying to work out why.
+        if (err instanceof ApiError) {
           setError(err.message);
           return;
         }
-        setError('That sign-in did not go through.');
+
+        // Not ours: the provider sheet itself failed. Apple's own errors are
+        // written for developers, so they are named rather than repeated.
+        setError('That sign-in did not go through. ' + providerHint());
       } finally {
         setBusy(false);
       }
@@ -190,18 +217,49 @@ export default function ColdOpen() {
               </Pressable>
             )}
 
-            {/* Expo Go has no Apple Sign In and there may be no Google client
-                id yet. The server refuses this in production. */}
-            {(!appleReady || !googleClientId()) && (
-              <Pressable
-                onPress={() => authenticate(signInWithDevice)}
-                disabled={busy}
-                style={[styles.provider, styles.providerGhost, busy && styles.acceptDisabled]}
-                accessibilityRole="button"
+            {/* Always offered, on every platform, in every build. This used
+                to be "CONTINUE ON THIS DEVICE" — the dev bypass, shown only
+                when a provider was missing and refused outright by a
+                production server, so a release build on Android had no door
+                at all. A guest is a 256-bit secret kept in the keychain
+                (lib/auth signInAsGuest), which the server can safely accept
+                in production. Apple and Google stay above it when they are
+                configured; nobody is made to create an account to try a
+                game. */}
+            <Pressable
+              onPress={() => authenticate(signInAsGuest)}
+              disabled={busy}
+              style={[styles.provider, styles.providerGhost, busy && styles.acceptDisabled]}
+              accessibilityRole="button"
+              accessibilityLabel="Play as guest"
+            >
+              <Text style={styles.providerGhostText}>PLAY AS GUEST</Text>
+            </Pressable>
+
+            {/* Said BEFORE any button does anything, and the sign-in request
+                carries the version shown (store/game), which is what the
+                server records as consent. The documents open in-app and
+                offline — agreement to something you cannot read first is not
+                agreement. */}
+            <Text style={styles.consent}>
+              By continuing you confirm you are 13 or older and agree to the{' '}
+              <Text
+                style={styles.consentLink}
+                onPress={() => router.push({ pathname: '/legal', params: { doc: 'terms' } })}
+                accessibilityRole="link"
               >
-                <Text style={styles.providerGhostText}>CONTINUE ON THIS DEVICE</Text>
-              </Pressable>
-            )}
+                Terms
+              </Text>{' '}
+              and{' '}
+              <Text
+                style={styles.consentLink}
+                onPress={() => router.push({ pathname: '/legal', params: { doc: 'privacy' } })}
+                accessibilityRole="link"
+              >
+                Privacy Policy
+              </Text>
+              .
+            </Text>
 
             {busy && <ActivityIndicator color={Palette.bg} style={styles.busy} />}
             {error && <Text style={styles.error}>{error}</Text>}
@@ -347,6 +405,16 @@ const styles = StyleSheet.create({
     color: '#4A4A45',
   },
   busy: { marginTop: 16 },
+  consent: {
+    fontFamily: Fonts.mono,
+    fontSize: Type.micro,
+    lineHeight: 17,
+    color: '#4A4A45',
+    textAlign: 'center',
+    marginTop: 16,
+    maxWidth: 270,
+  },
+  consentLink: { color: Palette.bg, textDecorationLine: 'underline' },
   note: {
     fontFamily: Fonts.mono,
     fontSize: Type.micro,

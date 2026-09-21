@@ -100,7 +100,11 @@ export function TimerRing({ remaining, total, accent, running }: TimerRingProps)
           stroke={accent}
           strokeWidth={STROKE}
           fill="none"
-          strokeDasharray={perimeter}
+          // An ARRAY. `strokeDasharray` is a list in SVG and in the native
+          // prop converter, and Fabric refuses a bare number the same way it
+          // refuses a transform string — silently, at the C++ layer, on every
+          // frame the ring animates. See CourtroomScene's frameProps.
+          strokeDasharray={[perimeter]}
           animatedProps={animatedProps}
           strokeLinecap="butt"
         />

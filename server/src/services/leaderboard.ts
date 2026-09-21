@@ -22,6 +22,16 @@ export type Board = 'peaceful' | 'lawless';
 
 export interface BoardEntry {
   rank: number;
+  /**
+   * What a report of this row's name is filed against (POST /api/report,
+   * kind 'juror_name'). It is the juror's user id: an opaque cuid that is not
+   * a credential anywhere in this server (auth is a signed bearer token, and
+   * the old `x-juror-id` header is refused outright), and the moderation
+   * queue needs something that survives a rename. Guideline 1.2 requires a
+   * name on a public board to be reportable, and it cannot be reported
+   * without being addressable.
+   */
+  ref: string;
   jurorName: string;
   country: string | null;
   peaceIndex: number;
@@ -138,6 +148,7 @@ async function myRank(board: Board, userId: string): Promise<Row | null> {
 
 const toEntry = (row: Row): BoardEntry => ({
   rank: Number(row.position),
+  ref: row.userId,
   jurorName: row.jurorName,
   country: row.homeCountry,
   peaceIndex: Math.round(row.peace * 10) / 10,

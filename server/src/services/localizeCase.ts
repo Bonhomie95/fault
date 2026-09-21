@@ -1,10 +1,11 @@
 import type { GeneratedCase } from '../domain/case.js';
 import type { CountryProfile } from '../domain/jurisdiction.js';
+import { presentsFeminine } from '../domain/nameGender.js';
 
 /**
  * Moving the authored docket to wherever the juror actually lives.
  *
- * The six authored cases are the offline buffer — the thing every player sees
+ * The authored cases (24 of them) are the offline buffer — the thing every player sees
  * when the Groq budget is gone. Written once, they were Nigerian: naira,
  * danfo drivers, Balogun Market. Handing that to a juror in Bergen broke the
  * premise on case one, and it is the *failure* path, so it broke it precisely
@@ -45,7 +46,51 @@ export interface LocalizeContext {
   seed: number;
 }
 
-function buildSlots(ctx: LocalizeContext): Record<Slot, string> {
+/**
+ * Whether the template writes a person as a woman or a man.
+ *
+ * The authored cases are written with pronouns ("she signed the crates out"),
+ * and the names are drawn per country afterwards. Without this, the draw is
+ * blind to the prose, and a Norwegian docket could serve "Lars" as "she" — or
+ * the app's courtroom, which casts faces by name, would put a man in the dock
+ * while the file says "her supervisor". So the prose decides, and the name
+ * follows it.
+ */
+type Presents = 'f' | 'm' | null;
+
+function pronounLean(texts: string[]): Presents {
+  const t = texts.join(' ').toLowerCase();
+  const f = (t.match(/\b(she|her|hers|herself)\b/g) ?? []).length;
+  const m = (t.match(/\b(he|him|his|himself)\b/g) ?? []).length;
+  return f > m ? 'f' : m > f ? 'm' : null;
+}
+
+function roleLean(role: string): Presents {
+  const r = role.toLowerCase();
+  if (/\b(wife|mother|daughter|sister|woman|girlfriend|aunt|grandmother|widow|niece)\b/.test(r)) return 'f';
+  if (/\b(husband|father|son|brother|man|boyfriend|uncle|grandfather|widower|nephew)\b/.test(r)) return 'm';
+  return null;
+}
+
+export function presentationOf(template: GeneratedCase): [Presents, Presents, Presents] {
+  const d = pronounLean([
+    template.defendant.background,
+    template.prosecution_argument,
+    template.defence_argument,
+    ...template.evidence.flatMap((e) => [e.description, e.prosecution_reading, e.defence_reading]),
+  ]);
+  const w = template.witnesses.map((x) => roleLean(x.role ?? ''));
+  return [d, w[0] ?? null, w[1] ?? null];
+}
+
+/** A given name that reads as `want`, or any name when `want` is null. */
+function givenFor(names: readonly string[], want: Presents): readonly string[] {
+  if (!want) return names;
+  const matching = names.filter((n) => presentsFeminine(`${n} x`) === (want === 'f'));
+  return matching.length ? matching : names;
+}
+
+function buildSlots(ctx: LocalizeContext, presents: [Presents, Presents, Presents] = [null, null, null]): Record<Slot, string> {
   const t = ctx.profile.texture;
 
   // Three distinct people. Drawing from one pool with different channels can
@@ -53,11 +98,12 @@ function buildSlots(ctx: LocalizeContext): Record<Slot, string> {
   // surname reads as family, and in these cases it would be an accident.
   const names: { first: string; last: string }[] = [];
   for (let i = 0; i < 3; i++) {
-    let first = pick(t.givenNames, ctx.seed, 11 + i * 7);
+    const pool = givenFor(t.givenNames, presents[i] ?? null);
+    let first = pick(pool, ctx.seed, 11 + i * 7);
     let last = pick(t.surnames, ctx.seed, 23 + i * 13);
     let guard = 0;
     while (names.some((n) => n.first === first || n.last === last) && guard < 12) {
-      first = pick(t.givenNames, ctx.seed + guard * 31, 11 + i * 7);
+      first = pick(pool, ctx.seed + guard * 31, 11 + i * 7);
       last = pick(t.surnames, ctx.seed + guard * 17, 23 + i * 13);
       guard++;
     }
@@ -106,7 +152,7 @@ function fill(text: string, slots: Record<string, string>): string {
  * case, tried somewhere else.
  */
 export function localizeCase(template: GeneratedCase, ctx: LocalizeContext): GeneratedCase {
-  const slots = buildSlots(ctx);
+  const slots = buildSlots(ctx, presentationOf(template));
   const f = (s: string) => fill(s, slots);
 
   return {
@@ -137,6 +183,7 @@ export function localizeCase(template: GeneratedCase, ctx: LocalizeContext): Gen
     defence_argument: f(template.defence_argument),
     // The pool keys are names, and they must match the localised names exactly
     // or the Echo System stops recognising its own cast.
+    courtroom_lines: (template.courtroom_lines ?? []).map((l) => ({ ...l, text: f(l.text) })),
     character_pool_additions: template.character_pool_additions.map((c) => ({
       ...c,
       name: f(c.name),

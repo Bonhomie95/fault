@@ -6,6 +6,7 @@ import {
   Linking,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -18,9 +19,12 @@ import { Clock, Fonts, Layout, Palette, Space, Type } from '@/constants/theme';
 import { api, ApiError, type Session } from '@/lib/api';
 import { restore as restorePurchases } from '@/lib/purchases';
 import * as haptic from '@/lib/haptics';
+import { askForReminders, clearReminders, remindersAvailable } from '@/lib/reminders';
+import { canSpeak, say, warmVoices } from '@/lib/say';
+import { LEGAL_VERSION } from '@/lib/legalText';
 import { play, refreshBedVolume } from '@/lib/sound';
 import { useGame } from '@/store/game';
-import { TEXT_SCALES, useSettings } from '@/store/settings';
+import { SPEECH_MODES, TEXT_SCALES, useSettings } from '@/store/settings';
 
 /**
  * GDD 6, Screen 8 — Settings.
@@ -48,7 +52,9 @@ export default function Settings() {
 
   const volume = useSettings((s) => s.volume);
   const muted = useSettings((s) => s.muted);
+  const speech = useSettings((s) => s.speech);
   const haptics = useSettings((s) => s.haptics);
+  const reminders = useSettings((s) => s.reminders);
   const textScale = useSettings((s) => s.textScale);
   const setSetting = useSettings((s) => s.set);
 
@@ -123,6 +129,33 @@ export default function Settings() {
       setBusy(false);
     }
   }, [refreshWallet]);
+
+  /**
+   * "Download my data" — GDPR access and portability, and the promise the
+   * privacy policy makes.
+   *
+   * Shared as JSON text through the system share sheet rather than written
+   * to a file: the share sheet already offers Save to Files, Mail, AirDrop
+   * and Drive, it needs no storage permission, and the export is a few
+   * hundred kilobytes at most. The server assembles it field by field
+   * (routes/session.ts) so no credential can end up in it.
+   */
+  const onExport = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const data = await api.exportData();
+      await Share.share({
+        title: 'FAULT — my data',
+        message: JSON.stringify(data, null, 2),
+      });
+    } catch (err) {
+      setNotice(err instanceof ApiError ? err.message : 'Your record could not be exported.');
+    } finally {
+      setBusy(false);
+    }
+  }, [busy]);
 
   const onSignOut = useCallback(async () => {
     await signOut();
@@ -232,6 +265,69 @@ export default function Settings() {
             </Text>
           </View>
 
+          {/* How the people in the room are delivered. A voice is presentation,
+              and presentation is what this game measures you against — so
+              every voice is cast from the person, like their face, and means
+              exactly as little. */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>COURTROOM SPEECH</Text>
+            <View style={styles.tiers}>
+              {SPEECH_MODES.map((m) => {
+                const needsVoice = m.value !== 'text';
+                const unavailable = needsVoice && !canSpeak();
+                const selected = speech === m.value;
+                return (
+                  <Pressable
+                    key={m.value}
+                    disabled={unavailable}
+                    onPress={() => {
+                      void setSetting({ speech: m.value });
+                      haptic.tapLight();
+                      if (needsVoice && !muted) {
+                        void warmVoices().then(() =>
+                          say('You don’t know me. You only know what they told you.', {
+                            voice: { seed: 7, feminine: false },
+                            tone: 'pleading',
+                          }),
+                        );
+                      }
+                    }}
+                    style={[
+                      styles.tier,
+                      selected && styles.tierActive,
+                      unavailable && { opacity: 0.4 },
+                    ]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected, disabled: unavailable }}
+                    accessibilityLabel={`${m.label}${unavailable ? ', unavailable on this build' : ''}`}
+                  >
+                    <Text style={[styles.tierText, selected && styles.tierTextActive]}>
+                      {m.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.sectionNote}>
+              {speech === 'text'
+                ? 'Everyone in the room is read, not heard.'
+                : speech === 'voice'
+                  ? 'Everyone in the room is heard; only their names are shown.'
+                  : 'Everyone in the room is heard, and their words are shown as they speak.'}{' '}
+              Each person has their own voice, and it tells you as little as their face does.
+            </Text>
+            {speech !== 'text' && muted && (
+              <Text style={styles.sectionNote}>
+                Sound is muted, so the words are shown instead.
+              </Text>
+            )}
+            {!canSpeak() && (
+              <Text style={styles.sectionNote}>
+                This build has no speech engine, so the courtroom can only be read.
+              </Text>
+            )}
+          </View>
+
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>TOUCH</Text>
             <View style={styles.toggleRow}>
@@ -248,6 +344,30 @@ export default function Settings() {
             </View>
             <Text style={styles.sectionNote}>
               The last five seconds of every case are felt as well as heard.
+            </Text>
+          </View>
+
+          {/* Local reminders — see lib/reminders. Scheduled on this phone
+              only; turning this off cancels everything already planned. */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>REMINDERS</Text>
+            <View style={styles.toggleRow}>
+              <Text style={styles.toggleLabel}>Summons & headlines</Text>
+              <Switch
+                value={reminders && remindersAvailable()}
+                disabled={!remindersAvailable()}
+                onValueChange={(v) => {
+                  void setSetting({ reminders: v });
+                  if (v) void askForReminders();
+                  else void clearReminders();
+                }}
+                trackColor={{ false: Palette.hairline, true: '#1D7E6A' }}
+                thumbColor={Palette.text}
+              />
+            </View>
+            <Text style={styles.sectionNote}>
+              At most one a day: your daily summons, a streak about to lapse, or what the papers
+              printed while you were away. Nothing leaves this phone.
             </Text>
           </View>
 
@@ -337,30 +457,58 @@ export default function Settings() {
             )}
           </View>
 
+          {/* LEGAL. The documents are bundled (lib/legalText, generated from
+              legal/*.md) and open in-app — they used to be external links
+              that only appeared once the server had URLs configured, which
+              meant a fresh deployment showed "The court has not published
+              its papers yet" to an App Review tester. The web copies are
+              still offered, for anyone who wants a link to send. */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>THE COURT</Text>
-            {/* Required to be reachable in-app, and served from the API so a
-                URL can be fixed without a release. */}
+            <Text style={styles.sectionTitle}>LEGAL</Text>
+            <Action label="Terms of Service" onPress={() => openLegal('terms')} />
+            <Action label="Privacy Policy" onPress={() => openLegal('privacy')} />
+            <Action label="Copyright & DMCA" onPress={() => openLegal('dmca')} />
+            <Action label="Community Guidelines" onPress={() => openLegal('community')} />
             {support?.privacyPolicyUrl && (
               <Action
-                label="Privacy policy"
+                label="Privacy Policy on the web"
                 onPress={() => void Linking.openURL(support.privacyPolicyUrl!)}
               />
             )}
-            {support?.termsUrl && (
-              <Action label="Terms of use" onPress={() => void Linking.openURL(support.termsUrl!)} />
-            )}
-            {support?.supportEmail && (
-              <Action
-                label="Contact the court"
-                onPress={() => void Linking.openURL(`mailto:${support.supportEmail}`)}
-              />
-            )}
-            {!support?.privacyPolicyUrl && !support?.termsUrl && (
+            <Text style={styles.sectionNote}>Edition {LEGAL_VERSION}.</Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>SUPPORT</Text>
+            {support?.supportEmail ? (
+              <>
+                <Action
+                  label="Contact the court"
+                  onPress={() => void Linking.openURL(`mailto:${support.supportEmail}`)}
+                />
+                <Text style={styles.sectionNote}>{support.supportEmail}</Text>
+              </>
+            ) : (
               <Text style={styles.sectionNote}>
-                The court has not published its papers yet.
+                To reach a human, use the report button on any case or name, or write to the address
+                in the Privacy Policy.
               </Text>
             )}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>ACKNOWLEDGEMENTS</Text>
+            {/* Open-source licences require attribution to be reachable, and
+                it costs nothing to be generous about it. Fonts are the ones
+                loaded in app/_layout (constants/theme). The sounds are
+                synthesised by scripts/generate-sounds.mjs, so there is no
+                audio licence to credit. */}
+            {ACKNOWLEDGEMENTS.map((a) => (
+              <View key={a.name} style={styles.ack}>
+                <Text style={styles.ackName}>{a.name}</Text>
+                <Text style={styles.sectionNote}>{a.licence}</Text>
+              </View>
+            ))}
           </View>
 
           <View style={styles.section}>
@@ -369,6 +517,7 @@ export default function Settings() {
               Your country is stored; your location is not. Deleting your juror deletes every case,
               every verdict, and the city you made.
             </Text>
+            <Action label="Download my data" onPress={onExport} disabled={busy} />
             {/* Destructive, separated, and in the semantic danger colour —
                 never adjacent to the ordinary actions above it. */}
             <Button
@@ -389,6 +538,34 @@ export default function Settings() {
     </View>
   );
 }
+
+function openLegal(doc: 'terms' | 'privacy' | 'dmca' | 'community') {
+  router.push({ pathname: '/legal', params: { doc } });
+}
+
+/**
+ * Third-party work in the shipped app.
+ *
+ * Not the full dependency tree — the licence texts for every npm package are
+ * in node_modules and the store listing links the full notices — but every
+ * component whose licence asks for visible credit, and every asset a player
+ * can actually see or hear.
+ */
+const ACKNOWLEDGEMENTS = [
+  { name: 'React Native, React, Expo', licence: 'MIT License. © Meta Platforms, Inc. and 650 Industries, Inc.' },
+  { name: 'Expo Router, Reanimated, Gesture Handler, Screens, SVG', licence: 'MIT License.' },
+  { name: 'three.js, React Three Fiber', licence: 'MIT License. © three.js authors, Poimandres.' },
+  { name: 'Zustand', licence: 'MIT License. © Paul Henschel.' },
+  {
+    name: 'MakeHuman / MPFB assets',
+    licence: 'Character bodies, faces, hair and clothing built from MakeHuman system assets, CC0 1.0.',
+  },
+  {
+    name: 'Playfair Display, Anton, Archivo, IBM Plex Mono, Inter',
+    licence: 'SIL Open Font License 1.1, via Google Fonts.',
+  },
+  { name: 'Sound', licence: 'Synthesised for FAULT. No third-party audio.' },
+] as const;
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -414,6 +591,8 @@ function Action({
 
 const styles = StyleSheet.create({
   dangerBtn: { marginTop: Space.md },
+  ack: { gap: 2 },
+  ackName: { fontFamily: Fonts.mono, fontSize: 12, color: Palette.text },
   renameBlock: { gap: Space.sm },
   renameInput: {
     fontFamily: Fonts.monoBold,

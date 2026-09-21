@@ -1,35 +1,36 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Adjourned } from '@/components/Adjourned';
 import { Busy } from '@/components/Busy';
 import { ReportCase } from '@/components/ReportCase';
-import { ThoughtBox } from '@/components/ThoughtBox';
+import { CourtSpeech } from '@/components/CourtSpeech';
 import { TimerRing } from '@/components/TimerRing';
 import { VerdictButton } from '@/components/VerdictButton';
 import { CourtroomScene, type DossierTab } from '@/components/scene2d/CourtroomScene';
 import { Clock, Fonts, Layout, Palette, Space, Type } from '@/constants/theme';
 import type { ClientCase } from '@/lib/api';
-import { defendantLines } from '@/lib/defendantVoice';
+import { castFor } from '@/lib/cast';
+import { useCourtroomTalk } from '@/lib/courtroom';
 import * as haptic from '@/lib/haptics';
 import { useReducedMotion } from '@/lib/motion';
 import { play, startBed, stopAllBeds, stopBed } from '@/lib/sound';
 import { useGame } from '@/store/game';
-import { useSettings } from '@/store/settings';
+import { canSpeak, warmVoices } from '@/lib/say';
+import { showsText, useSettings } from '@/store/settings';
 
 /**
- * How far below the header the accused's eyes sit, and how far below the
- * header the dossier starts — the same measurement, twice.
+ * How far below the header the accused's eyes sit: clear of the tab strip,
+ * with the whole crown in view.
  *
- * The plea bubble hangs off the bottom of the header at `headerBottom +
- * Space.md`, and it is one or two lines depending on how much the defendant
- * has to say. 96 clears the tallest of them. The card then has to start below
- * the chin, which is about ninety more; the tab strip already accounts for
- * ~56 of that, which is why the padding below is not simply 96 + 90.
+ * Nothing floats over the face any more. What people say is a subtitle above
+ * the verdict buttons (see CourtSpeech), so the camera frames against the
+ * header alone, which never changes while the case is open — the face does
+ * not jump when somebody starts talking.
  */
-const FACE_BELOW_HEADER = 96;
+const FACE_BELOW_HEADER = 188;
 
 const TABS: { key: DossierTab; label: string }[] = [
   { key: 'defendant', label: 'DEFENDANT' },
@@ -74,16 +75,47 @@ export default function CaseFile() {
    */
   const [headerBottom, setHeaderBottom] = useState(96);
   const reducedMotion = useReducedMotion();
+  // Where the verdict buttons begin, so the subtitle can sit just above them.
+  const { height: screenH } = useWindowDimensions();
+  const [verdictsTop, setVerdictsTop] = useState(screenH - 90);
+  const speech = useSettings((s) => s.speech);
+  const muted = useSettings((s) => s.muted);
 
-  // Stable across the per-second clock re-render, so the bubble does not reset
-  // its typewriter every tick. Keyed to the person, like the face and build.
-  const thoughts = useMemo(
-    () => (activeCase ? defendantLines(activeCase.defendant.portraitSeed) : []),
-    // Keyed on the person, not the case object — the same defendant always
-    // thinks the same things, and the seed is what identifies the person.
+  // Who plays whom. Keyed on the case, so the room is not recast every tick.
+  const casting = useMemo(
+    () => (activeCase ? castFor(activeCase) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeCase?.defendant.portraitSeed],
+    [activeCase?.id],
   );
+
+  useEffect(() => {
+    void warmVoices();
+  }, []);
+
+  // Who is talking. The room answers what the juror is doing — see lib/courtroom.
+  const utterance = useCourtroomTalk({
+    activeCase,
+    casting,
+    tab,
+    examined,
+    focusedWitness,
+    remaining,
+    active: !delivering && !adjourned && !reporting,
+  });
+
+  /**
+   * How much of the file the player actually opened, for missions ("read the
+   * whole file before deciding"). Refs, not state: nothing renders from them,
+   * and a re-render per tap would be waste under a running clock.
+   */
+  const opened = useRef({ exhibits: new Set<string>(), witnesses: new Set<number>(), arguments: false });
+  useEffect(() => {
+    if (examined) opened.current.exhibits.add(examined);
+  }, [examined]);
+  useEffect(() => {
+    if (tab === 'witnesses') opened.current.witnesses.add(focusedWitness);
+    if (tab === 'arguments') opened.current.arguments = true;
+  }, [tab, focusedWitness]);
 
   // Guards the forced verdict: the clock hitting zero and a player tapping at
   // 0.4s left must never both submit.
@@ -97,7 +129,11 @@ export default function CaseFile() {
       try {
         // Only the direction travels. How long we took is the server's to
         // measure — it has been counting since it served the case.
-        await deliverVerdict(verdict);
+        await deliverVerdict(verdict, {
+          examined: Math.min(3, opened.current.exhibits.size),
+          witnesses: Math.min(2, opened.current.witnesses.size),
+          arguments: opened.current.arguments,
+        });
         router.replace('/verdict');
       } catch {
         /**
@@ -198,7 +234,7 @@ export default function CaseFile() {
     return () => clearInterval(id);
   }, [activeCase, submit, adjourned]);
 
-  if (!activeCase) return <View style={styles.root} />;
+  if (!activeCase || !casting) return <View style={styles.root} />;
 
   const accent = activeCase.accent;
   const urgent = remaining <= Clock.tensionAt;
@@ -217,21 +253,27 @@ export default function CaseFile() {
           // tension bed uses — so what you hear and what you see agree.
           remaining={remaining}
           tensionAt={Clock.tensionAt}
-          // Where the face has to sit to be under the plea and above the
-          // dossier. Both of those hang off the measured header, so the room
-          // is told in screen pixels rather than guessing in scene units.
+          // Where the face has to sit to be under the speech and above the
+          // dossier. Both hang off the measured header, so the room is told
+          // in screen pixels rather than guessing in scene units.
           eyesY={headerBottom + FACE_BELOW_HEADER}
+          casting={casting!}
+          utterance={utterance}
         />
       </View>
 
-      {/* The accused's plea, over their head, while you look at them. Only on
-          the tab where the defendant is the subject and the camera is on their
-          face — anywhere else it would float over the wrong person. */}
-      <View style={[styles.thought, { top: headerBottom + Space.md }]} pointerEvents="none">
-        <ThoughtBox
-          lines={thoughts}
+      {/* What was just said, and by whom — a subtitle above the verdict
+          buttons on every tab. Never over a face: the face is what the player
+          is weighing the words against. */}
+      <View
+        style={[styles.thought, { bottom: Math.max(0, screenH - verdictsTop) + Space.sm }]}
+        pointerEvents="none"
+      >
+        <CourtSpeech
+          activeCase={activeCase}
+          utterance={utterance}
           accent={accent}
-          visible={tab === 'defendant' && !delivering}
+          showText={showsText(speech, muted, canSpeak())}
           reducedMotion={reducedMotion}
         />
       </View>
@@ -316,6 +358,7 @@ export default function CaseFile() {
             contentContainerStyle={[
               styles.panelContent,
               tab === 'defendant' && styles.panelBelowTheFace,
+              tab === 'witnesses' && styles.panelBelowTheWitness,
             ]}
             showsVerticalScrollIndicator={false}
           >
@@ -341,7 +384,10 @@ export default function CaseFile() {
         </View>
 
         {/* Always visible. Never scrolls away. (GDD 6, Screen 4) */}
-        <View style={styles.verdicts}>
+        <View
+          style={styles.verdicts}
+          onLayout={(e) => setVerdictsTop(e.nativeEvent.layout.y)}
+        >
           <VerdictButton
             label="GUILTY"
             accent={accent}
@@ -558,7 +604,7 @@ const styles = StyleSheet.create({
   // down at the head; exact offset tuned against the portrait framing.
   thought: {
     position: 'absolute',
-    // `top` is supplied at render from the measured header — see headerBottom.
+    // `bottom` is supplied at render from the measured verdict bar.
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -648,7 +694,9 @@ const styles = StyleSheet.create({
    * already at the zoom the face needs, and the panel scrolls: everything is
    * still reachable, it just does not start on top of him.
    */
-  panelBelowTheFace: { paddingTop: 132 },
+  panelBelowTheFace: { paddingTop: 262 },
+  /** The same idea for the witness at the stand — see FRAMES.witnesses. */
+  panelBelowTheWitness: { paddingTop: 150 },
   card: {
     backgroundColor: 'rgba(21,21,19,0.93)',
     borderWidth: 1,

@@ -40,7 +40,7 @@ cd server && npm test          # city engine + authored docket
 ## Without a Groq key
 
 The game is fully playable with `GROQ_API_KEY` empty. Case generation falls
-back to the six hand-authored cases in `server/src/services/seedCases.ts`, and
+back to the 24 hand-authored cases in `server/src/services/seedCases.ts`, and
 the juror profile is written by a deterministic writer in the same voice. This
 is the GDD's "emergency buffer" (§12) doing double duty as the dev default.
 
@@ -61,12 +61,22 @@ fine. The server now probes the model list at boot and logs
 which would no longer extend anything — those tiers are 180s/240s. One constant,
 `Clock` in `mobile/constants/theme.ts`, and `clockSeconds` per user server-side.
 
-**3D objects, native text.** Scenes are real three.js (react-three-fiber over
-expo-gl): a courtroom the camera walks through, exhibits as physical objects,
-faceless deterministic figures, and a city model that expresses the six city
-dials as skyline, darkness, fog and light. Typography is React Native layered
-over the GL canvas — `drei`'s troika text is unreliable on RN, and this is a
-game about reading dense text under a clock.
+**People are sprites; the rest is 3D objects and native text.** Every person
+on screen — defendant, witness, both counsel, and the accused's verdict
+reaction — is a pre-rendered sprite drawn by `components/cast/Actor` over a
+vector (SVG) courtroom. The people are MakeHuman models rendered in Blender as
+lit stills: each trial expression with three speaking mouths and a blink, plus
+the five verdict reactions (see "Launch build" and "The accused as a model"
+below). They are packed as one neutral base per person plus small patches for
+whatever differs, so a moving mouth costs kilobytes and switching frames is an
+opacity change rather than an image load. A still draws identically on every
+device through the ordinary image pipeline; the real-time model it replaced
+drew only where expo-gl could be trusted, which excluded the iOS Simulator and
+an unknown slice of phones. three.js (react-three-fiber over expo-gl) remains
+for the city model, which expresses the six city dials as skyline, darkness,
+fog and light, and for the newspaper front page. Typography is React Native
+layered over all of it — `drei`'s troika text is unreliable on RN, and this is
+a game about reading dense text under a clock.
 
 **The client is never told the answer.** `correct_verdict`, `evidence_strength`,
 `is_planted`, and each witness's `lie`/`lie_tell` exist server-side and are
@@ -87,6 +97,34 @@ the library twice and breaks `instanceof` across the boundary.
 
 ## State of it
 
+**Launch build (2026-09).** Everything below, plus:
+
+- **A rendered cast.** Twenty MakeHuman people rendered in Blender as sprite
+  patches — expressions, three speaking mouths, blinks, five verdict reactions
+  (`tools/suspect/export_suspect.py` → `tools/portraits/render_cast.py` →
+  `tools/portraits/pack_cast.py`). Cast by name, age and the court's region
+  (`mobile/lib/cast.ts`). Works identically on every device and the simulator.
+- **A courtroom that talks.** Each case carries verdict-blind `courtroom_lines`
+  (outbursts, witnesses digging in, counsel needling) triggered by what the
+  juror opens (`mobile/lib/courtroom.ts`), spoken with a voice per character
+  (`mobile/lib/say.ts`). Settings: Text / Voice / Both.
+- **The papers.** Every verdict prints a court report and fallout; the city
+  clock keeps moving while the player is away — robberies, protests, syndicate
+  moves, reforms — and the lobby opens on "while you were away"
+  (`server/src/domain/news.ts`, `services/news.ts`, `app/news.tsx`).
+- **The map.** Each country's districts open by rank, harder and better-paid
+  the further out (`server/src/domain/districts.ts`, Career screen).
+- **Missions.** 49 missions: daily and weekly draws rotated per player, plus
+  career milestones, paying XP and Merit, none of them reading whether a
+  verdict was right (`server/src/services/missions.ts`).
+- **Coming back.** Daily summons, streak and headline reminders scheduled
+  locally (`mobile/lib/reminders.ts`).
+- **Store readiness.** Terms, Privacy, DMCA and Community Guidelines in
+  `legal/` (served at `/legal/*` and in-app), consent at sign-up, guest play,
+  account deletion with Apple token revocation, data export, name reporting,
+  honest store. Deployment: `DEPLOY.md`, `render.yaml`, `server/Dockerfile`.
+  Store copy: `store/listing.md`. Icons: `tools/brand/make_icons.py`.
+
 Done: the full loop (cold open → briefing → lobby → case → verdict → review →
 record), city state engine, juror profile, echo system, Groq generation with
 Redis buffering, trial gate at 10 cases, ambient sound, 218 tests.
@@ -98,9 +136,8 @@ index-backed leaderboard ranking.
 
 Not done, from the roadmap: the 50-case campaign and chapter structure, the
 shared daily case (which is what the "63% of jurors convicted" beat on the
-verdict screen needs — it is written and currently unreachable), the portrait
-library (silhouettes are generated procedurally from the seed rather than
-pre-rendered), and verdict PDF export.
+verdict screen needs — it is written and currently unreachable), and verdict
+PDF export.
 
 **Seams, not stubs.** Payments and advertising are wired end to end on the
 server and up to a single interface on the client — `lib/purchases.ts` and
@@ -130,9 +167,12 @@ Record scores all three (`appearance_bias`, `demeanour_bias`, `oddity_bias`)
 and `tests/presentation.test.ts` asserts the independence over ten thousand
 cases.
 
-### The accused in 3D
+### The accused as a model
 
-The courtroom and the verdict screen draw a real model, not a picture of one.
+Every person on screen starts as a real model. The models no longer ship: they
+are rendered into the sprites in `mobile/assets/cast`, and the app draws only
+those. Everything below about BUILDING the models still holds, because the
+sprites are only as good as the model they were rendered from.
 
 ```bash
 # fetch the assets it dresses from (see below)
@@ -141,10 +181,21 @@ python3 tools/suspect/fetch_assets.py \
   --want '^skins/' --want '^hair/(short01|short02|bob01|long01)/'
 
 blender --background --python tools/suspect/export_suspect.py -- \
-  --out mobile/assets/suspect
+  --out tools/suspect/build
+
+# render every person, expression, mouth and blink (slow), then pack
+blender --background --python tools/portraits/render_cast.py -- \
+  --glb tools/suspect/build --out tools/portraits/frames
+python3 tools/portraits/pack_cast.py
 ```
 
-Six `.glb` files, about 4.5MB each: an upper body — head, neck, shoulders, arms
+`pack_cast.py` writes `mobile/assets/cast/<person>/*.webp` and generates
+`mobile/components/cast/sprites.ts`, which holds a literal `require` per frame
+because Metro bundles an asset only from a literal. Never edit it by hand.
+`tools/suspect/build` and `tools/portraits/frames` are gitignored; the packed
+sprites are tracked.
+
+One `.glb` per archetype: an upper body — head, neck, shoulders, arms
 and hands — with eyes, brows, lashes, hair and a garment, each carrying sixteen
 morph targets. Five are the verdict reactions, five are the trial expressions
 that mirror `scene2d/expression`, and six are channels the client dials rather
@@ -165,12 +216,15 @@ Every model bug in this section was found in one of the two, because a face
 behind a dossier card and a scrim tells you nothing. Both use the SAME framing
 arithmetic the app does, so what they show is what ships.
 
-**Why a model and not a render.** The Cycles stills in `tools/portraits` look
-better than anything a phone GPU will draw, and they cannot be used here: the
-reaction depends on the verdict AND on whether the juror was right, the person
-depends on `portraitSeed`, and the two multiply into thousands of images. Six
-small files cover every combination, because the combination happens at
-runtime.
+**Why stills after all.** The model was first drawn live on the phone, on
+the argument that the reaction depends on the verdict AND on whether the juror
+was right, the person depends on `portraitSeed`, and the two multiply into
+thousands of images. They do not multiply: the reaction and the person are
+independent, so the whole cast is a few hundred small patches, not thousands
+of portraits. And the live model drew only where expo-gl could be trusted to
+present. Everywhere else the player got the flat vector drawing. The stills
+are lit by a renderer with shadows and a proper tone curve, and they look the
+same on every device.
 
 **Why identity is baked and expression is not.** MPFB expresses gender, age and
 ancestry as COMBINATION shape keys — the set of keys changes with the values,
@@ -200,13 +254,14 @@ with shape keys, so the crop is a bmesh vertex delete and it comes last.
 
 #### The framing contract
 
-**One model unit is EYES TO CROWN, and the origin is the eyes.** Both cameras
-are then written in head units — `AccusedReaction` asks for a head filling 15.5%
-of the viewport with the eyes 45% down; `SuspectStage` asks for the 66 scene
-units and the (200, 246) mark that `CourtroomScene` draws its vector accused at,
-so whichever of the two the device can show stands in the same place at the same
-size. Normalising by the whole figure instead makes the face size depend on how
-much chest is in the file.
+**One model unit is EYES TO CROWN, and the origin is the eyes.** The renderer
+turns that into pixels: every frame of every person puts the eyes at
+`EYES_PX` (512, 470) of a 1024x1280 image and makes eyes-to-crown `HEAD_PX`
+(250) pixels. The app places a person by those two numbers alone. The
+courtroom puts the eyes on the (200, 246) mark it has always used for the
+accused, and `AccusedReaction` asks for a head filling a fixed share of the
+viewport. Normalising by the whole figure instead makes the face size depend on
+how much chest is in the file.
 
 The eyes are FOUND, not assumed: the exporter names the eyeball mesh `eyes` and
 the client takes the centre of its bounds. The exporter does also sit the model
@@ -230,19 +285,13 @@ lower half of that tab was empty anyway.
 
 #### In the courtroom
 
-`components/suspect/SuspectStage` puts the model on the accused's mark and keeps
-it there as the camera moves between dossier tabs.
-
-The obvious way — a canvas inside a view transformed by the same Reanimated
-values — does not survive contact. A CSS transform on the canvas's ancestor
-leaves react-three-fiber measuring its default 300x150, and `transformOrigin`,
-which is needed because the room scales about the origin and React Native scales
-about the centre, is dropped by the web renderer as an unknown DOM property. So
-the canvas sits still and full-screen and the MODEL moves, placed each frame
-from the same three shared values the room reads. Three floats a frame is
-nothing, the two cannot drift because there is one source of truth, and the
-render stays at native resolution at every zoom instead of being a magnified
-bitmap.
+`components/cast/Actor` mounts every patch a person may need up front and hides
+all but one, so a mouth moving ten times a second never waits on an image load.
+Mouths and blinks CUT, because they are fast in life too. Expressions DISSOLVE
+over about a third of a second, because a face that snaps from tense to defiant
+reads as a sprite swap. The actor is an ordinary view inside the room, so it
+moves and zooms with the camera between dossier tabs for free. That was the
+hardest part of the real-time model to get right.
 
 #### Twenty-six things that were silently wrong
 
@@ -439,21 +488,10 @@ garment, and it exists so a suspect is never bare-chested in a courtroom.
 
 Hair colour is a per-archetype tint rather than a per-asset texture, because
 every MakeHuman hair asset ships one and `long01` ships a blonde one. Skin is a
-photograph chosen to match the archetype, so the runtime tone in
-`components/suspect/skin` is a MODULATION — near-white multipliers about a
-fifth of a stop apart. It was a spread of absolute skin colours until the models
-started carrying real skins, at which point a dark-skinned texture multiplied by
-a dark brown came out almost black.
-
-**On the client**, `components/suspect/SuspectModel` loads the archetype for a
-seed, modulates the skin tone, and eases each named morph toward its target every frame
-at one of two speeds — a blink is over in a tenth of a second and a reaction
-dawns over most of one, and running both at a single rate makes the blink a
-slow swoon or the reaction a flinch. `AccusedReaction` and `SuspectStage` each
-mount it over the drawn vector face and retire that face only once the model
-has actually parsed AND the GL context has proved it can paint (see
-`glCapability`); where it cannot, the canvas is never mounted and the drawing
-stands.
+photograph chosen to match the archetype. (When the model drew live, a runtime
+skin tint multiplied over it had to be a near-white MODULATION: as absolute
+colours, a dark-skinned texture multiplied by a dark brown came out almost
+black. Tone is now whatever the archetype's texture renders as.)
 
 **Every shape has a body, not just a face.** `POSES` gives all sixteen a
 posture and the five verdict reactions a gesture: `broken` bows the head and
@@ -487,14 +525,12 @@ It runs once per image per run, because Blender shares an image datablock
 between every archetype wearing the same asset and the second one to arrive got
 it applied twice.
 
-**Which archetype a seed is** comes from `archetypeFor`, and it reads the same
-channel the drawn accused reads (`lib/seed`, channel 11) — presentation is a
-property of the defendant, not of whichever renderer got there first. Indexing
-the cast by the seed instead, which is what this did at first, meant the swap
-from the drawing to the model could change someone's sex halfway through a
-case. Skin tone is not decided there: `suspect/skin` modulates it at runtime
-from its own channel, so six files do not mean six skin tones. `/dev-suspect` shows any archetype against any reaction without playing
-a case.
+**Who plays whom** is decided by `castFor` in `lib/cast.ts`, from the
+defendant's seed and age and the court's country. Presentation still reads the
+same seed channel the drawn accused reads (`lib/seed`, channel 11), because
+presentation is a property of the defendant, not of whichever renderer got
+there first. `/dev-suspect` shows every person in every expression and
+reaction, talking or not, without playing a case.
 
 ### Rendering the accused
 

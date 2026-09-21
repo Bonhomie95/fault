@@ -44,7 +44,7 @@ root.position.y = (0.5 - eyesScreen) / headScreen;
 scene.add(root);
 
 const bar = document.getElementById('bar');
-const res = await fetch(`/mobile/assets/suspect/${file}.glb?v=${performance.timeOrigin|0}`, {cache:"no-store"});
+const res = await fetch(`/tools/suspect/build/${file}.glb?v=${performance.timeOrigin|0}`, {cache:"no-store"});
 const buf = await res.arrayBuffer();
 new GLTFLoader().parse(buf, '', (gltf) => {
   let eyeMesh = null; const morphMeshes = [];
@@ -66,7 +66,7 @@ new GLTFLoader().parse(buf, '', (gltf) => {
   const scale = crown > 0 ? 1 / crown : 1;
   gltf.scene.scale.setScalar(scale);
   gltf.scene.position.set(0, -eyes * scale, 0);
-  // MIRRORS components/suspect/SuspectModel softenCutout. Keep the two the
+  // MIRRORS the cutout fix in tools/portraits/render_cast.py (was SuspectModel softenCutout). Keep the two the
   // same or these pages stop telling the truth about what the app draws.
   gltf.scene.traverse((o) => {
     if (!o.isMesh || /(^|\.)eyes$/i.test(o.name)) return;

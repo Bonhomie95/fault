@@ -1,7 +1,7 @@
 """
 Shrink an exported suspect .glb.
 
-    python3 tools/suspect/optimise_glb.py mobile/assets/suspect/*.glb
+    python3 tools/suspect/optimise_glb.py tools/suspect/build/*.glb
 
 Blender writes PNG for any material whose alpha is connected, and MPFB's
 MakeSkin materials are node GROUPS with the texture's alpha wired through —

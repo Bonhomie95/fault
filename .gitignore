@@ -37,11 +37,10 @@ tools/**/__pycache__/
 # file, not source.
 dump.rdb
 
-# The suspect models are NOT ignored, deliberately.
-#
-# Metro resolves `require('@/assets/suspect/*.glb')` at bundle time, so a
-# missing file is a build error rather than a missing texture — the app does
-# not start without them. Reproducing them needs Blender, MPFB2 and a 268MB
-# MakeHuman asset pack, which is not a reasonable thing to ask of a fresh
-# checkout. They are build output that has to be in the tree; git LFS would be
-# the better home if this grows.
+# The suspect models and the rendered frames are intermediate output: the app
+# ships only the packed sprites in mobile/assets/cast, which ARE tracked,
+# deliberately. Metro resolves every `require('@/assets/cast/...')` at bundle
+# time, and reproducing them needs Blender, MPFB2 and a 268MB MakeHuman asset
+# pack, which is not a reasonable thing to ask of a fresh checkout.
+tools/suspect/build/
+tools/portraits/frames/

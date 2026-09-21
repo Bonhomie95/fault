@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Tier } from '@prisma/client';
-import type { ClientCase, Evidence, Witness } from '../domain/case.js';
+import { courtroomLineSchema, type ClientCase, type Evidence, type Witness } from '../domain/case.js';
 import { clockFor } from '../domain/clock.js';
 import { CAMPAIGN_TRIAL_CASES } from '../domain/store.js';
 import { hasEntitlement } from '../services/economy.js';
@@ -9,6 +9,7 @@ import { prisma } from '../lib/prisma.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../lib/prismaErrors.js';
 import { accentHexFor, nextCase, placeForUser, structureKeyFor } from '../services/caseGenerator.js';
 import { tierLabel } from '../domain/jurisdiction.js';
+import { presentsFeminine } from '../domain/nameGender.js';
 import { deriveCaseMood } from '../services/cityEffects.js';
 import { getCityState } from '../services/cityState.js';
 import { portraitSeedFor } from '../services/characterPool.js';
@@ -45,6 +46,7 @@ function toClientCase(
     witnesses: unknown;
     prosecutionArgument: string;
     defenceArgument: string;
+    lines?: unknown;
   },
   clockSeconds: number,
   returningCharacters: { name: string; portraitSeed: number }[],
@@ -79,6 +81,7 @@ function toClientCase(
       appearance: row.defendantAppearance,
       demeanour: row.defendantDemeanour,
       oddity: row.defendantOddity,
+      feminine: presentsFeminine(row.defendantName),
     },
     evidence: evidence.map((e) => ({
       id: e.id,
@@ -90,9 +93,16 @@ function toClientCase(
       name: w.name,
       role: w.role ?? '',
       testimony: w.testimony,
+      feminine: presentsFeminine(w.name),
     })),
     prosecutionArgument: row.prosecutionArgument,
     defenceArgument: row.defenceArgument,
+    // Re-validated on the way out: rows written before this column existed
+    // hold the default, and a hand-edited row should not reach a phone.
+    lines: (Array.isArray(row.lines) ? row.lines : []).flatMap((l) => {
+      const parsed = courtroomLineSchema.safeParse(l);
+      return parsed.success ? [parsed.data] : [];
+    }),
     returningCharacters,
   };
 }
@@ -228,6 +238,7 @@ caseRouter.get('/next', requireJuror, generationLimiter, async (req, res) => {
       evidence: generated.evidence,
       witnesses: generated.witnesses,
       prosecutionArgument: generated.prosecution_argument,
+      lines: generated.courtroom_lines,
       defenceArgument: generated.defence_argument,
       correctVerdict: generated.correct_verdict,
       evidenceStrength: generated.evidence_strength,

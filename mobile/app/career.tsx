@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
 import { Fonts, Palette, Type } from '@/constants/theme';
-import { ApiError, api, type JurisdictionsView, type Mission, type Tier } from '@/lib/api';
+import { ApiError, api, type District, type JurisdictionsView, type Mission, type Tier } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
 import { useGame } from '@/store/game';
@@ -25,6 +25,7 @@ export default function Career() {
 
   const [ladder, setLadder] = useState<{ tier: Tier; label: string; reached: boolean }[] | null>(null);
   const [missions, setMissions] = useState<Mission[] | null>(null);
+  const [districts, setDistricts] = useState<District[] | null>(null);
   const [jurisdictions, setJurisdictions] = useState<JurisdictionsView | null>(null);
   const [foreignLock, setForeignLock] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -37,12 +38,14 @@ export default function Career() {
     }
     await refreshStanding();
 
-    const [l, m] = await Promise.all([
+    const [l, m, d] = await Promise.all([
       api.ladder().catch(() => null),
       api.missions().catch(() => null),
+      api.districts().catch(() => null),
     ]);
     if (l) setLadder(l.rungs);
     if (m) setMissions(m.missions);
+    if (d) setDistricts(d.districts);
 
     try {
       setJurisdictions(await api.jurisdictions());
@@ -99,6 +102,28 @@ export default function Career() {
       }
     },
     [jurorId, busy, load],
+  );
+
+  const onSelectDistrict = useCallback(
+    async (d: District) => {
+      if (!jurorId || busy || d.current || !d.unlocked) return;
+      setBusy(true);
+      setNotice(null);
+      try {
+        const r = await api.selectDistrict(d.name);
+        setDistricts(r.districts);
+        play('stamp');
+        haptic.stamped();
+        setNotice(`You now sit in ${d.name}. Its docket is ${d.difficultyLabel.toLowerCase()}.`);
+        await refreshStanding();
+      } catch {
+        haptic.refused();
+        setNotice('The clerk could not move your seat.');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [jurorId, busy, refreshStanding],
   );
 
   const onApply = useCallback(
@@ -182,6 +207,45 @@ export default function Career() {
             )}
           </Section>
 
+          {/* ---- The map: districts that open by rank ---- */}
+          <Section title="COURTS OF THE CITY">
+            <Text style={styles.sectionNote}>
+              Each court opens as your rank rises. Further courts are harder — more of their cases have
+              no clean answer — and pay more for every sitting.
+            </Text>
+            {districts === null && <ActivityIndicator color={Palette.textMuted} />}
+            {districts?.map((d) => (
+              <Pressable
+                key={d.name}
+                onPress={() => onSelectDistrict(d)}
+                disabled={busy || !d.unlocked || d.current}
+                style={[styles.district, d.current && styles.districtCurrent, !d.unlocked && styles.districtLocked]}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  d.unlocked
+                    ? `${d.name}, ${d.difficultyLabel}. ${d.current ? 'You sit here now.' : 'Sit here.'}`
+                    : `${d.name}, locked until rank ${d.unlockRank}.`
+                }
+                accessibilityState={{ disabled: busy || !d.unlocked, selected: d.current }}
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={styles.districtName}>
+                    {d.name}
+                    {d.home ? '  · HOME' : ''}
+                  </Text>
+                  <Text style={styles.districtMeta}>
+                    {'★'.repeat(d.difficulty)}
+                    {'☆'.repeat(5 - d.difficulty)}  {d.difficultyLabel.toUpperCase()}
+                    {d.reward > 1 ? `  ·  ×${d.reward.toFixed(2)} REWARDS` : ''}
+                  </Text>
+                </View>
+                <Text style={[styles.districtAction, d.current && { color: '#1FA184' }]}>
+                  {d.current ? 'SITTING' : d.unlocked ? 'SIT HERE' : `RANK ${d.unlockRank}`}
+                </Text>
+              </Pressable>
+            ))}
+          </Section>
+
           {/* ---- Missions ---- */}
           <Section title="STANDING ORDERS">
             {missions === null && <ActivityIndicator color={Palette.textMuted} />}
@@ -189,9 +253,15 @@ export default function Career() {
               <View key={m.key} style={styles.mission}>
                 <View style={styles.missionHead}>
                   <Text style={styles.missionTitle}>{m.title}</Text>
-                  <Text style={styles.missionKind}>{m.kind.toUpperCase()}</Text>
+                  <Text style={styles.missionKind}>
+                    {m.kind.toUpperCase()}
+                    {m.endsAt ? ` · ${timeLeft(m.endsAt)}` : ''}
+                  </Text>
                 </View>
                 <Text style={styles.missionDesc}>{m.description}</Text>
+                <Text style={styles.missionReward}>
+                  +{m.xp} XP{m.merit ? `  ·  +${m.merit} MERIT` : ''}
+                </Text>
                 <View style={styles.missionFoot}>
                   <View style={styles.missionTrack}>
                     <View
@@ -214,7 +284,7 @@ export default function Career() {
                       accessibilityState={{ disabled: busy }}
                       hitSlop={8}
                     >
-                      <Text style={styles.claimText}>CLAIM {m.xp}</Text>
+                      <Text style={styles.claimText}>CLAIM</Text>
                     </Pressable>
                   )}
                   {m.claimed && <Text style={styles.claimed}>CLAIMED</Text>}
@@ -278,6 +348,12 @@ export default function Career() {
   );
 }
 
+/** "5h left", "2d left". */
+function timeLeft(iso: string): string {
+  const h = Math.max(0, (new Date(iso).getTime() - Date.now()) / 3_600_000);
+  return h >= 48 ? `${Math.floor(h / 24)}D LEFT` : h >= 1 ? `${Math.floor(h)}H LEFT` : `${Math.max(1, Math.floor(h * 60))}M LEFT`;
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={styles.section}>
@@ -302,6 +378,23 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   section: { gap: 8 },
+  sectionNote: { fontFamily: Fonts.mono, fontSize: Type.micro, lineHeight: 17, color: Palette.textMuted },
+  district: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Palette.hairline,
+    borderRadius: 10,
+    backgroundColor: Palette.surface,
+  },
+  districtCurrent: { borderColor: '#1FA184' },
+  districtLocked: { opacity: 0.5 },
+  districtName: { fontFamily: Fonts.uiBold, fontSize: Type.body, color: Palette.text },
+  districtMeta: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1, color: Palette.textMuted },
+  districtAction: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.4, color: Palette.text },
+  missionReward: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.2, color: '#F0A020' },
   sectionTitle: {
     fontFamily: Fonts.mono,
     fontSize: Type.micro,

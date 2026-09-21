@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { generatedCaseSchema, structureKeyFor } from '../src/domain/case.js';
 import { profileFor } from '../src/domain/jurisdiction.js';
-import { localizeCase } from '../src/services/localizeCase.js';
+import { localizeCase, slotsUsedIn } from '../src/services/localizeCase.js';
 import { SEED_CASES, seedCaseFor } from '../src/services/seedCases.js';
 
 /**
@@ -12,17 +12,20 @@ import { SEED_CASES, seedCaseFor } from '../src/services/seedCases.js';
  * actually receives, which is always the localised output. Testing the raw
  * template would be testing a thing that is never served.
  */
-const localized = (i: number) => {
-  const profile = profileFor('NO');
+const localized = (i: number, code = 'NO', seed = 11 + i) => {
+  const profile = profileFor(code);
   const district = profile.districts[0]!;
   return localizeCase(SEED_CASES[i]!, {
     profile,
     district,
     court: profile.courtName('district', district),
     policeService: profile.policeService(district),
-    seed: 11 + i,
+    seed,
   });
 };
+
+/** The countries a launch player is most likely to be served the docket in. */
+const COUNTRIES_UNDER_TEST = ['NO', 'NG', 'US', 'IN'] as const;
 
 /**
  * The hand-authored docket ships in the app and is the fallback whenever Groq
@@ -105,6 +108,87 @@ describe('the authored docket', () => {
     assert.deepEqual(offenders, []);
   });
 
+  it('holds 24 cases, so a bad Groq day does not loop after six', () => {
+    assert.equal(SEED_CASES.length, 24);
+  });
+
+  it('survives localisation in every launch country, for several casts', () => {
+    // A slot that only breaks in one register (a name that trips the title
+    // guard, a money string that pushes an argument past 40 words) would pass
+    // in Norway and fail in Lagos. So every case is tried in each country,
+    // with more than one cast.
+    const failures: string[] = [];
+    for (const code of COUNTRIES_UNDER_TEST) {
+      for (const seed of [1, 7, 42, 1009]) {
+        SEED_CASES.forEach((template, i) => {
+          const c = localized(i, code, seed);
+          const tag = `${code}/${seed}/#${i + 1} ${template.charge}`;
+          const parsed = generatedCaseSchema.safeParse(c);
+          if (!parsed.success) {
+            failures.push(`${tag}: ${parsed.error.issues.map((x) => `${x.path.join('.')} ${x.message}`).join('; ')}`);
+            return;
+          }
+          const leftover = slotsUsedIn(c);
+          if (leftover.length) failures.push(`${tag}: unfilled ${leftover.join(', ')}`);
+          if (parsed.data.courtroom_lines.length !== c.courtroom_lines.length)
+            failures.push(`${tag}: a courtroom line was dropped by the schema or the verdict guard`);
+          for (const name of [c.defendant.name, ...c.witnesses.map((w) => w.name)]) {
+            if (/^(dr|mr|mrs|ms|miss|prof|sgt|sergeant|insp|inspector|officer|constable|detective|judge|captain)\b/i.test(name))
+              failures.push(`${tag}: title in name "${name}"`);
+          }
+          const people = new Set([c.defendant.name, ...c.witnesses.map((w) => w.name)]);
+          if (people.size !== 3) failures.push(`${tag}: cast is not three different people`);
+        });
+      }
+    }
+    assert.deepEqual(failures, []);
+  });
+
+  it('keeps names as slots in the template, never hard-coded people', () => {
+    // The Echo System keys on names and the docket is re-cast per country; a
+    // literal name in a template would follow the player across the world.
+    for (const c of SEED_CASES) {
+      assert.equal(c.defendant.name, '{D_FULL}', c.charge);
+      assert.deepEqual(
+        c.witnesses.map((w) => w.name).sort(),
+        ['{W1_FULL}', '{W2_FULL}'],
+        c.charge,
+      );
+    }
+  });
+
+  it('keeps evidence_strength honest about the verdict', () => {
+    // An answerable case must lean the way its answer does; an unanswerable
+    // one must not quietly lean at all.
+    for (const c of SEED_CASES) {
+      if (c.correct_verdict === 'guilty') assert.ok(c.evidence_strength >= 0.3, `${c.charge}: ${c.evidence_strength}`);
+      if (c.correct_verdict === 'not_guilty') assert.ok(c.evidence_strength <= -0.3, `${c.charge}: ${c.evidence_strength}`);
+      if (c.correct_verdict === 'ambiguous') assert.ok(Math.abs(c.evidence_strength) <= 0.3, `${c.charge}: ${c.evidence_strength}`);
+    }
+  });
+
+  it('spreads verdicts, moods, wealth and planted evidence across the docket', () => {
+    const count = (v: string) => SEED_CASES.filter((c) => c.correct_verdict === v).length;
+    assert.ok(count('guilty') >= 6, `guilty: ${count('guilty')}`);
+    assert.ok(count('not_guilty') >= 6, `not_guilty: ${count('not_guilty')}`);
+    assert.ok(count('ambiguous') >= 4, `ambiguous: ${count('ambiguous')}`);
+    for (const accent of ['violent', 'financial', 'systemic', 'passion'] as const) {
+      const n = SEED_CASES.filter((c) => c.accent === accent).length;
+      assert.ok(n >= 4, `${accent}: ${n}`);
+    }
+    const wealth = SEED_CASES.map((c) => c.defendant.wealth);
+    assert.ok(Math.min(...wealth) <= 10 && Math.max(...wealth) >= 90, `wealth ${Math.min(...wealth)}..${Math.max(...wealth)}`);
+    const planted = SEED_CASES.filter((c) => c.evidence.some((e) => e.is_planted));
+    assert.ok(planted.length >= 3, `planted: ${planted.length}`);
+    // Planted evidence must not itself become the tell for innocence.
+    assert.ok(SEED_CASES.some((c) => c.correct_verdict === 'not_guilty' && !c.evidence.some((e) => e.is_planted)));
+  });
+
+  it('never repeats a charge', () => {
+    const charges = SEED_CASES.map((c) => c.charge);
+    assert.equal(new Set(charges).size, charges.length);
+  });
+
   it('carries a mix of answerable and unanswerable cases', () => {
     // GDD 3.3 — if every case had a right answer the game would be a quiz.
     const ambiguous = SEED_CASES.filter((c) => c.correct_verdict === 'ambiguous');
@@ -120,6 +204,13 @@ describe('seedCaseFor', () => {
 
   it('cycles rather than running out', () => {
     assert.equal(seedCaseFor(SEED_CASES.length + 1).title, SEED_CASES[0]!.title);
+    assert.equal(seedCaseFor(SEED_CASES.length + 1), SEED_CASES[0]);
+  });
+
+  it('reaches every case in the docket before repeating one', () => {
+    const served = Array.from({ length: SEED_CASES.length }, (_, i) => seedCaseFor(i + 1));
+    assert.equal(new Set(served).size, SEED_CASES.length);
+    served.forEach((c, i) => assert.equal(c, SEED_CASES[i]));
   });
 });
 

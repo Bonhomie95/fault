@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Svg, {
   Circle,
@@ -7,6 +7,7 @@ import Svg, {
   Ellipse,
   G,
   Line,
+  LinearGradient,
   Path,
   RadialGradient,
   Rect,
@@ -15,26 +16,24 @@ import Svg, {
 import Animated, {
   Easing,
   useAnimatedProps,
+  useAnimatedStyle,
   useSharedValue,
-  withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { SuspectStage } from '@/components/suspect/SuspectStage';
-import type { TrialExpression } from '@/components/suspect/SuspectModel';
+import { Actor } from '@/components/cast/Actor';
+import { EYES_PX, HEAD_PX, SPRITE_H, SPRITE_W } from '@/components/cast/sprites';
 import type { ClientCase } from '@/lib/api';
+import type { Casting } from '@/lib/cast';
+import { faceForTone, listeningFace, type Utterance } from '@/lib/courtroom';
 import {
-  amplify,
-  blend,
   blinkPeriodMs,
   defendantExpression,
   EXPRESSIONS,
-  intensityFor,
   postureFor,
   uncannyFor,
   witnessExpression,
+  type Expression,
   type ExpressionDeltas,
-  type Posture,
   type RoomState,
 } from './expression';
 import { useReducedMotion } from '@/lib/motion';
@@ -89,7 +88,6 @@ const CLOTHES = ['#2E3440', '#3B3A36', '#243B33', '#40323C', '#1F2933', '#4A3B2A
 const TIE_TONES = ['#20242B', '#2A2118', '#22303A', '#3A2028', '#1C2620', '#3A3630'];
 const LIP_TONES = ['#8E4B45', '#A65A52', '#7A3F3A', '#9B5048'];
 const LIPSTICK = ['#B4322E', '#9C2A46', '#C24B3E', '#7E2233'];
-const SHIRT = '#D8D2C6';
 
 type Attire = 'suit' | 'blazer' | 'collar' | 'casual' | 'turtleneck';
 type HairStyle = 'bald' | 'buzz' | 'short' | 'receding' | 'mid' | 'long';
@@ -710,68 +708,7 @@ function Face({ seed, appearance, r, expr, blink = 0, gazeError = 0 }: FaceProps
   );
 }
 
-/** Collars, lapels, ties, turtlenecks — the attire channel, drawn onto the
- *  shoulders. Independent of the face. */
-function AttireLayer({ f, r, ry }: { f: Geom; r: number; ry: number }) {
-  const y0 = ry * 0.86;
-  if (f.attire === 'turtleneck') {
-    return (
-      <G>
-        <Rect x={-r * 0.46} y={ry * 0.5} width={r * 0.92} height={ry * 0.64} rx={r * 0.22} fill={f.clothes} />
-        <Path d={`M${-r * 0.4} ${ry * 0.68} Q0 ${ry * 0.9} ${r * 0.4} ${ry * 0.68}`} stroke="#000000" strokeOpacity={0.2} strokeWidth={2} fill="none" />
-      </G>
-    );
-  }
-  if (f.attire === 'casual') {
-    return <Path d={`M${-r * 0.55} ${y0} Q0 ${ry * 1.06} ${r * 0.55} ${y0}`} stroke="#000000" strokeOpacity={0.18} strokeWidth={2} fill="none" />;
-  }
-  const shirtV = `M${-r * 0.46} ${y0} L0 ${ry * 1.7} L${r * 0.46} ${y0} Z`;
-  return (
-    <G>
-      <Path d={shirtV} fill={SHIRT} />
-      {f.attire === 'collar' ? (
-        <G stroke="#000000" strokeOpacity={0.15} strokeWidth={1}>
-          <Path d={`M${-r * 0.46} ${y0} L${-r * 0.12} ${ry * 1.12} L${-r * 0.02} ${ry * 0.98} Z`} fill={SHIRT} />
-          <Path d={`M${r * 0.46} ${y0} L${r * 0.12} ${ry * 1.12} L${r * 0.02} ${ry * 0.98} Z`} fill={SHIRT} />
-        </G>
-      ) : (
-        <G>
-          {/* lapels — the same cloth as the jacket, read by their inner edge */}
-          <Path d={`M${-r * 0.46} ${y0} L${-r} ${ry * 1.2} L${-r * 0.5} ${ry * 1.95} L0 ${ry * 1.05} Z`} fill={f.clothes} />
-          <Path d={`M${r * 0.46} ${y0} L${r} ${ry * 1.2} L${r * 0.5} ${ry * 1.95} L0 ${ry * 1.05} Z`} fill={f.clothes} />
-          <Path d={`M${-r * 0.46} ${y0} L0 ${ry * 1.05}`} stroke="#000000" strokeOpacity={0.22} strokeWidth={1.4} fill="none" />
-          <Path d={`M${r * 0.46} ${y0} L0 ${ry * 1.05}`} stroke="#000000" strokeOpacity={0.22} strokeWidth={1.4} fill="none" />
-          {f.attire === 'suit' && (
-            <G>
-              <Path d={`M${-r * 0.12} ${ry * 1.02} L${r * 0.12} ${ry * 1.02} L${r * 0.17} ${ry * 1.8} L0 ${ry * 2} L${-r * 0.17} ${ry * 1.8} Z`} fill={f.tie} />
-              <Path d={`M${-r * 0.1} ${ry * 0.96} L${r * 0.1} ${ry * 0.96} L${r * 0.13} ${ry * 1.08} L${-r * 0.13} ${ry * 1.08} Z`} fill={f.tie} />
-            </G>
-          )}
-        </G>
-      )}
-    </G>
-  );
-}
 
-interface FigureProps {
-  seed: number;
-  appearance: number;
-  r: number;
-  accent: string;
-  focused: boolean;
-  /** Scene-space centre of the head. */
-  cx: number;
-  cy: number;
-  /** What their face is doing. Offsets on the geometry — see expression.ts. */
-  expr?: ExpressionDeltas;
-  blink?: number;
-  /** How they hold themselves. The body-language channel, from the server. */
-  posture?: Posture;
-  /** Gaze error, in eye-widths. The uncanny channel, from the server. */
-  gazeError?: number;
-}
-
-/** A person: hair, shoulders, attire, a neck, and a face, lit if the subject. */
 /**
  * One person, drawn alone at whatever size you ask for.
  *
@@ -812,78 +749,9 @@ export function StandaloneFace({
   );
 }
 
-function Figure({ seed, appearance, r, accent, focused, cx, cy, expr, blink, posture, gazeError = 0 }: FigureProps) {
-  const f = faceGeom(seed, appearance);
-  const rx = r * f.width;
-  const ry = r * f.length;
-  const long = f.hairStyle === 'long';
-  const mid = f.hairStyle === 'mid';
-  return (
-    <G x={cx} y={cy}>
-      {/* the accent only ever touches whoever is the subject — never the face
-          itself, or the colour would become the tell instead of the features */}
-      {focused && (
-        <Ellipse cx={0} cy={ry * 0.2} rx={r * 2.1} ry={r * 2.4} fill={accent} opacity={0.14} />
-      )}
-      {/* long/mid hair falls behind the head and shoulders */}
-      {long && <Ellipse cx={0} cy={ry * 0.34} rx={rx * 1.34} ry={ry * 1.42} fill={f.hair} />}
-      {mid && <Ellipse cx={0} cy={0} rx={rx * 1.2} ry={ry * 1.06} fill={f.hair} />}
-      {/* shoulders / jacket — rolled forward and inward by the body-language
-          channel. A hunched defendant is not guiltier; the game is watching
-          whether the player behaves as though they are. */}
-      <Path
-        d={`M${-r * (1.9 - (posture?.shoulderRoll ?? 0) * 0.045)} ${ry * 2.4} Q${-r * 1.7} ${ry * (1.05 + (posture?.shoulderRoll ?? 0) * 0.02)} ${-r * 0.55} ${ry * 0.82} L${r * 0.55} ${ry * 0.82} Q${r * 1.7} ${ry * (1.05 + (posture?.shoulderRoll ?? 0) * 0.02)} ${r * (1.9 - (posture?.shoulderRoll ?? 0) * 0.045)} ${ry * 2.4} Z`}
-        fill={f.clothes}
-      />
-      {/* neck */}
-      {f.attire !== 'turtleneck' && (
-        <G>
-          <Rect x={-r * 0.28} y={ry * 0.62} width={r * 0.56} height={ry * 0.4} fill={f.skin} />
-          <Rect x={-r * 0.28} y={ry * 0.62} width={r * 0.56} height={ry * 0.4} fill="#000000" opacity={0.12} />
-        </G>
-      )}
-      <AttireLayer f={f} r={r} ry={ry} />
-      {/* The head tilts, the shoulders do not. A whole figure leaning reads as
-          a pose; a head alone reads as a person reacting. Rotated about the
-          base of the neck rather than the centre of the face, or the head
-          slides off the shoulders. */}
-      <G
-        rotation={expr?.headTilt ?? 0}
-        originX={0}
-        originY={ry * 0.7}
-        y={posture?.headDrop ?? 0}
-      >
-        <Face
-          seed={seed}
-          appearance={appearance}
-          r={r}
-          expr={expr}
-          blink={blink}
-          gazeError={gazeError}
-        />
-      </G>
-    </G>
-  );
-}
-
 /* ------------------------------------------------------------------ *
  * The room and its furniture.
  * ------------------------------------------------------------------ */
-
-function hashName(name: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < name.length; i++) {
-    h ^= name.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return Math.abs(h % 200);
-}
-
-/** Faces for everyone not on trial — derived, so nobody is a clone. */
-function appearanceForSeed(seed: number): number {
-  const x = Math.sin(seed * 57.13) * 9371.7;
-  return (x - Math.floor(x)) * 100;
-}
 
 /**
  * Where the "camera" sits for each tab. In 2D this is a content transform, not
@@ -899,7 +767,7 @@ const SCENE_H = 720;
 const ACCUSED = { x: 200, y: 250 };
 /** Where the eyes are on the accused: `Figure` puts them 0.06 of a face length
  *  above its centre, and a face is 1.14 head radii long. Kept here because the
- *  model stands on the same spot — see suspect/SuspectStage. */
+ *  sprite stands on the same spot — see cast/Actor. */
 const EYES_Y = 246;
 const DEFENDANT_ZOOM = 1.4;
 
@@ -915,7 +783,9 @@ const FRAMES: Record<DossierTab, { tx: number; ty: number; s: number }> = {
   // tab where that is not a detail: it exists to let you read that face.
   defendant: frame(ACCUSED.x, ACCUSED.y, DEFENDANT_ZOOM, 178),
   evidence: frame(200, 470, 1.32, 250),
-  witnesses: frame(315, 282, 1.5, 214),
+  // Anchored low enough that the witness's whole head clears the tab strip;
+  // the case screen starts the witness cards below their chin to match.
+  witnesses: frame(315, 282, 1.5, 272),
   arguments: frame(200, 320, 1.2, 226),
 };
 
@@ -938,6 +808,47 @@ function eyesFrame(eyesY: number, width: number, height: number) {
 
 const AnimatedG = Animated.createAnimatedComponent(G);
 
+/**
+ * Where each person stands, by their EYES, and how big their head is — both
+ * in scene units. The accused matches the marks the camera frames above
+ * (EYES_Y); everyone else is placed where the room has always put them.
+ */
+const MARKS = {
+  accused: { x: ACCUSED.x, y: EYES_Y, head: 66 },
+  witness: { x: 315, y: 282, head: 36 },
+  prosecution: { x: 116, y: 324, head: 31 },
+  defence: { x: 284, y: 324, head: 31 },
+} as const;
+
+/** A box sized and placed so the sprite's eyes land on a mark. */
+function OnMark({
+  mark,
+  children,
+  dim = 1,
+}: {
+  mark: { x: number; y: number; head: number };
+  children: React.ReactNode;
+  /** How present this person is on the current tab. See `presence`. */
+  dim?: number;
+}) {
+  const k = mark.head / HEAD_PX;
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        opacity: dim,
+        position: 'absolute',
+        left: mark.x - EYES_PX.x * k,
+        top: mark.y - EYES_PX.y * k,
+        width: SPRITE_W * k,
+        height: SPRITE_H * k,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
 interface SceneProps {
   activeCase: ClientCase;
   tab: DossierTab;
@@ -958,10 +869,14 @@ interface SceneProps {
    * Where the accused's eyes should sit, in screen pixels.
    *
    * The defendant tab only. Supplied by the case screen because only it knows
-   * how tall the header ended up and therefore where the plea bubble hangs —
-   * see eyesFrame.
+   * how tall the header ended up and therefore where the speech hangs — see
+   * eyesFrame.
    */
   eyesY?: number;
+  /** Who plays whom. See lib/cast. */
+  casting: Casting;
+  /** Whoever is talking right now, if anyone. See lib/courtroom. */
+  utterance: Utterance | null;
 }
 
 export const CourtroomScene = memo(function CourtroomScene({
@@ -972,20 +887,11 @@ export const CourtroomScene = memo(function CourtroomScene({
   remaining,
   tensionAt,
   eyesY,
+  casting,
+  utterance,
 }: SceneProps) {
   const reduced = useReducedMotion();
   const accent = activeCase.accent;
-
-  /**
-   * Whether the accused is the model or the drawing.
-   *
-   * Both are always mounted and the drawing sits underneath, so there is never
-   * a frame with nobody in the dock. It retires only once the .glb has parsed
-   * AND the GL context has proved it can be trusted — see three/glCapability
-   * for what "trusted" has to mean here: expo-gl will report WebGL2, highp and
-   * a clean sixty frames a second and still put nothing on the screen.
-   */
-  const [modelUp, setModelUp] = useState(false);
 
   // Framing — a quick cut between marks, eased. Reduced motion makes it instant.
   const { width: screenW, height: screenH } = useWindowDimensions();
@@ -1009,50 +915,65 @@ export const CourtroomScene = memo(function CourtroomScene({
     s.value = withTiming(fr.s, cfg);
   }, [tab, reduced, tx, ty, s, frameFor]);
 
-  const frameProps = useAnimatedProps(() => ({
-    transform: `translate(${tx.value} ${ty.value}) scale(${s.value})`,
+  /**
+   * AN ARRAY, NOT AN SVG TRANSFORM STRING.
+   *
+   * `transform="translate(x y) scale(s)"` is valid SVG and react-native-svg
+   * parses it happily on the old architecture and on web. Under Fabric it is
+   * a native prop whose converter expects a vector, and a string makes it
+   * fail — `react_native_expect failure: value.hasType<std::vector<RawValue>>()`,
+   * once per frame, which on the case screen is fourteen hundred times before
+   * anyone has touched anything. It is logged at the C++ layer and never
+   * reaches JS, so the app simply misbehaves in silence: the camera does not
+   * move and the screen stops answering. The RN transform array converts.
+   *
+   * Two of them — one per Svg — because an animated-props object belongs to
+   * one component. The room behind the people and the furniture in front of
+   * them must move as one, and reading the same three values is how.
+   */
+  const backProps = useAnimatedProps(() => ({
+    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: s.value }],
+  }));
+  const frontProps = useAnimatedProps(() => ({
+    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: s.value }],
   }));
 
-  // The accused breathes. Nobody holds still while being judged.
-  const breath = useSharedValue(0);
-  useEffect(() => {
-    if (reduced) {
-      breath.value = 0;
-      return;
-    }
-    breath.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2300, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 2300, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1,
-    );
-  }, [reduced, breath]);
-
-  // Declared after posture/uncanny below — see the note there. The shared
-  // values are set up here; the transform that reads them is built lower down.
-
+  /**
+   * The people, on a plain view that reproduces the Svg's mapping.
+   *
+   * The Svg is drawn with preserveAspectRatio slice — scaled to COVER and
+   * centred — so a scene point lands at `left + (tx + x * s) * cover`. The
+   * transforms below are that expression, outermost first, about the top-left
+   * corner. They cannot live inside the Svg: these are images, and an image
+   * in an Svg is a bitmap scaled by the vector renderer.
+   */
+  const cover = Math.max(screenW / SCENE_W, screenH / SCENE_H);
+  const left = (screenW - SCENE_W * cover) / 2;
+  const top = (screenH - SCENE_H * cover) / 2;
+  const stageStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: left },
+      { translateY: top },
+      { scale: cover },
+      { translateX: tx.value },
+      { translateY: ty.value },
+      { scale: s.value },
+    ],
+  }));
 
   const d = activeCase.defendant;
   const witnesses = activeCase.witnesses;
   const focusW = witnesses[focusedWitness];
+  const witnessRole = focusedWitness === 1 ? 'witness2' : 'witness1';
 
   /* ---------------------------------------------------------------- *
    * Expression.
    *
-   * Everything here reads room state and a seed. Nothing reads the verdict,
-   * because the verdict is not on this device — and that is the point, not a
-   * limitation to work around. A defendant who reacts to WHICHEVER exhibit you
-   * lift is the game working on you; one who reacts to the incriminating
-   * exhibit would be the game answering its own question.
-   *
-   * Interpolated on the JS thread rather than through Reanimated, deliberately.
-   * The deltas feed SVG path data — brow lines, mouth curves, lid arcs — which
-   * cannot be driven from the UI thread without an animated component per
-   * shape. And it does not need to be: an expression changes when the player
-   * changes tab or lifts an exhibit, which is a handful of times a minute, not
-   * sixty times a second. The breathing stays on Reanimated because it IS
-   * continuous and it is only a transform.
+   * Everything here reads room state, a seed and who is talking. Nothing
+   * reads the verdict, because the verdict is not on this device — and that
+   * is the point, not a limitation to work around. A defendant who reacts to
+   * WHICHEVER exhibit you lift is the game working on you; one who reacts to
+   * the incriminating exhibit would be the game answering its own question.
    * ---------------------------------------------------------------- */
   const room: RoomState = {
     tab,
@@ -1063,37 +984,31 @@ export const CourtroomScene = memo(function CourtroomScene({
     witnessSpeaking: tab === 'witnesses' && focusW !== undefined,
     remaining,
     tensionAt,
-    // The other two channels the server rolled blind to the verdict. The face
-    // is only one of the three things a juror reads off a person.
     demeanour: d.demeanour ?? 50,
     oddity: d.oddity ?? 50,
   };
 
-  /**
-   * Which expression, then how hard — resolved to PRIMITIVES first.
-   *
-   * The name is a string and the intensity is a number, and that matters more
-   * than it looks. `amplify()` builds a fresh object on every call, so
-   * deriving the target deltas inline made them a new reference on every
-   * single render — and the transition effect below depends on them.
-   *
-   * The result was a loop: effect runs, starts an interval, the interval
-   * setStates, the component re-renders, `target` is a new object, the effect
-   * tears down and restarts with a fresh `start` timestamp. `t` could never
-   * reach 1, so the face crawled a fraction of a percent toward its expression
-   * and stayed there — while re-rendering thirty times a second for the whole
-   * 120-second case.
-   *
-   * Memoising on the primitives fixes both halves: the effect fires only when
-   * the expression or the intensity genuinely changes, and the transition is
-   * allowed to finish.
-   *
-   * (The React Compiler is enabled for this project and might well have
-   * memoised this anyway. Correctness that depends on a compiler optimisation
-   * is not correctness.)
-   */
-  const expressionName = defendantExpression(d.portraitSeed, room);
-  const intensity = intensityFor(room);
+  const speaker = utterance?.speaker ?? null;
+  const said = (who: string) => (speaker === who ? utterance!.text : null);
+
+  // The accused: their own line's tone while they speak; how they take it
+  // while someone else does; the room otherwise.
+  const accusedFace: Expression =
+    speaker === 'defendant'
+      ? faceForTone(utterance!.tone)
+      : speaker
+        ? listeningFace(d.portraitSeed, speaker)
+        : defendantExpression(d.portraitSeed, room);
+
+  const witnessFace: Expression =
+    speaker === witnessRole
+      ? faceForTone(utterance!.tone)
+      : focusW
+        ? witnessExpression(casting[witnessRole].seed, room)
+        : 'neutral';
+
+  const counselFace = (who: 'prosecution' | 'defence'): Expression =>
+    speaker === who ? faceForTone(utterance!.tone) : speaker === 'defendant' ? 'tense' : 'neutral';
 
   /**
    * Posture and strangeness, alongside the expression rather than inside it.
@@ -1116,134 +1031,16 @@ export const CourtroomScene = memo(function CourtroomScene({
   );
 
   /**
-   * Breathing, damped by stillness and offset by slump.
-   *
-   * Declared here rather than beside the shared value because it reads
-   * `uncanny` and `posture`, and both depend on `focusW` resolving first.
-   * Nobody holds as still as `stillness: 1` — which is exactly why it
-   * registers as wrong long before it registers at all.
-   */
-  const sway = 1 - uncanny.stillness;
-  const slump = posture.slump;
-  const breathProps = useAnimatedProps(() => ({
-    transform: `translate(0 ${(breath.value * 3 - 1.5) * sway + slump})`,
-  }));
-
-  const target = useMemo(
-    () => amplify(EXPRESSIONS[expressionName], intensity),
-    [expressionName, intensity],
-  );
-
-  const witnessName = focusW?.name ?? null;
-  const witnessExpr = useMemo(() => {
-    if (!witnessName) return EXPRESSIONS.neutral;
-    return amplify(
-      EXPRESSIONS[witnessExpression(hashName(witnessName), room)],
-      intensity,
-    );
-    // `room` is rebuilt every render; the fields this actually reads are the
-    // tab and the witness, both of which are in the list.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [witnessName, tab, intensity]);
-
-  /**
-   * Eased, never cut.
-   *
-   * A face that snaps between expressions reads as a sprite swap rather than a
-   * person. This walks from whatever was on screen toward the new target over
-   * half a second, at 30fps — about fifteen renders of one small subtree, once
-   * per tab change.
-   */
-  const [shown, setShown] = useState<ExpressionDeltas>(EXPRESSIONS.neutral);
-  const fromRef = useRef<ExpressionDeltas>(EXPRESSIONS.neutral);
-
-  useEffect(() => {
-    if (reduced) {
-      fromRef.current = target;
-      setShown(target);
-      return;
-    }
-
-    const from = fromRef.current;
-    const start = Date.now();
-    const DURATION = 520;
-
-    const id = setInterval(() => {
-      const t = Math.min(1, (Date.now() - start) / DURATION);
-      // Ease in-out, so the movement starts and settles rather than sliding.
-      const eased = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
-      const next = blend(from, target, eased);
-      setShown(next);
-      if (t >= 1) {
-        fromRef.current = target;
-        clearInterval(id);
-      }
-    }, 33);
-
-    return () => clearInterval(id);
-  }, [target, reduced]);
-
-  /**
-   * Blinking.
-   *
-   * Purely decorative, and it is most of what separates "a face" from "someone
-   * waiting to be judged". Seeded per person, so a fast blinker and a slow one
-   * are genuinely different people — and a returning echo blinks the way they
-   * did last time, which is the recognition the Echo System is built on,
-   * arriving before the player has read the name.
-   */
-  const [blink, setBlink] = useState(0);
-
-  useEffect(() => {
-    if (reduced) {
-      setBlink(0);
-      return;
-    }
-
-    // Every timer this loop creates, so none outlives the component. The
-    // first version kept only the most recent pair in two `let`s, which meant
-    // a blink in flight at unmount still fired its setState.
-    const pending = new Set<ReturnType<typeof setTimeout>>();
-    const later = (fn: () => void, ms: number) => {
-      const id = setTimeout(() => {
-        pending.delete(id);
-        fn();
-      }, ms);
-      pending.add(id);
-    };
-
-    // Multiplied by the uncanny stretch. A person who barely blinks is one of
-    // the oldest and least nameable ways to unsettle somebody.
-    const period = blinkPeriodMs(d.portraitSeed) * uncanny.blinkStretch;
-    const loop = setInterval(() => {
-      setBlink(1);
-      later(() => setBlink(0.5), 70);
-      later(() => setBlink(0), 150);
-    }, period);
-
-    return () => {
-      clearInterval(loop);
-      for (const id of pending) clearTimeout(id);
-      pending.clear();
-    };
-  }, [reduced, d.portraitSeed, uncanny.blinkStretch]);
-
-  /**
    * The room, described.
    *
-   * This scene had no accessibility props at all. It is the emotional centre
-   * of the game — the whole design rests on the player looking at a face and
-   * being worked on by it — and to a screen reader it did not exist.
-   *
-   * The description is deliberately careful about ONE thing: it says who is in
-   * the room and what the room is doing, and it does not editorialise about
-   * the defendant's face. `appearance` is the variable the game measures the
-   * player against, and a label that said "a hard-faced man" would hand a
-   * VoiceOver user a conclusion a sighted player has to reach themselves. It
-   * names the tab's subject; the reading stays the reader's.
+   * It says who is in the room and what the room is doing, and it does not
+   * editorialise about the defendant's face. `appearance` is the variable the
+   * game measures the player against, and a label that said "a hard-faced man"
+   * would hand a VoiceOver user a conclusion a sighted player has to reach
+   * themselves. It names the tab's subject; the reading stays the reader's.
    */
   const sceneLabel = (() => {
-    const where = `The courtroom. ${d.name} stands in the light, on trial.`;
+    const where = `The courtroom. ${d.name} stands in the dock, on trial.`;
     switch (tab) {
       case 'defendant':
         return `${where} The camera is on their face.`;
@@ -1258,193 +1055,269 @@ export const CourtroomScene = memo(function CourtroomScene({
     }
   })();
 
-  const roomSvg = (
-    <Svg
-      width="100%"
-      height="100%"
-      viewBox={`0 0 ${SCENE_W} ${SCENE_H}`}
-      preserveAspectRatio="xMidYMid slice"
-      accessible
-      accessibilityRole="image"
-      accessibilityLabel={sceneLabel}>
-      <Defs>
-        {/* the one lit thing in the room is the person on trial */}
-        <RadialGradient id="spot" cx="50%" cy="30%" rx="60%" ry="55%">
-          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.12} />
-          <Stop offset="0.55" stopColor="#FFFFFF" stopOpacity={0.03} />
-          <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0} />
-        </RadialGradient>
-        <RadialGradient id="vign" cx="50%" cy="42%" rx="75%" ry="75%">
-          <Stop offset="0.6" stopColor="#000000" stopOpacity={0} />
-          <Stop offset="1" stopColor="#000000" stopOpacity={0.55} />
-        </RadialGradient>
-      </Defs>
-
-      {/* the room itself, in near-black, oversized so no framing move shows an edge */}
-      <Rect x={-400} y={-400} width={1200} height={1520} fill="#0D0D0D" />
-
-      <AnimatedG animatedProps={frameProps}>
-        {/* accent wash on the back wall — the case's one colour */}
-        <Rect x={-200} y={-40} width={800} height={220} fill={accent} opacity={0.05} />
-
-        {/* the public gallery — somebody came to watch. Shapes, not faces. */}
-        <G opacity={0.9}>
-          <Rect x={40} y={150} width={320} height={44} rx={4} fill="#141417" />
-          <Rect x={40} y={110} width={320} height={40} rx={4} fill="#101013" />
-          {Array.from({ length: 7 }, (_, i) => (
-            <G key={`g0-${i}`}>
-              <Circle cx={64 + i * 46} cy={150} r={12} fill="#1C1C22" />
-              <Rect x={50 + i * 46} y={158} width={28} height={24} rx={6} fill="#181820" />
-            </G>
-          ))}
-          {Array.from({ length: 7 }, (_, i) => (
-            <G key={`g1-${i}`}>
-              <Circle cx={86 + i * 46} cy={112} r={11} fill="#17171C" />
-              <Rect x={73 + i * 46} y={119} width={26} height={22} rx={6} fill="#141419" />
-            </G>
-          ))}
-        </G>
-
-        {/* the judge's bench, behind everything, unoccupied */}
-        <Rect x={96} y={186} width={208} height={70} rx={3} fill="#121210" />
-        <Rect x={112} y={176} width={176} height={16} rx={3} fill="#17170F" />
-
-        {/* the spotlight, cast down the accused */}
-        <Ellipse cx={ACCUSED.x} cy={ACCUSED.y - 30} rx={150} ry={230} fill="url(#spot)" />
-
-        {/* witness stand, to the right */}
-        <Rect x={280} y={300} width={78} height={70} rx={3} fill="#171714" />
-        <Rect x={272} y={292} width={94} height={14} rx={3} fill="#1C1C17" />
-
-        {/* the exhibit table — the only other lit surface */}
-        <Rect x={92} y={452} width={216} height={16} rx={2} fill="#26261F" />
-        <Rect x={104} y={468} width={192} height={78} fill="#131311" />
-        {/* the three exhibits laid out on it */}
-        {activeCase.evidence.slice(0, 3).map((e, i) => {
-          const ex = 150 + i * 50;
-          const open = examinedEvidence === e.id && tab === 'evidence';
-          return (
-            <G key={e.id}>
-              {open && <Circle cx={ex} cy={446} r={22} fill={accent} opacity={0.2} />}
-              <Rect
-                x={ex - 15}
-                y={432}
-                width={30}
-                height={20}
-                rx={2}
-                fill={open ? accent : '#8A8378'}
-                opacity={open ? 0.9 : 0.75}
-              />
-              <Rect x={ex - 15} y={432} width={30} height={20} rx={2} fill="#000000" opacity={0.12} />
-            </G>
-          );
-        })}
-
-        {/* prosecution and defence, flanking the accused and talking past him */}
-        <Figure
-          seed={hashName(`${activeCase.id}-prosecution`)}
-          appearance={appearanceForSeed(hashName(`${activeCase.id}-prosecution`))}
-          r={30}
-          accent={accent}
-          focused={tab === 'arguments'}
-          cx={118}
-          cy={330}
-        />
-        <Figure
-          seed={hashName(`${activeCase.id}-defence`)}
-          appearance={appearanceForSeed(hashName(`${activeCase.id}-defence`))}
-          r={30}
-          accent={accent}
-          focused={tab === 'arguments'}
-          cx={282}
-          cy={330}
-        />
-
-        {/* the witness at the stand */}
-        {focusW && (
-          <Figure
-            seed={hashName(focusW.name)}
-            appearance={appearanceForSeed(hashName(focusW.name))}
-            r={34}
-            accent={accent}
-            focused={tab === 'witnesses'}
-            cx={315}
-            cy={286}
-            // Static rather than eased: the witness is not the face the game is
-            // measuring, and animating them would spend frames drawing
-            // attention away from the one that is. They still have a face
-            // doing something, which is the point — one of them is lying.
-            expr={witnessExpr}
-          />
-        )}
-
-        {/* THE ACCUSED. Stands where the light is. The one face the game is for.
-            Drawn only while the model is not: two of him is worse than either. */}
-        {!modelUp && (
-        <AnimatedG animatedProps={breathProps}>
-          <Figure
-            seed={d.portraitSeed}
-            appearance={d.appearance}
-            r={62}
-            accent={accent}
-            focused={tab === 'defendant'}
-            cx={ACCUSED.x}
-            cy={ACCUSED.y}
-            expr={shown}
-            blink={blink}
-            posture={posture}
-            gazeError={uncanny.gazeError}
-          />
-        </AnimatedG>
-        )}
-      </AnimatedG>
-    </Svg>
-  );
+  const svgProps = {
+    width: '100%',
+    height: '100%',
+    viewBox: `0 0 ${SCENE_W} ${SCENE_H}`,
+    preserveAspectRatio: 'xMidYMid slice',
+  } as const;
 
   return (
     <View style={StyleSheet.absoluteFill}>
-      {roomSvg}
-
-      {/* The accused in three dimensions, standing on the same mark and moving
-          with the same camera. Nothing in the room is drawn in front of him —
-          he is the last thing in the scene graph — so this can sit straight on
-          top of the drawing without losing any of the furniture. */}
-      <SuspectStage
-        seed={d.portraitSeed}
-        tx={tx}
-        ty={ty}
-        s={s}
-        onReady={setModelUp}
-        pose={{
-          expression: expressionName as TrialExpression,
-          blink,
-          // The 2D face slides the pupils; the model aims each eye about its
-          // own centre. Same input, and it has to be scaled: gazeError is in
-          // head-radius units and this is a fraction of full deflection.
-          gazeX: (target.gazeX + uncanny.gazeError) * 2.2,
-          gazeY: target.gazeY * 2.2,
-          slump: Math.min(1, (posture.slump + posture.headDrop) / 9),
-        }}
-      />
-
-      {/* darkened corners, so the eye goes to the lit centre. Above the model,
-          because the vignette is the room's light and he is standing in it. */}
+      {/* THE ROOM, behind everyone. */}
       <Svg
-        width="100%"
-        height="100%"
-        viewBox={`0 0 ${SCENE_W} ${SCENE_H}`}
-        preserveAspectRatio="xMidYMid slice"
-        pointerEvents="none"
+        {...svgProps}
         style={StyleSheet.absoluteFill}
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={sceneLabel}
       >
         <Defs>
-          <RadialGradient id="vign2" cx="50%" cy="42%" rx="75%" ry="75%">
+          {/* the one lit thing in the room is the person on trial */}
+          <RadialGradient id="spot" cx="50%" cy="30%" rx="60%" ry="55%">
+            <Stop offset="0" stopColor="#FFF4E4" stopOpacity={0.16} />
+            <Stop offset="0.55" stopColor="#FFF4E4" stopOpacity={0.04} />
+            <Stop offset="1" stopColor="#FFF4E4" stopOpacity={0} />
+          </RadialGradient>
+          <LinearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#15130F" />
+            <Stop offset="1" stopColor="#0D0D0C" />
+          </LinearGradient>
+        </Defs>
+
+        {/* the room itself, oversized so no framing move shows an edge */}
+        <Rect x={-400} y={-400} width={1200} height={1520} fill="#0D0D0D" />
+
+        <AnimatedG animatedProps={backProps}>
+          {/* panelled back wall, in the case's one colour, barely */}
+          <Rect x={-200} y={-60} width={800} height={300} fill="url(#wall)" />
+          <Rect x={-200} y={-40} width={800} height={220} fill={accent} opacity={0.05} />
+          {Array.from({ length: 11 }, (_, i) => (
+            <Line
+              key={`panel-${i}`}
+              x1={-100 + i * 60}
+              y1={-60}
+              x2={-100 + i * 60}
+              y2={240}
+              stroke="#000000"
+              strokeOpacity={0.35}
+              strokeWidth={1.2}
+            />
+          ))}
+
+          {/* the public gallery — somebody came to watch. Shapes, not faces. */}
+          <G opacity={0.9}>
+            <Rect x={40} y={150} width={320} height={44} rx={4} fill="#141417" />
+            <Rect x={40} y={110} width={320} height={40} rx={4} fill="#101013" />
+            {Array.from({ length: 7 }, (_, i) => (
+              <G key={`g0-${i}`}>
+                <Circle cx={64 + i * 46} cy={150} r={12} fill="#1C1C22" />
+                <Rect x={50 + i * 46} y={158} width={28} height={24} rx={6} fill="#181820" />
+              </G>
+            ))}
+            {Array.from({ length: 7 }, (_, i) => (
+              <G key={`g1-${i}`}>
+                <Circle cx={86 + i * 46} cy={112} r={11} fill="#17171C" />
+                <Rect x={73 + i * 46} y={119} width={26} height={22} rx={6} fill="#141419" />
+              </G>
+            ))}
+          </G>
+
+          {/* the judge's bench, behind everything, unoccupied */}
+          <Rect x={96} y={186} width={208} height={70} rx={3} fill="#121210" />
+          <Rect x={112} y={176} width={176} height={16} rx={3} fill="#17170F" />
+
+          {/* the spotlight, cast down the accused */}
+          <Ellipse cx={ACCUSED.x} cy={ACCUSED.y - 30} rx={150} ry={230} fill="url(#spot)" />
+
+          {/* the accent only ever touches whoever is the subject — never the
+              face itself, or the colour would become the tell */}
+          {tab === 'witnesses' && focusW && (
+            <Ellipse cx={MARKS.witness.x} cy={MARKS.witness.y + 30} rx={70} ry={86} fill={accent} opacity={0.12} />
+          )}
+          {tab === 'arguments' && (
+            <G>
+              <Ellipse cx={MARKS.prosecution.x} cy={MARKS.prosecution.y + 26} rx={62} ry={76} fill={accent} opacity={0.1} />
+              <Ellipse cx={MARKS.defence.x} cy={MARKS.defence.y + 26} rx={62} ry={76} fill={accent} opacity={0.1} />
+            </G>
+          )}
+        </AnimatedG>
+      </Svg>
+
+      {/* THE PEOPLE. Back to front: counsel, the witness, the accused. */}
+      <Animated.View pointerEvents="none" style={[styles.stage, stageStyle]}>
+        <OnMark mark={MARKS.prosecution} dim={presence(tab, 'counsel')}>
+          <Actor
+            who={casting.prosecution.key}
+            expression={counselFace('prosecution')}
+            speaking={said('prosecution')}
+            ready={COUNSEL_READY}
+            blinkPeriod={blinkPeriodMs(casting.prosecution.seed)}
+            reducedMotion={reduced}
+            breathe={0.8}
+          />
+        </OnMark>
+        <OnMark mark={MARKS.defence} dim={presence(tab, 'counsel')}>
+          <Actor
+            who={casting.defence.key}
+            expression={counselFace('defence')}
+            speaking={said('defence')}
+            ready={COUNSEL_READY}
+            blinkPeriod={blinkPeriodMs(casting.defence.seed)}
+            reducedMotion={reduced}
+            breathe={0.8}
+          />
+        </OnMark>
+        {focusW && (
+          <OnMark mark={MARKS.witness} dim={presence(tab, 'witness')}>
+            <Actor
+              // A different person at the stand is a different actor.
+              key={casting[witnessRole].key}
+              who={casting[witnessRole].key}
+              expression={witnessFace}
+              speaking={said(witnessRole)}
+              ready={COUNSEL_READY}
+              blinkPeriod={blinkPeriodMs(casting[witnessRole].seed)}
+              reducedMotion={reduced}
+              breathe={0.9}
+            />
+          </OnMark>
+        )}
+        {/* THE ACCUSED. Stands where the light is. The one face the game is
+            for. Breath is damped by stillness and offset by slump — nobody
+            holds as still as `stillness: 1`, which is exactly why it
+            registers as wrong long before it registers at all. */}
+        <OnMark mark={MARKS.accused} dim={presence(tab, 'accused')}>
+          <Actor
+            who={casting.defendant.key}
+            expression={accusedFace}
+            speaking={said('defendant')}
+            blinkPeriod={blinkPeriodMs(d.portraitSeed) * uncanny.blinkStretch}
+            stillness={uncanny.stillness}
+            slump={posture.slump + posture.headDrop}
+            reducedMotion={reduced}
+            breathe={1.6}
+          />
+        </OnMark>
+      </Animated.View>
+
+      {/* THE FURNITURE IN FRONT OF THEM. The bodies are cut at the chest by
+          the renderer; a rail across that line is what makes a cut-out read
+          as a person standing behind something. */}
+      <Svg {...svgProps} style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Defs>
+          <LinearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#2B2418" />
+            <Stop offset="1" stopColor="#15120C" />
+          </LinearGradient>
+          <LinearGradient id="woodDark" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#1E1A12" />
+            <Stop offset="1" stopColor="#0E0D0A" />
+          </LinearGradient>
+          <RadialGradient id="vign" cx="50%" cy="42%" rx="75%" ry="75%">
             <Stop offset="0.6" stopColor="#000000" stopOpacity={0} />
             <Stop offset="1" stopColor="#000000" stopOpacity={0.55} />
           </RadialGradient>
         </Defs>
-        <Rect x={0} y={0} width={SCENE_W} height={SCENE_H} fill="url(#vign2)" />
+        <AnimatedG animatedProps={frontProps}>
+          {/* counsel tables */}
+          <Rect x={46} y={388} width={140} height={70} fill="url(#woodDark)" />
+          <Rect x={42} y={382} width={148} height={9} rx={2} fill="#2E271B" />
+          <Rect x={214} y={388} width={140} height={70} fill="url(#woodDark)" />
+          <Rect x={210} y={382} width={148} height={9} rx={2} fill="#2E271B" />
+
+          {/* the witness box */}
+          <Rect x={264} y={340} width={102} height={90} fill="url(#wood)" />
+          <Rect x={259} y={333} width={112} height={10} rx={2} fill="#3A3122" />
+          <Rect x={276} y={352} width={78} height={66} fill="none" stroke="#000000" strokeOpacity={0.35} />
+
+          {/* the dock — the accused stands behind its rail */}
+          <Rect x={76} y={396} width={248} height={86} fill="url(#wood)" />
+          <Rect x={70} y={388} width={260} height={11} rx={2} fill="#3F3525" />
+          <Rect x={70} y={388} width={260} height={2} fill="#FFF2DC" opacity={0.12} />
+          {[0, 1, 2].map((i) => (
+            <Rect
+              key={`dock-${i}`}
+              x={90 + i * 76}
+              y={408}
+              width={68}
+              height={62}
+              fill="none"
+              stroke="#000000"
+              strokeOpacity={0.4}
+            />
+          ))}
+
+          {/* the exhibit table — nearest the jury, in front of everything */}
+          <Rect x={92} y={452} width={216} height={16} rx={2} fill="#26261F" />
+          <Rect x={104} y={468} width={192} height={78} fill="#131311" />
+          {activeCase.evidence.slice(0, 3).map((e, i) => {
+            const ex = 150 + i * 50;
+            const open = examinedEvidence === e.id && tab === 'evidence';
+            return (
+              <G key={e.id}>
+                {open && <Circle cx={ex} cy={446} r={22} fill={accent} opacity={0.2} />}
+                <Rect
+                  x={ex - 15}
+                  y={432}
+                  width={30}
+                  height={20}
+                  rx={2}
+                  fill={open ? accent : '#8A8378'}
+                  opacity={open ? 0.9 : 0.75}
+                />
+                <Rect x={ex - 15} y={432} width={30} height={20} rx={2} fill="#000000" opacity={0.12} />
+              </G>
+            );
+          })}
+        </AnimatedG>
+
+        {/* darkened corners, so the eye goes to the lit centre */}
+        <Rect x={0} y={0} width={SCENE_W} height={SCENE_H} fill="url(#vign)" />
       </Svg>
     </View>
   );
+});
+
+/**
+ * How present each person is on each tab.
+ *
+ * The camera frames one subject per tab, and at those zooms the people who are
+ * NOT the subject end up behind the header and the tabs — a rendered face
+ * under the case title is noise the flat drawing never made. They recede into
+ * the dark room rather than vanish: the accused is still in the dock while the
+ * witness speaks, and the player should feel it.
+ */
+function presence(tab: DossierTab, who: 'accused' | 'witness' | 'counsel'): number {
+  switch (tab) {
+    case 'defendant':
+      return 1;
+    case 'evidence':
+      return 0.28;
+    case 'witnesses':
+      return who === 'witness' ? 1 : 0.3;
+    case 'arguments':
+      return who === 'counsel' ? 1 : 0.4;
+  }
+}
+
+/**
+ * What everyone but the accused keeps decoded up front.
+ *
+ * An expression layer is close to a whole portrait (the exporter bakes body
+ * carriage into it), so six of them per person is tens of megabytes across the
+ * room. The accused keeps all six — theirs is the face being read. The others
+ * load an expression the first time they need it, under the dissolve.
+ */
+const COUNSEL_READY: Expression[] = ['neutral'];
+
+const styles = StyleSheet.create({
+  stage: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: SCENE_W,
+    height: SCENE_H,
+    transformOrigin: 'top left',
+  },
 });

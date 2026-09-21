@@ -7,6 +7,7 @@ import { Fonts, Palette, Type } from '@/constants/theme';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
 import { api, type StoreItem, type StoreView } from '@/lib/api';
+import { adsAvailable, showRewarded } from '@/lib/ads';
 import { buy, purchasesAvailable } from '@/lib/purchases';
 import { useGame } from '@/store/game';
 
@@ -24,8 +25,26 @@ import { useGame } from '@/store/game';
  *     prices sit side by side deliberately: a store that hides the free path
  *     is a store that is lying about having one.
  */
+/**
+ * STORE HONESTY.
+ *
+ * Until an IAP SDK is registered (lib/purchases) and an ad network is wired in
+ * (lib/ads), neither real money nor rewarded ads can actually happen — and the
+ * shelf used to show price buttons and a WATCH button anyway, each answering
+ * a tap with "not connected yet". To a player that is a broken store; to App
+ * Review (guideline 2.1, and 3.1.1 for purchasable items that cannot be
+ * purchased) it is a rejection.
+ *
+ * So what cannot be bought is not shown. Merit prices stay — they work, and
+ * they are the honest free path the creed promises. An item that ONLY has a
+ * money price (a Merit bundle, say) disappears entirely until payments exist.
+ * Both checks are read once per render: the backends are registered at
+ * startup, not mid-session.
+ */
 export default function Store() {
   const refreshWallet = useGame((s) => s.refreshWallet);
+  const moneyEnabled = purchasesAvailable();
+  const rewardedEnabled = adsAvailable();
   const [view, setView] = useState<StoreView | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -65,6 +84,32 @@ export default function Store() {
     },
     [busy, load, refreshWallet],
   );
+
+  /**
+   * A rewarded notice. Only reachable once an ad backend is registered; the
+   * server pays against the network's view id, and refuses entirely unless
+   * it can verify views itself (ADS_SERVER_VERIFIED).
+   */
+  const onWatch = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const viewId = await showRewarded();
+      if (!viewId) {
+        setNotice('No notice was available. Nothing was lost.');
+        return;
+      }
+      const res = await api.claimAdReward(viewId);
+      setNotice(`+${res.awarded} Merit.`);
+      await load();
+      await refreshWallet();
+    } catch (err) {
+      setNotice((err as Error).message ?? 'That did not go through.');
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, load, refreshWallet]);
 
   /**
    * Real-money purchase.
@@ -147,7 +192,7 @@ export default function Store() {
 
         {view && (
           <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-            {view.rewardedAdsLeft > 0 && (
+            {rewardedEnabled && view.rewardedAdsLeft > 0 && (
               <View style={[styles.item, styles.rewarded]}>
                 <Text style={styles.itemTitle}>Sit through a notice</Text>
                 <Text style={styles.itemBlurb}>
@@ -155,7 +200,8 @@ export default function Store() {
                   left today. Entirely optional, and never required to play.
                 </Text>
                 <Pressable
-                  onPress={() => setNotice('The ad network is not connected yet.')}
+                  onPress={onWatch}
+                  disabled={busy}
                   style={styles.rewardBtn}
                   accessibilityRole="button"
                   accessibilityLabel={`Watch an advert to earn ${view.rewardedAdMerit} Merit`}
@@ -166,7 +212,9 @@ export default function Store() {
               </View>
             )}
 
-            {view.items.map((item) => (
+            {view.items
+              .filter((item) => item.owned || moneyEnabled || item.meritPrice !== null)
+              .map((item) => (
               <View key={item.id} style={[styles.item, item.owned && styles.itemOwned]}>
                 <View style={styles.itemHead}>
                   <Text style={styles.itemTitle}>{item.title}</Text>
@@ -197,7 +245,7 @@ export default function Store() {
                         </Text>
                       </Pressable>
                     )}
-                    {item.priceMinor !== null && (
+                    {moneyEnabled && item.priceMinor !== null && (
                       <Pressable
                         onPress={() => onBuy(item)}
                         disabled={busy}

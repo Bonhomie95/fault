@@ -7,18 +7,27 @@
     "//": [
       "There was no build configuration at all. Every build was a manual local",
       "one on one Mac, and the Android release keystore existed only on that",
-      "machine — lose it and the Play listing can never be updated again. EAS",
+      "machine \u2014 lose it and the Play listing can never be updated again. EAS",
       "holds the credentials, which is the actual fix for that.",
       "",
       "EXPO_PUBLIC_API_URL is set per profile and MUST be. lib/api throws at",
       "startup in a non-dev build when it is missing, deliberately: the",
       "alternative is an app that ships pointing at localhost and fails every",
-      "request on every device with no clue why."
+      "request on every device with no clue why.",
+      "",
+      "TODO(owner): replace both *.example.invalid hosts below with the real API",
+      "origin (e.g. https://fault-api.onrender.com) before the first store build.",
+      "They are deliberately unresolvable (RFC 2606). A release build that still",
+      "carries one shows a 'cannot reach its server' screen naming this variable",
+      "instead of failing every request as a connection problem \u2014 see lib/api.ts",
+      "and DEPLOY.md."
     ],
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "ios": { "simulator": true },
+      "ios": {
+        "simulator": true
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": ""
       }

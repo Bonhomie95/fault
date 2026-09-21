@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import type { AuthProvider } from '@prisma/client';
 import { env } from '../lib/env.js';
@@ -136,6 +137,52 @@ export function verifyDevice(deviceId: string): VerifiedIdentity {
     throw new Error('device auth is disabled');
   }
   if (deviceId.length < 8) throw new Error('device id too short');
+  // The guest namespace is not reachable from here: a dev device id spelled
+  // like a stored guest subject must not be able to open that guest's account.
+  if (deviceId.startsWith(GUEST_PREFIX)) throw new Error('device id is reserved');
 
   return { provider: 'device', subject: deviceId, email: null };
+}
+
+/**
+ * Guest accounts — the way into a release build without Apple or Google.
+ *
+ * Why this exists: the only provider-free path was the dev bypass above, and
+ * it is (correctly) refused in production because it believes anyone who can
+ * name a device id. So a release build had no door at all on Android until
+ * Google client ids existed, and on iOS the only door was Sign in with Apple —
+ * forcing account creation on a player who just wants to try the game, which
+ * Apple itself pushes back on.
+ *
+ * What makes this safe where the device flow is not: the client generates a
+ * 256-bit secret ONCE (expo-crypto, lib/auth.ts) and keeps it in the keychain
+ * / keystore. That secret is the credential. It is not derived from anything
+ * about the device, so it cannot be guessed or enumerated the way a vendor id
+ * can, and the server never stores it — only its SHA-256, as the identity's
+ * subject. A database dump is therefore not a pile of working guest logins.
+ * (A fast hash is right here, unlike for passwords: the input is 256 bits of
+ * randomness, so there is nothing for a slow hash to protect against.)
+ *
+ * Stored under the existing `device` AuthProvider with a `guest:` subject
+ * prefix, because adding an enum value is a schema migration and the schema
+ * is owned elsewhere. The prefix is the namespace: verifyDevice refuses ids
+ * that start with it, so the dev bypass can never be used to address a guest.
+ *
+ * Replay: the secret is a bearer credential, exactly like a refresh token, and
+ * is protected the same way — TLS in transit, secure storage at rest. There is
+ * no provider to bind a nonce to, so none is asked for.
+ */
+export const GUEST_PREFIX = 'guest:';
+
+/** 32 random bytes, base64url (43 chars) or hex (64 chars). Nothing shorter. */
+const GUEST_SECRET = /^(?:[A-Za-z0-9_-]{43}|[0-9a-f]{64})$/;
+
+export function guestSubject(secret: string): string {
+  return GUEST_PREFIX + createHash('sha256').update(secret).digest('hex');
+}
+
+export function verifyGuest(secret: string): VerifiedIdentity {
+  if (!env.ALLOW_GUEST_AUTH) throw new Error('guest auth is disabled');
+  if (!GUEST_SECRET.test(secret)) throw new Error('guest secret is malformed');
+  return { provider: 'device', subject: guestSubject(secret), email: null };
 }

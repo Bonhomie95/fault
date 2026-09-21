@@ -82,6 +82,79 @@ export const witnessSchema = z.object({
   lie_tell: z.string(),
 });
 
+/**
+ * Who can speak in the room, and what sets them off.
+ *
+ * `cue` is the moment in the player's two minutes that prompts the line: the
+ * defendant tab opening, an exhibit being lifted, a witness being called to
+ * the stand, the arguments being read, or the clock getting short.
+ */
+export const SPEAKERS = ['defendant', 'witness1', 'witness2', 'prosecution', 'defence'] as const;
+export const CUES = ['open', 'e1', 'e2', 'e3', 'witness1', 'witness2', 'arguments', 'late'] as const;
+export const TONES = ['pleading', 'defiant', 'tense', 'ashamed', 'startled', 'calm'] as const;
+
+/**
+ * A line somebody says out loud in the courtroom.
+ *
+ * THESE ARE PRESENTATION, NOT EVIDENCE, and they obey the same rule as the
+ * face: a line must be something the speaker would say whether or not the
+ * defendant did it. An outburst, a pointed question to the juror, a witness
+ * digging in, counsel needling — all of it pulls, none of it answers. A line
+ * that could only come from a guilty (or only from an innocent) defendant
+ * would be the game answering its own question, and the case is rejected for
+ * it rather than shown.
+ */
+export const courtroomLineSchema = z.object({
+  speaker: z.enum(SPEAKERS),
+  cue: z.enum(CUES),
+  tone: z.enum(TONES).catch('tense'),
+  text: z
+    .string()
+    .trim()
+    .min(2)
+    .max(160)
+    .refine((s) => wordCount(s) <= 24, { message: 'a line, not a speech' }),
+});
+
+export type CourtroomLine = z.infer<typeof courtroomLineSchema>;
+
+/**
+ * Lines that would give the answer away, whoever says them.
+ *
+ * The model writes these lines KNOWING the verdict, which is the same trap
+ * presentation.ts describes for the face: asked for verdict-blind dialogue it
+ * will still, now and then, have a guilty defendant mutter "I never meant for
+ * it to go that far". That is a confession, and one of them in a case turns
+ * the whole two minutes into a listening test.
+ *
+ * So the obvious tells are dropped here rather than hoped against: admissions,
+ * "it was an accident", "I'm sorry for what I did" — and a witness conceding
+ * the lie they are hiding ("I never intended to lie…"), which the model
+ * produced within the first live case. Denials are allowed — the
+ * guilty and the innocent both deny — and so are appeals, accusations and
+ * questions. This is a coarse net; the prompt is the fine one.
+ */
+const CONFESSION = [
+  /\bi did it\b/i,
+  /\bi('m| am) guilty\b/i,
+  /\bi confess\b/i,
+  /\b(never|didn'?t|did not) mean(t)? (for it |to)\b/i,
+  /\bit was an accident\b/i,
+  /\bsorry for what i('ve)? did\b/i,
+  /\bi (had|needed) to (do it|take it)\b/i,
+  /\bi only (took|borrowed)\b/i,
+  /\b(he|she|they) (is|are) (lying|telling the truth)\b.*\bi know\b/i,
+  // A witness owning up to the lie the game hides from the juror (Witness.lie).
+  /\b(meant|intended|mean|intend) to lie\b/i,
+  /\bi (lied|was lying|made (it|that) up)\b/i,
+  /\bi (may|might) have (lied|been wrong about what i saw)\b/i,
+];
+
+export function leaksVerdict(text: string): boolean {
+  const t = text.replace(/[’‘]/g, "'");
+  return CONFESSION.some((p) => p.test(t));
+}
+
 export const characterAdditionSchema = z.object({
   name: personName,
   role: z.enum(['defendant', 'witness', 'prosecutor', 'defender', 'victim']),
@@ -144,6 +217,18 @@ export const generatedCaseSchema = z.object({
   /** -1 fully favours defence .. +1 fully favours prosecution. */
   evidence_strength: z.number().min(-1).max(1).default(0),
   character_pool_additions: z.array(characterAdditionSchema).default([]),
+  /** Optional: an older generation, or a model that drops it, still makes a
+   *  case. The client falls back to its own generic lines. Malformed lines are
+   *  dropped one by one rather than sinking the whole case. */
+  courtroom_lines: z
+    .array(z.unknown())
+    .default([])
+    .transform((lines) =>
+      lines.flatMap((l) => {
+        const parsed = courtroomLineSchema.safeParse(l);
+        return parsed.success && !leaksVerdict(parsed.data.text) ? [parsed.data] : [];
+      }),
+    ),
 });
 
 export type GeneratedCase = z.infer<typeof generatedCaseSchema>;
@@ -207,11 +292,15 @@ export interface ClientCase {
     demeanour: number;
     /** 0 unremarkable .. 100 openly strange. Means nothing. */
     oddity: number;
+    /** How their NAME reads — see domain/nameGender. Null when it could be either. */
+    feminine: boolean | null;
   };
   evidence: { id: string; description: string; prosecution_reading: string; defence_reading: string }[];
-  witnesses: { name: string; role: string; testimony: string }[];
+  witnesses: { name: string; role: string; testimony: string; feminine: boolean | null }[];
   prosecutionArgument: string;
   defenceArgument: string;
+  /** What people say out loud in the room. Presentation; see CourtroomLine. */
+  lines: CourtroomLine[];
   /** Names in this case the player has judged before. The Echo System (GDD 2.4)
    *  never announces itself — this only marks who is returning, not how. */
   /**

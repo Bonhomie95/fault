@@ -61,6 +61,7 @@ reportRouter.post('/', requireJuror, reportLimiter, async (req, res) => {
   }
 
   const { kind, subjectId, reason, detail } = parsed.data;
+  let reportedName: string | null = null;
 
   // Verify the subject exists and that this juror could plausibly have seen
   // it. Not to gatekeep reporting — reporting should be easy — but so the
@@ -84,13 +85,35 @@ reportRouter.post('/', requireJuror, reportLimiter, async (req, res) => {
     });
   }
 
+  if (kind === 'juror_name') {
+    // The subject is the `ref` the leaderboard hands out with each row. Same
+    // reason as above: a report must point at a name that exists, or the
+    // moderation queue fills with references to nothing. A juror reporting
+    // their own name is not a report.
+    if (subjectId === userId) {
+      res.status(400).json({ error: 'cannot_report_self' });
+      return;
+    }
+    const named = await prisma.user.findUnique({ where: { id: subjectId }, select: { jurorName: true } });
+    if (!named) {
+      res.status(404).json({ error: 'no such juror' });
+      return;
+    }
+    // The name is copied into the report. Names change (once a day), and a
+    // moderator reading the queue tomorrow needs the one that was reported,
+    // not whatever the player has renamed themselves to since.
+    reportedName = named.jurorName;
+  }
+
   const report = await prisma.contentReport.create({
     data: {
       reporterId: userId,
       kind,
       subjectId,
       reason,
-      detail: detail ?? null,
+      detail: reportedName
+        ? `[name at time of report: ${reportedName}]${detail ? ` ${detail}` : ''}`
+        : (detail ?? null),
     },
   });
 

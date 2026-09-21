@@ -5,7 +5,13 @@ import { ladderFor, tierLabel } from '../domain/jurisdiction.js';
 import { prisma } from '../lib/prisma.js';
 import { requireJuror } from '../middleware/requireJuror.js';
 import { invalidateCaseCache } from '../services/caseGenerator.js';
-import { claimMission, missionsFor, unclaimMission } from '../services/missions.js';
+import { claimMission, MISSIONS, missionMerit, missionsFor, unclaimMission } from '../services/missions.js';
+import { grantMerit } from '../services/economy.js';
+import { districtLadder } from '../domain/districts.js';
+import { rankFor } from '../domain/progression.js';
+import { dailyFor } from '../services/progression.js';
+
+const def = (key: string) => MISSIONS.find((m) => m.key === key);
 import {
   awardXp,
   decideApplication,
@@ -71,6 +77,7 @@ standingRouter.post('/missions/claim', requireJuror, async (req, res) => {
   }
 
   const xp = await claimMission(req.juror.userId, parsed.data.key);
+  const meritDue = xp > 0 ? missionMerit(parsed.data.key) : 0;
   if (xp === 0) {
     res.status(409).json({ error: 'nothing to claim' });
     return;
@@ -88,7 +95,15 @@ standingRouter.post('/missions/claim', requireJuror, async (req, res) => {
     throw err;
   }
 
-  res.json({ xp, rank });
+  // Merit rides along. A failure here is logged, not rolled back: the XP —
+  // the part that moves standing — has landed, and Merit is a ledger entry
+  // the player can see is missing and report.
+  let merit: number | null = null;
+  if (meritDue > 0) {
+    merit = await grantMerit(req.juror.userId, meritDue, 'mission', parsed.data.key).catch(() => null);
+  }
+
+  res.json({ xp: def(parsed.data.key)?.xp ?? xp, merit: meritDue, meritTotal: merit, rank });
 });
 
 // ---- Applying to sit somewhere you are not from ----
@@ -181,7 +196,8 @@ standingRouter.post('/jurisdictions/apply', requireJuror, async (req, res) => {
   if (decision.accepted) {
     await prisma.user.update({
       where: { id: userId },
-      data: { currentCountry: country, currentTier: parsed.data.tier },
+      // A new country is a new map: sit in its first district until more open.
+      data: { currentCountry: country, currentTier: parsed.data.tier, currentDistrict: null },
     });
     // Cases queued for the old bench are meaningless now.
     await invalidateCaseCache(userId);
@@ -195,4 +211,64 @@ standingRouter.post('/jurisdictions/apply', requireJuror, async (req, res) => {
     applicationId: application.id,
     standing: await standingFor(fresh),
   });
+});
+
+// ---- The map: districts that open by rank ----
+
+/** Every district in the current country, with what it takes to open it. */
+standingRouter.get('/districts', requireJuror, async (req, res) => {
+  const user = req.juror.user;
+  res.json({ districts: districtLadder({ ...user, rank: rankFor(user.xp).level }) });
+});
+
+/** Sit in another district. Only an opened one; the cache is for the old seat. */
+standingRouter.post('/districts/select', requireJuror, async (req, res) => {
+  const parsed = z.object({ district: z.string().min(1).max(80) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'district required' });
+    return;
+  }
+  const user = req.juror.user;
+  const ladder = districtLadder({ ...user, rank: rankFor(user.xp).level });
+  const target = ladder.find((d) => d.name === parsed.data.district);
+  if (!target) {
+    res.status(404).json({ error: 'no such district' });
+    return;
+  }
+  if (!target.unlocked) {
+    res.status(403).json({ error: 'locked', message: `Opens at rank ${target.unlockRank}.` });
+    return;
+  }
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { currentDistrict: target.home ? null : target.name },
+  });
+  await invalidateCaseCache(user.id);
+  const fresh = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+  res.json({
+    districts: districtLadder({ ...fresh, rank: rankFor(fresh.xp).level }),
+    standing: await standingFor(fresh),
+  });
+});
+
+// ---- The daily summons ----
+
+standingRouter.post('/daily', requireJuror, async (req, res) => {
+  const user = req.juror.user;
+  const daily = dailyFor(user);
+  if (!daily.available) {
+    res.status(409).json({ error: 'already_collected', message: 'Today’s summons is already answered.' });
+    return;
+  }
+  // Conditional: two taps, one payment.
+  const claimed = await prisma.user.updateMany({
+    where: { id: user.id, OR: [{ lastRewardDay: null }, { lastRewardDay: { not: daily.day } }] },
+    data: { lastRewardDay: daily.day },
+  });
+  if (claimed.count === 0) {
+    res.status(409).json({ error: 'already_collected', message: 'Today’s summons is already answered.' });
+    return;
+  }
+  const merit = await grantMerit(user.id, daily.merit, 'streak', `daily:${daily.day}`);
+  res.json({ merit: daily.merit, meritTotal: merit, day: daily.day });
 });

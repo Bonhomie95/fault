@@ -4,7 +4,15 @@ import { COUNTRIES, districtFor, profileFor } from '../domain/jurisdiction.js';
 import { checkJurorName, NAME_MAX } from '../domain/jurorName.js';
 import { log } from '../lib/log.js';
 import { prisma } from '../lib/prisma.js';
-import { verifyApple, verifyDevice, verifyGoogle, type VerifiedIdentity } from '../services/auth.js';
+import { LEGAL_VERSION } from '../lib/legalText.js';
+import { storeAppleRefreshToken } from '../services/appleTokens.js';
+import {
+  verifyApple,
+  verifyDevice,
+  verifyGoogle,
+  verifyGuest,
+  type VerifiedIdentity,
+} from '../services/auth.js';
 import { getCityState } from '../services/cityState.js';
 import { consumeNonce, issueNonce, nonceStoreReady } from '../services/nonces.js';
 import { issueTokens, revokeAll, rotateRefresh } from '../services/tokens.js';
@@ -14,9 +22,13 @@ import { requireJuror } from '../middleware/requireJuror.js';
 export const authRouter = Router();
 
 const signInSchema = z.object({
-  provider: z.enum(['apple', 'google', 'device']),
-  /** Apple identityToken / Google id_token / a device id in dev. */
-  token: z.string().min(1),
+  provider: z.enum(['apple', 'google', 'guest', 'device']),
+  /**
+   * Apple identityToken / Google id_token / the guest secret / a device id
+   * in dev. Bounded: every one of these is well under 4kb, and an unbounded
+   * string on an unauthenticated route is free work for anyone.
+   */
+  token: z.string().min(1).max(4096),
   /**
    * The nonce this server issued for this attempt, from GET /api/auth/nonce.
    *
@@ -44,7 +56,26 @@ const signInSchema = z.object({
   /** IANA zone from the device, so streaks and daily missions end at the
    *  player's midnight rather than UTC's. */
   timezone: z.string().max(64).optional(),
+  /**
+   * Apple only: the one-time authorization code from the same sheet. Traded
+   * for a refresh token so account deletion can revoke it with Apple
+   * (services/appleTokens). Optional — sign-in never depends on it.
+   */
+  authorizationCode: z.string().min(1).max(2048).optional(),
+  /**
+   * The LEGAL_VERSION of the Terms and Privacy Policy the sign-in screen
+   * showed, sent because the player continued past "By continuing you
+   * confirm you are 13 or older and agree to…". Recorded only if it is the
+   * CURRENT version: an old build agreeing to old terms is not consent to
+   * the new ones, and the consent gate will ask again.
+   */
+  consentVersion: z.string().max(32).optional(),
 });
+
+/** Consent fields to write, if the client showed the current documents. */
+function consentFrom(version: string | undefined) {
+  return version === LEGAL_VERSION ? { consentedAt: new Date(), consentVersion: LEGAL_VERSION } : {};
+}
 
 /**
  * A nonce, for one sign-in attempt.
@@ -74,6 +105,9 @@ async function verify(
   nonce: string | undefined,
 ): Promise<VerifiedIdentity> {
   if (provider === 'device') return verifyDevice(token);
+  // A guest secret is its own proof (services/auth.ts); there is no provider
+  // for a nonce to bind to.
+  if (provider === 'guest') return verifyGuest(token);
 
   // Both real providers must present a nonce this server issued and has not
   // already spent. Consuming it here — before the token is verified — means a
@@ -100,7 +134,8 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
     return;
   }
 
-  const { provider, token, nonce, jurorName, country, timezone } = parsed.data;
+  const { provider, token, nonce, jurorName, country, timezone, authorizationCode, consentVersion } =
+    parsed.data;
 
   let identity: VerifiedIdentity;
   try {
@@ -118,14 +153,20 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
   });
 
   if (existing) {
-    await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: existing.userId },
       data: {
         lastSeenAt: new Date(),
         // People travel and phones move; keep the day boundary where they are.
         ...(timezone ? { timezone } : {}),
+        ...consentFrom(consentVersion),
       },
+      select: { consentVersion: true },
     });
+
+    if (provider === 'apple' && authorizationCode) {
+      void storeAppleRefreshToken(existing.userId, authorizationCode);
+    }
 
     res.json({
       userId: existing.userId,
@@ -137,6 +178,7 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
       // the client needs the count to tell those apart, and without it the
       // letter was skipped forever for anyone who quit before their first case.
       casesHeard: await prisma.verdictRecord.count({ where: { userId: existing.userId } }),
+      consentRequired: updated.consentVersion !== LEGAL_VERSION,
       ...(await issueTokens(existing.userId)),
     });
     return;
@@ -168,6 +210,7 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
       currentCountry: code,
       localeTag,
       timezone: timezone ?? 'UTC',
+      ...consentFrom(consentVersion),
       cityState: { create: {} },
       jurorProfile: { create: {} },
       identities: {
@@ -182,12 +225,17 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
   await prisma.user.update({ where: { id: user.id }, data: { homeDistrict: district } });
   await getCityState(user.id);
 
+  if (provider === 'apple' && authorizationCode) {
+    void storeAppleRefreshToken(user.id, authorizationCode);
+  }
+
   res.status(201).json({
     userId: user.id,
     jurorName: user.jurorName,
     returning: false,
     homeCountry: code,
     homeDistrict: district,
+    consentRequired: user.consentVersion !== LEGAL_VERSION,
     ...(await issueTokens(user.id)),
   });
 });

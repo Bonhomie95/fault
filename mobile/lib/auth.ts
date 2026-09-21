@@ -1,8 +1,9 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
-import * as Application from 'expo-application';
 import * as AuthSession from 'expo-auth-session';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { storage } from '@/lib/storage';
 
 /**
  * Signing in.
@@ -13,7 +14,7 @@ import { Platform } from 'react-native';
  * believe a word of it.
  */
 
-export type Provider = 'apple' | 'google' | 'device';
+export type Provider = 'apple' | 'google' | 'guest' | 'device';
 
 export interface ProviderToken {
   provider: Provider;
@@ -24,6 +25,12 @@ export interface ProviderToken {
    *  as the juror name — the player always names themselves — but it makes a
    *  reasonable prefill in the name field. */
   suggestedName?: string;
+  /**
+   * Apple only: the one-time authorization code from the same sheet. The
+   * server trades it for a refresh token so that deleting the account can
+   * revoke FAULT's access with Apple too (guideline 5.1.1(v)).
+   */
+  authorizationCode?: string;
 }
 
 /**
@@ -47,8 +54,27 @@ export interface SignInNonce {
 }
 
 /** Apple Sign In needs a native build; it does not exist in Expo Go. */
+/**
+ * Is this build running inside Expo Go rather than one of our own?
+ *
+ * It matters for sign-in. Apple and Google both hand back a token bound to the
+ * bundle id that ASKED for it, and inside Expo Go that is Expo's bundle, not
+ * ours — so the sheet either refuses outright or returns a token this server
+ * correctly rejects for having the wrong audience. Either way the player gets
+ * an error they cannot do anything about, from a button that should not have
+ * been offered.
+ */
+export function isExpoGo(): boolean {
+  return Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+}
+
 export async function isAppleAvailable(): Promise<boolean> {
   if (Platform.OS !== 'ios') return false;
+  // `isAvailableAsync` answers "does this OS have Sign In with Apple", which
+  // is true in Expo Go and useless there — the entitlement belongs to the
+  // host app. Offering the button anyway is how "That sign-in did not go
+  // through" became the first thing anyone saw.
+  if (isExpoGo()) return false;
   try {
     return await AppleAuthentication.isAvailableAsync();
   } catch {
@@ -79,6 +105,7 @@ export async function signInWithApple(issued: SignInNonce): Promise<ProviderToke
     token: credential.identityToken,
     nonce: issued.nonce,
     ...(suggestedName ? { suggestedName } : {}),
+    ...(credential.authorizationCode ? { authorizationCode: credential.authorizationCode } : {}),
   };
 }
 
@@ -127,24 +154,71 @@ export async function signInWithGoogle(issued: SignInNonce): Promise<ProviderTok
 }
 
 /**
- * The dev bypass. Uses a stable per-install id so a reload keeps the same
- * juror. The server refuses this entirely when ALLOW_DEV_AUTH is off or
- * NODE_ENV is production — it authenticates anyone who can name a device.
+ * NOTE: `signInWithDevice` is gone.
  *
- * Takes no nonce, and is not handed one. There is no provider to bind it to,
- * and asking for one would make local development depend on Redis being up
- * just to sign in — see the nonce request in app/index.
+ * It sent the iOS vendor id / Android id as the whole credential, which the
+ * server rightly refuses in production (it authenticates anyone who can name
+ * a device), so it could never be the release door and it was the only
+ * provider-free one. `signInAsGuest` below replaces it everywhere, dev
+ * included — ALLOW_GUEST_AUTH defaults on, so local development still signs
+ * in without Redis or provider credentials. The server's `device` flow
+ * remains for the test suite. A dev juror created under the old flow is not
+ * carried over; swear in again.
  */
-export async function signInWithDevice(): Promise<ProviderToken> {
-  let id: string | null = null;
-  try {
-    id =
-      Platform.OS === 'ios'
-        ? await Application.getIosIdForVendorAsync()
-        : Application.getAndroidId();
-  } catch {
-    id = null;
-  }
 
-  return { provider: 'device', token: id ?? `dev-${Crypto.randomUUID()}` };
+/**
+ * PLAY AS GUEST — the door that works in a release build.
+ *
+ * The old `signInWithDevice` could not be it: the server refuses the device flow
+ * in production, correctly, because it believes anyone who can name a vendor
+ * id. Before this, a release build on Android had no way in at all until
+ * Google client ids existed.
+ *
+ * A guest is a 256-bit secret generated here once, from the platform CSPRNG,
+ * and kept in the keychain / keystore via lib/storage. The secret IS the
+ * credential; the server stores only its SHA-256 (services/auth.ts on the
+ * server). Nothing about it is derived from the device, so unlike a vendor id
+ * it cannot be guessed, enumerated, or read by another app.
+ *
+ * The secret is NOT deleted on sign-out — signing out and choosing "play as
+ * guest" again should return the same juror, not orphan them. It is deleted
+ * only when the account is (see store/game deleteAccount), so the next guest
+ * on this phone is a new person.
+ *
+ * On iOS the keychain survives an uninstall, so a guest usually survives a
+ * reinstall there; on Android it does not. The Terms say so.
+ */
+const GUEST_SECRET_KEY = 'fault.guest.secret';
+
+export async function signInAsGuest(): Promise<ProviderToken> {
+  let secret = await storage.get(GUEST_SECRET_KEY);
+  if (!secret || !/^[A-Za-z0-9_-]{43}$/.test(secret)) {
+    secret = base64url(Crypto.getRandomBytes(32));
+    await storage.set(GUEST_SECRET_KEY, secret);
+  }
+  return { provider: 'guest', token: secret };
+}
+
+/** Forget this phone's guest, so the next one is a new juror. */
+export async function forgetGuest(): Promise<void> {
+  await storage.remove(GUEST_SECRET_KEY).catch(() => {});
+}
+
+function base64url(bytes: Uint8Array): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  let out = '';
+  let i = 0;
+  for (; i + 2 < bytes.length; i += 3) {
+    const n = (bytes[i]! << 16) | (bytes[i + 1]! << 8) | bytes[i + 2]!;
+    out += alphabet[(n >> 18) & 63]! + alphabet[(n >> 12) & 63]! + alphabet[(n >> 6) & 63]! + alphabet[n & 63]!;
+  }
+  const rest = bytes.length - i;
+  if (rest === 1) {
+    const n = bytes[i]! << 16;
+    out += alphabet[(n >> 18) & 63]! + alphabet[(n >> 12) & 63]!;
+  } else if (rest === 2) {
+    const n = (bytes[i]! << 16) | (bytes[i + 1]! << 8);
+    out += alphabet[(n >> 18) & 63]! + alphabet[(n >> 12) & 63]! + alphabet[(n >> 6) & 63]!;
+  }
+  return out;
 }

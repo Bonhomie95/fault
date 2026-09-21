@@ -11,6 +11,8 @@ import {
 } from '../domain/progression.js';
 import { COUNTRIES, ladderFor, nextTier, profileFor, tierLabel } from '../domain/jurisdiction.js';
 import { prisma } from '../lib/prisma.js';
+import { currentDistrictFor } from '../domain/districts.js';
+import { dayKey } from './missions.js';
 import { computeJurorStats } from './jurorProfile.js';
 
 /**
@@ -157,7 +159,30 @@ export interface StandingView {
     blockedBy: string[];
   } | null;
   unlocks: { caseArchive: boolean; jurorRecord: boolean; foreignApplications: boolean };
+  /** The daily summons: whether today's is waiting, and what it pays. */
+  daily: { available: boolean; satToday: boolean; merit: number; day: string };
 }
+
+/**
+ * The daily summons — a reason to open the app that is not a case.
+ *
+ * Pays more the longer the streak, capped at a week so a lapsed player is
+ * never locked out of most of it. Collecting it does not extend the streak;
+ * only sitting a case does (services/missions.recordDocketDay).
+ */
+export function dailyFor(user: Pick<User, 'timezone' | 'lastRewardDay' | 'currentStreak' | 'lastDocketDay'>) {
+  const day = dayKey(user.timezone);
+  return {
+    available: user.lastRewardDay !== day,
+    /** Whether a case has been sat today — for the streak reminder. */
+    satToday: user.lastDocketDay === day,
+    merit: DAILY_BASE + DAILY_STEP * Math.min(7, Math.max(0, user.currentStreak)),
+    day,
+  };
+}
+
+export const DAILY_BASE = 40;
+export const DAILY_STEP = 10;
 
 export async function standingFor(user: User): Promise<StandingView> {
   const casesHeard = await prisma.verdictRecord.count({ where: { userId: user.id } });
@@ -165,6 +190,9 @@ export async function standingFor(user: User): Promise<StandingView> {
   const next = nextRank(user.xp);
   const country = user.currentCountry ?? user.homeCountry;
   const profile = profileFor(country);
+
+  // Where they sit now: an unlocked district, or home. See domain/districts.
+  const seat = currentDistrictFor({ ...user, rank: rank.level });
 
   const upcoming = nextTier(user.currentTier, country);
   let promotion: StandingView['promotion'] = null;
@@ -200,8 +228,9 @@ export async function standingFor(user: User): Promise<StandingView> {
     tier: user.currentTier,
     tierLabel: tierLabel(user.currentTier, country),
     country,
-    district: user.homeDistrict,
-    court: user.homeDistrict ? profile.courtName(user.currentTier, user.homeDistrict) : null,
+    district: seat,
+    court: seat ? profile.courtName(user.currentTier, seat) : null,
+    daily: dailyFor(user),
     casesHeard,
     currentStreak: user.currentStreak,
     longestStreak: user.longestStreak,

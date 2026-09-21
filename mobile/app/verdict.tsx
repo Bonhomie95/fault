@@ -5,6 +5,7 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Interstitial } from '@/components/Interstitial';
 import { AccusedReaction } from '@/components/scene2d/AccusedReaction';
+import { askForReminders } from '@/lib/reminders';
 import { Fonts, Palette, Type } from '@/constants/theme';
 import * as haptic from '@/lib/haptics';
 import { useReducedMotion } from '@/lib/motion';
@@ -36,6 +37,11 @@ export default function VerdictDelivered() {
     // The gavel lands with the flash, not before it.
     play('gavel');
     haptic.gavel();
+
+    // The first verdict is the moment to ask about reminders: the player has
+    // just seen what the game is, and a city that reacts is worth being told
+    // about. Never at launch, and only ever asked once by the OS.
+    if (result.casesHeard === 1 || result.casesHeard === 3) void askForReminders();
 
     // Two seconds to sit with it before the room tells you what happened.
     const id = setTimeout(() => setPhase('aftermath'), 2000);
@@ -73,7 +79,7 @@ export default function VerdictDelivered() {
       {lastDefendant && (
         <AccusedReaction
           seed={lastDefendant.portraitSeed}
-          appearance={lastDefendant.appearance}
+          cast={lastDefendant.cast}
           reaction={result.reaction}
           reducedMotion={reducedMotion}
         />
@@ -136,9 +142,39 @@ export default function VerdictDelivered() {
               <Text style={styles.earned}>
                 +{result.meritAwarded} MERIT{result.promoted ? '  ·  PROMOTED' : ''}
               </Text>
+              {(result.districtsOpened?.length ?? 0) > 0 && (
+                <Text style={styles.opened}>
+                  NEW COURT OPEN: {result.districtsOpened!.join(', ').toUpperCase()}
+                </Text>
+              )}
             </Animated.View>
           )}
         </View>
+
+        {/* Tomorrow's paper, today. The court report this verdict made — the
+            city talking back, which is the thing that brings a player back to
+            the lobby to read the rest. Below the face, never over it. */}
+        {phase === 'aftermath' && result.headlines && result.headlines.length > 0 && (
+          <Animated.View entering={FadeIn.duration(700).delay(900)} style={styles.teaser}>
+            <Pressable
+              onPress={() => router.push('/news')}
+              accessibilityRole="button"
+              accessibilityLabel={`In the papers: ${result.headlines[0]!.headline}. Read the papers.`}
+            >
+              <Text style={styles.teaserEyebrow}>
+                IN THE PAPERS · {result.headlines[0]!.outlet.toUpperCase()}
+              </Text>
+              <Text style={styles.teaserHead} numberOfLines={2}>
+                {result.headlines[0]!.headline}
+              </Text>
+              {result.headlines[1] && (
+                <Text style={styles.teaserSub} numberOfLines={1}>
+                  Also: {result.headlines[1].headline}
+                </Text>
+              )}
+            </Pressable>
+          </Animated.View>
+        )}
 
         {phase === 'aftermath' && (
           <Animated.View entering={FadeIn.duration(600).delay(500)} style={styles.footer}>
@@ -158,8 +194,37 @@ export default function VerdictDelivered() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Palette.bg },
+  opened: {
+    fontFamily: Fonts.monoBold,
+    fontSize: Type.micro,
+    letterSpacing: 1.6,
+    color: '#1FA184',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  teaser: {
+    marginHorizontal: 20,
+    marginBottom: 10,
+    backgroundColor: Palette.paper,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 3,
+  },
+  teaserEyebrow: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.4, color: '#5E594E' },
+  teaserHead: { fontFamily: Fonts.display, fontSize: Type.body, lineHeight: Type.body * 1.25, color: '#0D0D0D' },
+  teaserSub: { fontFamily: Fonts.displayRegular, fontSize: Type.small, color: '#3A3730' },
   safe: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 26 },
+  // TOP, not centre. The accused is framed below this block — see
+  // AccusedReaction's EYES_SCREEN — and a centred column of text lands
+  // squarely on the face it is describing.
+  center: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingHorizontal: 26,
+    paddingTop: '9%',
+  },
   verdict: {
     fontFamily: Fonts.display,
     fontSize: 46,
