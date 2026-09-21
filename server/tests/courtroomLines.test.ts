@@ -26,6 +26,8 @@ describe('courtroom lines', () => {
       'I’m guilty. There, I said it.',
       'I never intended to lie, but I was sure I saw the cash.',
       'Fine — I lied about the time.',
+      'Please consider I never meant harm; I was desperate to keep my family afloat.',
+      'I had no choice — they would have evicted us.',
     ]) {
       assert.equal(leaksVerdict(text), true, text);
     }
