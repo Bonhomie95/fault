@@ -7,12 +7,13 @@ import { StandingBar } from '@/components/StandingBar';
 import { CityScene } from '@/components/three/CityScene';
 import { Button } from '@/components/Button';
 import { Accents, Elevation, Fonts, IMPACT_LEADING, Palette, Radius, Space, Type } from '@/constants/theme';
-import { ApiError, api, type NewsStory } from '@/lib/api';
+import { ApiError, api, type NewsStory, type StoreView } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
 import { useGame } from '@/store/game';
 import { AwayReport, DailySummons, FrontPage, MissionStrip } from '@/components/world/LobbyWorld';
 import { planReminders } from '@/lib/reminders';
+import { DailyTrialCard, DocketClosed, docketLine, OfferStrip, SpecialDockets } from '@/components/world/Docket';
 
 /**
  * GDD 6, Screen 3 — Courthouse Lobby.
@@ -35,13 +36,27 @@ export default function Lobby() {
   /** What happened while the player was away — shown once, then dismissed. */
   const [away, setAway] = useState<NewsStory[] | null>(null);
   const refreshWallet = useGame((s) => s.refreshWallet);
+  /** The shelf, for offers and special dockets. Null until it loads. */
+  const [store, setStore] = useState<StoreView | null>(null);
+  /** Today's docket is closed: show the ways to reopen it. */
+  const [closed, setClosed] = useState(false);
+  /** Which docket is being opened: 'next', 'daily' or a pack key. */
+  const [opening, setOpening] = useState<string | null>(null);
+
+  const loadStore = useCallback(() => {
+    api
+      .store()
+      .then(setStore)
+      .catch(() => setStore(null));
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       void refreshCity();
       void refreshStanding();
+      loadStore();
       setFocusKey((k) => k + 1);
-    }, [refreshCity, refreshStanding]),
+    }, [refreshCity, refreshStanding, loadStore]),
   );
 
   // Re-plan this phone's reminders from what is true now: whether the summons
@@ -74,28 +89,45 @@ export default function Lobby() {
     if (city?.away && city.away.length > 0) setAway(city.away);
   }, [city?.away]);
 
-  const beginCase = useCallback(async () => {
-    // Guarded three ways: this check, the disabled prop, and the Busy scrim.
-    // Opening a case costs a Groq generation and starts a 120-second clock —
-    // a double-tap here is the most expensive accident available.
-    if (loading) return;
-    setLoading(true);
-    setGate(null);
-    play('paper');
-    haptic.tapLight();
-    try {
-      await loadCase();
-      router.push('/case');
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'trial_complete') {
-        setGate(err.message);
-      } else {
-        setGate('The docket could not be reached.');
+  /**
+   * Open a docket: the ordinary one, the Daily Trial, or a special docket.
+   *
+   * Guarded three ways: this check, the busy prop, and the Busy scrim.
+   * Opening a case can cost a model generation and starts a 120-second clock
+   * — a double-tap here is the most expensive accident available.
+   */
+  const open = useCallback(
+    async (which: { daily?: boolean; pack?: string } = {}) => {
+      if (loading) return;
+      const key = which.daily ? 'daily' : (which.pack ?? 'next');
+      setLoading(true);
+      setOpening(key);
+      setGate(null);
+      play('paper');
+      haptic.tapLight();
+      try {
+        await loadCase(which);
+        router.push('/case');
+      } catch (err) {
+        if (err instanceof ApiError && (err.code === 'docket_closed' || err.code === 'trial_complete')) {
+          loadStore();
+          setClosed(true);
+        } else if (err instanceof ApiError && err.code === 'daily_done') {
+          setGate('You have sat today’s trial. The next one opens at midnight UTC.');
+          setFocusKey((k) => k + 1);
+        } else if (err instanceof ApiError && err.status !== 500 && err.message) {
+          setGate(err.message);
+        } else {
+          setGate('The docket could not be reached.');
+        }
+      } finally {
+        setLoading(false);
+        setOpening(null);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [loading, loadCase]);
+    },
+    [loading, loadCase, loadStore],
+  );
+  const beginCase = useCallback(() => open(), [open]);
 
   const recordUnlocked = (city?.casesHeard ?? 0) >= 10;
 
@@ -135,14 +167,23 @@ export default function Lobby() {
 
           {/* The one thing this screen is for. It is the only filled button on
               the page, because it is the only action that matters. */}
+          {/* One case for the whole world, today. */}
+          <DailyTrialCard
+            refreshKey={focusKey}
+            onOpen={() => void open({ daily: true })}
+            busy={opening === 'daily'}
+          />
+
           <View style={styles.caseFile}>
-            <Text style={styles.caseFileEyebrow}>NEXT ON THE DOCKET</Text>
+            <Text style={styles.caseFileEyebrow}>
+              NEXT ON THE DOCKET{docketLine(standing?.docket) ? ` · ${docketLine(standing?.docket)}` : ''}
+            </Text>
             <Text style={styles.caseFileLabel}>A CASE FILE{'\n'}IS WAITING</Text>
             <Button
               label="Open the file"
               onPress={beginCase}
               variant="primary"
-              busy={loading}
+              busy={opening === 'next'}
               accent={Accents.financial}
               hint="The clock starts immediately"
               accessibilityLabel="Open the next case file. The clock starts immediately."
@@ -162,6 +203,10 @@ export default function Lobby() {
               message a player has to read does not get to depend on an
               animation running. */}
           {gate && <Text style={styles.gate}>{gate}</Text>}
+
+          <SpecialDockets store={store} busy={opening} onOpen={(key) => void open({ pack: key })} />
+
+          <OfferStrip store={store} />
 
           {/* What the city is saying about you. */}
           <FrontPage district={standing?.district ?? null} refreshKey={focusKey} />
@@ -220,6 +265,7 @@ export default function Lobby() {
               lockedNote={`UNLOCKS AT 10 CASES · ${city?.casesHeard ?? 0}/10`}
               onPress={() => router.push('/record')}
             />
+            <LobbyLink label="The Clerk’s Office (store)" onPress={() => router.push('/store')} />
             <LobbyLink label="Settings" onPress={() => router.push('/settings')} />
           </View>
         </ScrollView>
@@ -229,6 +275,20 @@ export default function Lobby() {
       {loading && <Busy label="THE CLERK IS FETCHING THE FILE" />}
 
       {away && away.length > 0 && <AwayReport stories={away} onClose={() => setAway(null)} />}
+
+      {closed && (
+        <DocketClosed
+          store={store}
+          onClose={() => setClosed(false)}
+          onReopened={() => {
+            setClosed(false);
+            void refreshStanding();
+            void refreshWallet();
+            loadStore();
+            void open();
+          }}
+        />
+      )}
     </View>
   );
 }

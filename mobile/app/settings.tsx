@@ -18,6 +18,8 @@ import { Button } from '@/components/Button';
 import { Clock, Fonts, Layout, Palette, Space, Type } from '@/constants/theme';
 import { api, ApiError, type Session } from '@/lib/api';
 import { restore as restorePurchases } from '@/lib/purchases';
+import { adPrivacyOptionsRequired, showAdPrivacyOptions } from '@/lib/admob';
+import { manageSubscriptions } from '@/lib/iap';
 import * as haptic from '@/lib/haptics';
 import { askForReminders, clearReminders, remindersAvailable } from '@/lib/reminders';
 import { canSpeak, say, warmVoices } from '@/lib/say';
@@ -415,6 +417,14 @@ export default function Settings() {
             />
             <Action label="Open the store" onPress={() => router.push('/store')} />
             <Action label="Restore purchases" onPress={onRestore} disabled={busy} />
+            {entitlements.includes('pass') && (
+              <Action label="Manage Juror Pass" onPress={() => void manageSubscriptions()} />
+            )}
+            {/* Required wherever Google's consent form applies (EEA, UK,
+                Switzerland): the player must be able to change their answer. */}
+            {adPrivacyOptionsRequired() && (
+              <Action label="Ad privacy choices" onPress={() => void showAdPrivacyOptions()} />
+            )}
             <Action label="Sign out" onPress={onSignOut} disabled={busy} />
           </View>
 

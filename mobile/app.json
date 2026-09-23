@@ -64,6 +64,30 @@
             "NSPrivacyCollectedDataTypePurposes": [
               "NSPrivacyCollectedDataTypePurposeAppFunctionality"
             ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeDeviceID",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": true,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeAdvertisingData",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": true,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeProductInteraction",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising"
+            ]
           }
         ],
         "NSPrivacyAccessedAPITypes": [
@@ -92,7 +116,7 @@
             ]
           }
         ],
-        "NSPrivacyTracking": false
+        "NSPrivacyTracking": true
       }
     },
     "android": {
@@ -144,7 +168,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "FAULT uses your location once, to learn which country's courts you will sit in. Only the country is kept \u2014 your coordinates are never stored or sent.",
+          "locationWhenInUsePermission": "FAULT uses your location once, to learn which country's courts you will sit in. Only the country is kept — your coordinates are never stored or sent.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
           "isIosBackgroundLocationEnabled": false,
@@ -164,7 +188,14 @@
         {
           "color": "#0B0B0C"
         }
-      ]
+      ],
+      [
+        "expo-tracking-transparency",
+        {
+          "userTrackingPermission": "FAULT is free because of adverts. Allowing this lets the advertising partner show you adverts that are more relevant. It never changes the game, and you can say no."
+        }
+      ],
+      "expo-iap"
     ],
     "experiments": {
       "typedRoutes": true,

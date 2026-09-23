@@ -156,6 +156,23 @@ const schema = z.object({
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
 
+  /**
+   * TESTING ONLY: pay rewarded views on the CLIENT's word.
+   *
+   * Google's public test ad units send no server-side verification callback,
+   * so during an internal test there is no other way to exercise the rewarded
+   * loop end to end. It is a Merit faucet with the tap on the client — safe
+   * enough behind the per-day cap for a closed test with people you know, and
+   * indefensible in a public release. Boot logs a warning while it is on.
+   *
+   * Turn it OFF the day real ad units and the SSV callback go live
+   * (ADS_SERVER_VERIFIED).
+   */
+  ADS_TRUST_CLIENT: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+
   /** Rate limiting off, for tests that legitimately hammer a route. */
   DISABLE_RATE_LIMITS: z
     .string()
@@ -291,6 +308,17 @@ if (isProduction) {
   if (env.DISABLE_RATE_LIMITS) problems.push('DISABLE_RATE_LIMITS must be false in production');
   if (!env.CORS_ORIGINS) problems.push('CORS_ORIGINS must be set in production');
   if (env.JWT_SECRET.length < 48) problems.push('JWT_SECRET should be at least 48 chars in production');
+  // Not a refusal: a closed internal test runs with NODE_ENV=production on a
+  // real host and needs the rewarded loop to pay against Google's test ad
+  // units. It IS loud, because leaving it on at launch hands every player an
+  // unlimited Merit tap.
+  if (env.ADS_TRUST_CLIENT) {
+    console.warn(
+      'ADS_TRUST_CLIENT is ON: rewarded adverts are paid on the CLIENT\'s word. ' +
+        'Fine for an internal test with test ad units; turn it OFF before launch ' +
+        'and use the AdMob server-side verification callback instead.',
+    );
+  }
   // The policy URLs are no longer a boot condition: the documents are served
   // from /legal on this server and bundled in the app, so they exist whether
   // or not anything is configured. What CAN be missing is an absolute URL to

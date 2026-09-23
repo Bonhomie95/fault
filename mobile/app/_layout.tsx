@@ -27,6 +27,8 @@ import { Palette } from '@/constants/theme';
 import { API_CONFIG_ERROR } from '@/lib/api';
 import { reportFatal } from '@/lib/report';
 import { initSound } from '@/lib/sound';
+import { setAdUser, startAds } from '@/lib/admob';
+import { startPurchases } from '@/lib/iap';
 import { useGame } from '@/store/game';
 import { useSettings } from '@/store/settings';
 
@@ -64,6 +66,18 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsLoaded && !bootstrapping) SplashScreen.hideAsync().catch(() => {});
   }, [fontsLoaded, bootstrapping]);
+
+  // The store and the ad network, once there is a juror to pay and they have
+  // accepted the terms. Purchases first: an interrupted purchase is money the
+  // player is owed, and restoring it must not wait on an advert's consent form.
+  const jurorId = useGame((s) => s.jurorId);
+  const consentRequired = useGame((s) => s.consentRequired);
+  useEffect(() => {
+    if (!jurorId || consentRequired) return;
+    setAdUser(jurorId);
+    startPurchases();
+    void startAds();
+  }, [jurorId, consentRequired]);
 
   if (!fontsLoaded || bootstrapping) return null;
 

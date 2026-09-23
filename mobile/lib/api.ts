@@ -106,10 +106,18 @@ const TIMEOUT_MS = 15_000;
 
 /** Only ever one refresh in flight; a burst of 401s must not become a burst of
  *  refreshes, each rotating the token out from under the last. */
-let refreshing: Promise<boolean> | null = null;
+let refreshing: Promise<RefreshResult> | null = null;
 
-async function refreshTokens(): Promise<boolean> {
-  if (!refreshToken) return false;
+/**
+ * `rejected` is the server saying no — the session is over. `transient` is
+ * the network or the server having a bad moment, and must NOT sign anybody
+ * out: it used to, so a dropped connection at the thirty-minute mark ended a
+ * player's session.
+ */
+type RefreshResult = 'ok' | 'rejected' | 'transient';
+
+async function refreshTokens(): Promise<RefreshResult> {
+  if (!refreshToken) return 'rejected';
   if (refreshing) return refreshing;
 
   refreshing = (async () => {
@@ -125,13 +133,13 @@ async function refreshTokens(): Promise<boolean> {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
       });
-      if (!res.ok) return false;
+      if (!res.ok) return res.status >= 500 || res.status === 429 ? 'transient' : 'rejected';
       const data = await res.json();
       setTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
       await persistTokens?.(data);
-      return true;
+      return 'ok';
     } catch {
-      return false;
+      return 'transient';
     } finally {
       clearTimeout(timer);
       refreshing = null;
@@ -185,10 +193,13 @@ async function request<T>(
   // One transparent retry after a refresh. An expired access token is the
   // normal case every 30 minutes, not an error the player should ever see.
   if (res.status === 401 && auth && refreshToken) {
-    if (await refreshTokens()) {
+    const refreshed = await refreshTokens();
+    if (refreshed === 'ok') {
       res = await send(path, method, body, auth);
-    } else {
+    } else if (refreshed === 'rejected') {
       onSignedOut?.();
+    } else {
+      throw new ApiError(0, 'offline', 'Could not reach the court. Check your connection.');
     }
   }
 
@@ -237,6 +248,8 @@ export interface CourtroomLine {
 }
 
 export interface ClientCase {
+  /** Set when this is the Daily Trial (its UTC day). */
+  daily?: string;
   id: string;
   caseNumber: number;
   title: string;
@@ -408,6 +421,11 @@ export interface VerdictResult {
   districtsOpened?: string[];
   /** XP/Merit multiplier for the district it was heard in. */
   rewardMultiplier?: number;
+  streak?: number;
+  /** Streak shields this verdict spent covering missed days. */
+  shieldsUsed?: number;
+  /** Set when this was the Daily Trial: how the world split so far. */
+  daily?: { day: string; tally: DailyTally | null } | null;
 }
 
 export interface ReviewEntry {
@@ -441,13 +459,21 @@ export type Entitlement =
   | 'seal_brass'
   | 'seal_obsidian'
   | 'seal_ivory'
-  // reserved: in the schema, not yet for sale — nothing renders them
+  | 'seal_gold'
   | 'room_oak'
   | 'room_concrete'
+  | 'room_marble'
+  | 'room_night'
+  // reserved: in the schema, not for sale — nothing renders them
   | 'stock_onionskin'
   | 'stock_vellum'
+  // the Juror Pass (expires; the server reports what it implies)
+  | 'pass'
   // a thank-you
   | 'patron';
+
+export type RoomTheme = 'room_oak' | 'room_concrete' | 'room_marble' | 'room_night';
+export type SealStyle = 'seal_brass' | 'seal_obsidian' | 'seal_ivory' | 'seal_gold' | 'patron';
 
 export interface Session {
   userId: string;
@@ -457,6 +483,8 @@ export interface Session {
   entitlements: Entitlement[];
   merit: number;
   casesHeard?: number;
+  /** The courtroom and seal the juror has put on. Absent on older servers. */
+  equipped?: { room: RoomTheme | null; seal: SealStyle | null };
   /**
    * The player has not accepted the CURRENT Terms and Privacy Policy. The
    * ConsentGate blocks play until they do. Absent on older servers, which is
@@ -483,20 +511,62 @@ export interface StoreItem {
   id: string;
   title: string;
   blurb: string;
-  kind: 'unlock' | 'pack' | 'currency';
+  kind: 'pass' | 'bundle' | 'unlock' | 'pack' | 'currency' | 'consumable' | 'cosmetic' | 'support';
+  /** How the platform store sells it; null = Merit only. */
+  store: 'nonconsumable' | 'consumable' | 'subscription' | null;
+  period: 'month' | 'year' | null;
+  badge: string | null;
+  /** USD minor units — a fallback label; the store's localised price wins. */
   priceMinor: number | null;
   meritPrice: number | null;
   meritGranted: number | null;
+  shieldsGranted: number | null;
+  casesGranted: number | null;
+  grants: Entitlement[];
   owned: boolean;
   affordable: boolean;
+}
+
+export interface DocketView {
+  unlimited: boolean;
+  freePerDay: number;
+  bonus: number;
+  usedToday: number;
+  /** Null when unlimited. */
+  left: number | null;
+  adCasesLeft: number;
 }
 
 export interface StoreView {
   merit: number;
   entitlements: Entitlement[];
+  shields: number;
+  docket: DocketView;
+  pass: { active: boolean; expiresAt: string | null; meritMultiplier: number };
+  starter: { available: boolean; endsAt: string | null };
+  equipped: { room: RoomTheme | null; seal: SealStyle | null };
+  /** Progress through each special docket. */
+  packs: { key: string; sku: string; owned: boolean; heard: number; total: number }[];
   rewardedAdsLeft: number;
+  rewardedCasesLeft: number;
   rewardedAdMerit: number;
   items: StoreItem[];
+}
+
+export interface DailyTally {
+  guilty: number;
+  notGuilty: number;
+  hung: number;
+  total: number;
+}
+
+export interface DailyStatus {
+  day: string;
+  sat: boolean;
+  open: boolean;
+  verdict: 'guilty' | 'not_guilty' | null;
+  tally: DailyTally | null;
+  nextAt: string;
 }
 
 export interface AdPolicy {
@@ -536,6 +606,11 @@ export interface Standing {
   unlocks: { caseArchive: boolean; jurorRecord: boolean; foreignApplications: boolean };
   /** The daily summons. Absent on older servers. */
   daily?: { available: boolean; satToday?: boolean; merit: number; day: string };
+  /** Today's docket and the streak shields held. Absent on older servers. */
+  docket?: DocketView;
+  shields?: number;
+  /** The fictional Chief Justice who signs the letter, named for the juror's country. */
+  chiefJustice?: string;
 }
 
 export interface Mission {
@@ -751,7 +826,13 @@ export const api = {
       body: { jurorName },
     }),
 
-  nextCase: () => request<ClientCase>('/api/case/next'),
+  /** The next case: the ordinary docket, or a special docket by key. */
+  nextCase: (pack?: string) =>
+    request<ClientCase>(`/api/case/next${pack ? `?pack=${encodeURIComponent(pack)}` : ''}`),
+
+  /** The Daily Trial — one case for the whole world today. */
+  dailyCase: () => request<ClientCase>('/api/case/daily'),
+  dailyStatus: () => request<DailyStatus>('/api/case/daily/status'),
 
   /**
    * Deliver a verdict.
@@ -855,10 +936,18 @@ export const api = {
 
   adPolicy: () => request<AdPolicy>('/api/store/ads'),
 
-  claimAdReward: (viewId: string) =>
+  /** Development only: production views are paid by Google's callback. */
+  claimAdReward: (viewId: string, reward: 'merit' | 'case' = 'merit') =>
     request<{ merit: number; awarded: number }>('/api/store/ad-reward', {
       method: 'POST',
-      body: { viewId },
+      body: { viewId, reward },
+    }),
+
+  /** Put on a courtroom or seal the juror owns; null takes it off. */
+  equip: (body: { room?: RoomTheme | null; seal?: SealStyle | null }) =>
+    request<{ equipped: { room: RoomTheme | null; seal: SealStyle | null } }>('/api/store/equip', {
+      method: 'POST',
+      body,
     }),
 
   // ---- Account ----

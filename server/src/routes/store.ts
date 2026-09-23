@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { MERIT, SKUS, skuById } from '../domain/store.js';
+import { DOCKET, MERIT, PACKS, PASS_MERIT_MULTIPLIER, SKUS, skuById, STARTER_WINDOW_HOURS } from '../domain/store.js';
 import { env } from '../lib/env.js';
 import { log } from '../lib/log.js';
 import { prisma } from '../lib/prisma.js';
@@ -9,15 +9,37 @@ import { requireJuror } from '../middleware/requireJuror.js';
 import {
   buyWithMerit,
   claimRewardedAd,
+  docketFor,
   entitlementsFor,
   hasEntitlement,
+  passExpiry,
   redeemPurchase,
   ReceiptOwnedByAnotherAccount,
   rewardedAdsToday,
 } from '../services/economy.js';
 import { verifyReceipt } from '../services/receipts.js';
+import { verifySsv } from '../services/adSsv.js';
 
 export const storeRouter = Router();
+
+/**
+ * Rewarded views pay only through Google's signed callback (services/adSsv),
+ * so they are offered only once that callback is configured in AdMob — or in
+ * development, where the fake-purchase switch also fakes the view.
+ */
+const rewardedEnabled = () =>
+  env.ADS_SERVER_VERIFIED || clientClaimAllowed();
+
+/**
+ * Whether a view may be paid on the client's word: development, or an
+ * internal test running Google's test ad units (which send no callback).
+ */
+const clientClaimAllowed = () =>
+  env.ADS_TRUST_CLIENT || (env.ALLOW_FAKE_PURCHASES && env.NODE_ENV !== 'production');
+
+/** Courtrooms and seals a juror can put on, and what owning each means. */
+const ROOMS = ['room_oak', 'room_concrete', 'room_marble', 'room_night'] as const;
+const SEALS = ['seal_brass', 'seal_obsidian', 'seal_ivory', 'seal_gold', 'patron'] as const;
 
 /**
  * NOTE ON MIDDLEWARE ORDER.
@@ -40,28 +62,102 @@ export const storeRouter = Router();
 storeRouter.get('/', requireJuror, economyLimiter, async (req, res) => {
   const { userId, user } = req.juror;
   const owned = await entitlementsFor(userId);
+  const [docket, passUntil, starterBought, meritViews, caseViews] = await Promise.all([
+    docketFor(user),
+    passExpiry(userId),
+    prisma.purchase.count({ where: { userId, sku: 'starter_bundle' } }),
+    rewardedAdsToday(userId, 'merit'),
+    rewardedAdsToday(userId, 'case'),
+  ]);
+
+  // The starter bundle: new jurors, once, and only while it is still a deal —
+  // someone who already owns what it contains is not offered it again.
+  const starterEndsAt = new Date(user.createdAt.getTime() + STARTER_WINDOW_HOURS * 3_600_000);
+  const starterAvailable =
+    starterBought === 0 &&
+    starterEndsAt > new Date() &&
+    !(owned.includes('campaign') && owned.includes('no_ads'));
+
+  const rewarded = rewardedEnabled();
+
+  // How far into each special docket this juror is.
+  const packCounts = await prisma.case.groupBy({
+    by: ['pack'],
+    where: { userId, pack: { not: null } },
+    _count: { _all: true },
+  });
+  const packs = Object.entries(PACKS).map(([entitlement, p]) => ({
+    key: p.key,
+    sku: entitlement,
+    owned: owned.includes(entitlement as never),
+    heard: packCounts.find((c) => c.pack === p.key)?._count._all ?? 0,
+    total: DOCKET.packCases,
+  }));
 
   res.json({
     merit: user.merit,
     entitlements: owned,
-    // Zero while ad rewards are switched off (ADS_SERVER_VERIFIED), so no
-    // client — including an old build — offers a reward it cannot claim.
-    rewardedAdsLeft: env.ADS_SERVER_VERIFIED
-      ? Math.max(0, MERIT.rewardedAdsPerDay - (await rewardedAdsToday(userId)))
-      : 0,
+    shields: user.streakShields,
+    docket,
+    pass: { active: passUntil !== null, expiresAt: passUntil, meritMultiplier: PASS_MERIT_MULTIPLIER },
+    starter: { available: starterAvailable, endsAt: starterAvailable ? starterEndsAt : null },
+    equipped: { room: user.roomTheme, seal: user.sealStyle },
+    packs,
+    // Zero while ad rewards are switched off, so no client — including an old
+    // build — offers a reward it cannot claim.
+    rewardedAdsLeft: rewarded ? Math.max(0, MERIT.rewardedAdsPerDay - meritViews) : 0,
+    rewardedCasesLeft: rewarded ? docket.adCasesLeft : 0,
     rewardedAdMerit: MERIT.rewardedAd,
-    items: SKUS.map((s) => ({
+    items: SKUS.filter((s) => !s.starter || starterAvailable).map((s) => ({
       id: s.id,
       title: s.title,
       blurb: s.blurb,
       kind: s.kind,
+      store: s.store,
+      period: s.period ?? null,
+      badge: s.badge ?? null,
       priceMinor: s.priceMinor,
       meritPrice: s.meritPrice,
       meritGranted: s.meritGranted ?? null,
-      owned: s.grants ? owned.includes(s.grants) : false,
+      shieldsGranted: s.shieldsGranted ?? null,
+      casesGranted: s.casesGranted ?? null,
+      grants: s.grants,
+      owned: s.grants.length > 0 && s.grants.every((g) => owned.includes(g)),
       affordable: s.meritPrice !== null && user.merit >= s.meritPrice,
     })),
   });
+});
+
+/**
+ * Put on a courtroom or a seal. Owned or nothing — and null takes it off.
+ * An expired pass is not checked here: the room simply falls back when the
+ * client stops seeing the entitlement.
+ */
+storeRouter.post('/equip', requireJuror, economyLimiter, async (req, res) => {
+  const parsed = z
+    .object({
+      room: z.enum(ROOMS).nullable().optional(),
+      seal: z.enum(SEALS).nullable().optional(),
+    })
+    .safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'invalid item' });
+    return;
+  }
+  const owned = await entitlementsFor(req.juror.userId);
+  const { room, seal } = parsed.data;
+  if ((room && !owned.includes(room)) || (seal && !owned.includes(seal))) {
+    res.status(403).json({ error: 'not owned' });
+    return;
+  }
+  const user = await prisma.user.update({
+    where: { id: req.juror.userId },
+    data: {
+      ...(room !== undefined ? { roomTheme: room } : {}),
+      ...(seal !== undefined ? { sealStyle: seal } : {}),
+    },
+  });
+  res.json({ equipped: { room: user.roomTheme, seal: user.sealStyle } });
 });
 
 /** Buy with Merit — the earned path. */
@@ -118,7 +214,12 @@ storeRouter.post('/redeem', requireJuror, economyLimiter, async (req, res) => {
     return;
   }
 
-  const { valid } = await verifyReceipt(parsed.data);
+  const { valid, expiresAt } = await verifyReceipt({
+    ...parsed.data,
+    // From OUR catalogue: the client does not get to say what kind of thing
+    // it bought.
+    subscription: sku.store === 'subscription',
+  });
   if (!valid) {
     res.status(402).json({
       error: 'receipt_unverified',
@@ -133,6 +234,7 @@ storeRouter.post('/redeem', requireJuror, economyLimiter, async (req, res) => {
       sku,
       transactionId: parsed.data.transactionId,
       platform: parsed.data.platform,
+      expiresAt,
     });
     res.json(result);
   } catch (err) {
@@ -167,37 +269,59 @@ storeRouter.post('/restore', requireJuror, economyLimiter, async (req, res) => {
 });
 
 /**
- * Claim a rewarded ad view.
+ * Claim a rewarded view on the client's word — DEVELOPMENT AND INTERNAL
+ * TESTING ONLY (env ADS_TRUST_CLIENT).
  *
- * Server-side capped and deduplicated by viewId: a rewarded ad is a Merit
- * faucet, and a faucet without a tap is just a hole. In production the viewId
- * should be an SSV callback from the ad network rather than the client's word.
+ * With real ad units a view pays only through Google's signed callback
+ * (GET /api/store/ssv below). This exists so the whole loop can be exercised
+ * against test ads, which send no callback.
  */
 storeRouter.post('/ad-reward', requireJuror, economyLimiter, async (req, res) => {
-  // Off until the ad network's server-side verification is wired in. The
-  // viewId below is the client's word, and paying Merit on the client's word
-  // is a faucet with the tap on the wrong side (see lib/env
-  // ADS_SERVER_VERIFIED). 404 rather than 403: to a client, this reward does
-  // not exist yet, and nothing it can do will make it exist.
-  if (!env.ADS_SERVER_VERIFIED) {
+  if (!clientClaimAllowed()) {
     res.status(404).json({ error: 'ad_rewards_unavailable', message: 'Rewarded notices are not available.' });
     return;
   }
 
-  const parsed = z.object({ viewId: z.string().min(6) }).safeParse(req.body);
+  const parsed = z
+    .object({ viewId: z.string().min(6), reward: z.enum(['merit', 'case']).default('merit') })
+    .safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'viewId required' });
     return;
   }
 
-  // Someone who paid to remove ads should not be offered Merit for watching
-  // one; the rewarded slot stays available but it is opt-in, never pushed.
   try {
-    const merit = await claimRewardedAd(req.juror.userId, parsed.data.viewId);
-    res.json({ merit, awarded: MERIT.rewardedAd });
+    const merit = await claimRewardedAd(req.juror.userId, parsed.data.viewId, parsed.data.reward);
+    res.json({ merit, awarded: parsed.data.reward === 'merit' ? MERIT.rewardedAd : 0 });
   } catch (err) {
     res.status(429).json({ error: (err as Error).message });
   }
+});
+
+/**
+ * AdMob's server-side verification callback. Unauthenticated by design: the
+ * caller is Google, and the signature is the authentication (services/adSsv).
+ *
+ * Always 200 once the signature checks out, even for a duplicate or a capped
+ * view — a non-200 makes Google retry, and a retry of something we have
+ * already decided is noise. Configure the URL in AdMob as
+ * https://<api>/api/store/ssv on each rewarded ad unit.
+ */
+storeRouter.get('/ssv', async (req, res) => {
+  const raw = req.originalUrl.split('?')[1] ?? '';
+  const reward = await verifySsv(raw);
+  if (!reward) {
+    // AdMob's "verify URL" button sends an unsigned probe; tell it we exist.
+    res.status(raw ? 400 : 200).json({ ok: !raw });
+    return;
+  }
+  try {
+    const exists = await prisma.user.findUnique({ where: { id: reward.userId }, select: { id: true } });
+    if (exists) await claimRewardedAd(reward.userId, reward.transactionId, reward.reward);
+  } catch (err) {
+    log.info('ssv reward not paid', { userId: reward.userId, reason: (err as Error).message });
+  }
+  res.json({ ok: true });
 });
 
 /**
@@ -217,6 +341,6 @@ storeRouter.get('/ads', requireJuror, economyLimiter, async (req, res) => {
     // during the one moment it asked them to concentrate.
     interstitialEveryNCases: noAds ? null : 3,
     rewardedAvailable:
-      env.ADS_SERVER_VERIFIED && (await rewardedAdsToday(userId)) < MERIT.rewardedAdsPerDay,
+      rewardedEnabled() && (await rewardedAdsToday(userId, 'merit')) < MERIT.rewardedAdsPerDay,
   });
 });

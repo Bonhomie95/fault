@@ -165,9 +165,9 @@ describe('the ladder', () => {
   });
 
   it('falls back to a plausible country rather than to nowhere', () => {
-    const p = profileFor('JP');
-    assert.equal(p.code, 'JP');
-    assert.ok(p.courtName('national', 'Tokyo').length > 0);
+    const p = profileFor('IS');
+    assert.equal(p.code, 'IS');
+    assert.ok(p.courtName('national', 'Reykjavík').length > 0);
   });
 
   it('names a real police service per district', () => {

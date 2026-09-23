@@ -16,7 +16,7 @@ const ctxFor = (code: string, seed = 7) => {
   };
 };
 
-const ALL = [...Object.keys(COUNTRIES), 'JP' /* unlisted → generic */];
+const ALL = [...Object.keys(COUNTRIES), 'IS' /* unlisted → generic */];
 
 describe('the authored docket travels', () => {
   it('leaves no unfilled slot anywhere, in any country', () => {
@@ -121,17 +121,17 @@ describe('the cast', () => {
 
 describe('unlisted countries', () => {
   it('borrow no one else’s culture', () => {
-    const generic = genericProfile('JP', 'Japan');
+    const generic = genericProfile('IS', 'Iceland');
     const c = localizeCase(SEED_CASES[0]!, {
       profile: generic,
-      district: 'Tokyo',
-      court: generic.courtName('district', 'Tokyo'),
-      policeService: generic.policeService('Tokyo'),
+      district: 'Reykjavík',
+      court: generic.courtName('district', 'Reykjavík'),
+      policeService: generic.policeService('Reykjavík'),
       seed: 4,
     });
     const blob = JSON.stringify(c);
     // Placeless prose is the honest outcome for a country we have not done the
-    // work on — better than dressing Tokyo in Lagos.
+    // work on — better than dressing Reykjavík in Lagos.
     for (const trace of ['₦', 'NOK', 'danfo', 'Balogun']) {
       assert.equal(blob.includes(trace), false);
     }

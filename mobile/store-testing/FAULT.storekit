@@ -1,0 +1,341 @@
+{
+  "identifier": "C5E76624",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "4.99",
+      "familyShareable": false,
+      "internalID": "420B6D27",
+      "localizations": [
+        {
+          "description": "Founding Juror Bundle",
+          "displayName": "Founding Juror Bundle",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "starter_bundle",
+      "referenceName": "starter_bundle",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "4.99",
+      "familyShareable": false,
+      "internalID": "FED4FC84",
+      "localizations": [
+        {
+          "description": "Unlimited Docket",
+          "displayName": "Unlimited Docket",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "campaign",
+      "referenceName": "campaign",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "3.99",
+      "familyShareable": false,
+      "internalID": "B9B7E19B",
+      "localizations": [
+        {
+          "description": "No Adverts",
+          "displayName": "No Adverts",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "no_ads",
+      "referenceName": "no_ads",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "C0F7CD2F",
+      "localizations": [
+        {
+          "description": "The Boardroom Docket",
+          "displayName": "The Boardroom Docket",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "pack_corporate",
+      "referenceName": "pack_corporate",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "0847B4AF",
+      "localizations": [
+        {
+          "description": "The Cold Case Docket",
+          "displayName": "The Cold Case Docket",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "pack_cold_case",
+      "referenceName": "pack_cold_case",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "75F29D00",
+      "localizations": [
+        {
+          "description": "The Power Docket",
+          "displayName": "The Power Docket",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "pack_political",
+      "referenceName": "pack_political",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "6604346A",
+      "localizations": [
+        {
+          "description": "Brass Seal",
+          "displayName": "Brass Seal",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "seal_brass",
+      "referenceName": "seal_brass",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "77D4EBBD",
+      "localizations": [
+        {
+          "description": "Obsidian Seal",
+          "displayName": "Obsidian Seal",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "seal_obsidian",
+      "referenceName": "seal_obsidian",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "EDFD3A84",
+      "localizations": [
+        {
+          "description": "Ivory Seal",
+          "displayName": "Ivory Seal",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "seal_ivory",
+      "referenceName": "seal_ivory",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "2BBD8A61",
+      "localizations": [
+        {
+          "description": "Oak Chamber",
+          "displayName": "Oak Chamber",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "room_oak",
+      "referenceName": "room_oak",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "AC830A09",
+      "localizations": [
+        {
+          "description": "Marble Hall",
+          "displayName": "Marble Hall",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "room_marble",
+      "referenceName": "room_marble",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "61A7A925",
+      "localizations": [
+        {
+          "description": "Brutalist Court",
+          "displayName": "Brutalist Court",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "room_concrete",
+      "referenceName": "room_concrete",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "31F75B48",
+      "localizations": [
+        {
+          "description": "Night Session",
+          "displayName": "Night Session",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "room_night",
+      "referenceName": "room_night",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "19.99",
+      "familyShareable": false,
+      "internalID": "3E87FFCC",
+      "localizations": [
+        {
+          "description": "Patron of the Court",
+          "displayName": "Patron of the Court",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "patron",
+      "referenceName": "patron",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "1AC1B2A8",
+      "localizations": [
+        {
+          "description": "Three Streak Shields",
+          "displayName": "Three Streak Shields",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "shield_pack",
+      "referenceName": "shield_pack",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "817AE23E",
+      "localizations": [
+        {
+          "description": "1,200 Merit",
+          "displayName": "1,200 Merit",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "merit_small",
+      "referenceName": "merit_small",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "4.99",
+      "familyShareable": false,
+      "internalID": "9AB8E49C",
+      "localizations": [
+        {
+          "description": "3,500 Merit",
+          "displayName": "3,500 Merit",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "merit_medium",
+      "referenceName": "merit_medium",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "9.99",
+      "familyShareable": false,
+      "internalID": "B0315EC4",
+      "localizations": [
+        {
+          "description": "8,000 Merit",
+          "displayName": "8,000 Merit",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "merit_large",
+      "referenceName": "merit_large",
+      "type": "Consumable"
+    }
+  ],
+  "settings": {
+    "_applicationInternalID": "",
+    "_developerTeamID": "",
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [
+    {
+      "id": "6DB50597",
+      "localizations": [],
+      "name": "Juror Pass",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "4.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "BEFF1A59",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Juror Pass \u2014 Monthly",
+              "displayName": "Juror Pass \u2014 Monthly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "pass_monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "pass_monthly",
+          "subscriptionGroupID": "6DB50597",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "29.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "76B0EEF0",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Juror Pass \u2014 Yearly",
+              "displayName": "Juror Pass \u2014 Yearly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "pass_yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "pass_yearly",
+          "subscriptionGroupID": "6DB50597",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

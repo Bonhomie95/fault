@@ -237,15 +237,15 @@ ARCHETYPES = [
     #
     # `wears` tints the garment (a multiply, so it can only deepen).
     #   name            gender age   race         hair_asset   clothes                 gray
-    {"name": "f_young_af",   "gender": 0.05, "age": 0.28, "race": "african",   "hair_asset": "ponytail01",     "clothes": "female_elegantsuit01",  "hair": (0.09, 0.06, 0.05), "wears": (0.66, 0.74, 0.86)},
+    {"name": "f_young_af",   "gender": 0.05, "age": 0.28, "race": "african",   "hair_asset": "long01",     "clothes": "female_elegantsuit01",  "hair": (0.09, 0.06, 0.05), "wears": (0.66, 0.74, 0.86)},
     {"name": "f_young_af_b", "gender": 0.04, "age": 0.33, "race": "african",   "hair_asset": "long01",    "clothes": "female_elegantsuit01", "hair": (0.07, 0.05, 0.05), "wears": (0.80, 0.70, 0.66)},
-    {"name": "f_mid_af",     "gender": 0.05, "age": 0.58, "race": "african",   "hair_asset": "ponytail01",      "clothes": "female_elegantsuit01",  "hair": (0.06, 0.05, 0.05), "wears": (0.86, 0.80, 0.62)},
+    {"name": "f_mid_af",     "gender": 0.05, "age": 0.58, "race": "african",   "hair_asset": "long01",      "clothes": "female_elegantsuit01",  "hair": (0.06, 0.05, 0.05), "wears": (0.86, 0.80, 0.62)},
     {"name": "f_old_af",     "gender": 0.05, "age": 0.84, "race": "african",   "hair_asset": "short02",      "clothes": "female_elegantsuit01", "hair": (0.40, 0.39, 0.38), "wears": (0.78, 0.68, 0.66), "gray": True},
-    {"name": "f_young_as",   "gender": 0.04, "age": 0.30, "race": "asian",     "hair_asset": "ponytail01", "clothes": "female_elegantsuit01",  "hair": (0.07, 0.05, 0.05), "wears": (0.70, 0.86, 0.78)},
+    {"name": "f_young_as",   "gender": 0.04, "age": 0.30, "race": "asian",     "hair_asset": "long01", "clothes": "female_elegantsuit01",  "hair": (0.07, 0.05, 0.05), "wears": (0.70, 0.86, 0.78)},
     {"name": "f_mid_as",     "gender": 0.05, "age": 0.56, "race": "asian",     "hair_asset": "long01",      "clothes": "female_elegantsuit01", "hair": (0.06, 0.05, 0.05), "wears": (0.76, 0.72, 0.80)},
     {"name": "f_old_as",     "gender": 0.05, "age": 0.86, "race": "asian",     "hair_asset": "short04",      "clothes": "male_casualsuit03",  "hair": (0.42, 0.41, 0.40), "wears": (0.72, 0.70, 0.66), "gray": True},
     {"name": "f_young_ca",   "gender": 0.05, "age": 0.30, "race": "caucasian", "hair_asset": "long01",     "clothes": "male_casualsuit05",  "hair": (0.20, 0.13, 0.08), "wears": (0.76, 0.72, 0.80)},
-    {"name": "f_mid_ca",     "gender": 0.06, "age": 0.58, "race": "caucasian", "hair_asset": "ponytail01",      "clothes": "female_elegantsuit01", "hair": (0.30, 0.19, 0.11), "wears": (0.80, 0.74, 0.70)},
+    {"name": "f_mid_ca",     "gender": 0.06, "age": 0.58, "race": "caucasian", "hair_asset": "long01",      "clothes": "female_elegantsuit01", "hair": (0.30, 0.19, 0.11), "wears": (0.80, 0.74, 0.70)},
     {"name": "f_old_ca",     "gender": 0.06, "age": 0.86, "race": "caucasian", "hair_asset": "short02",      "clothes": "male_casualsuit01",  "hair": (0.62, 0.60, 0.58), "wears": (0.70, 0.66, 0.74), "gray": True},
     {"name": "m_young_af",   "gender": 0.95, "age": 0.30, "race": "african",   "hair_asset": "short02",    "clothes": "male_casualsuit05",    "hair": (0.06, 0.05, 0.04), "wears": (0.74, 0.72, 0.80)},
     {"name": "m_young_af_b", "gender": 0.96, "age": 0.26, "race": "african",   "hair_asset": "short04",     "clothes": "male_elegantsuit01",   "hair": (0.05, 0.04, 0.04), "wears": (0.66, 0.70, 0.74)},
@@ -257,6 +257,33 @@ ARCHETYPES = [
     {"name": "m_young_ca",   "gender": 0.95, "age": 0.27, "race": "caucasian", "hair_asset": "short04",    "clothes": "male_casualsuit01",    "hair": (0.35, 0.24, 0.14), "wears": (0.70, 0.74, 0.70)},
     {"name": "m_mid_ca",     "gender": 0.96, "age": 0.62, "race": "caucasian", "hair_asset": "short01",    "clothes": "male_elegantsuit01",   "hair": (0.14, 0.10, 0.07), "wears": (0.86, 0.86, 0.88)},
     {"name": "m_old_ca",     "gender": 0.95, "age": 0.86, "race": "caucasian", "hair_asset": "short01",    "clothes": "male_casualsuit03",    "hair": (0.55, 0.54, 0.52), "wears": (0.74, 0.72, 0.70), "gray": True},
+
+    # South Asian (sa), Latin American (la), Middle Eastern / North African (me).
+    #
+    # MakeHuman has three ancestry macros and photographed skins for exactly
+    # those three, so these are a MIX of the mesh macros (`mix`) on a
+    # photographed skin (`skin`) multiplied through by `tone` — the same
+    # baseColorFactor trick the hair uses, so it can only deepen, which is why
+    # the source is always the lightest skin. Without them a juror in Mumbai,
+    # Mexico City or Cairo got a courtroom cast from another continent.
+    {"name": "f_young_sa", "gender": 0.04, "age": 0.30, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.22, "asian": 0.18}, "skin": "caucasian", "tone": (0.26, 0.19, 0.14), "hair_asset": "long01", "clothes": "female_elegantsuit01", "hair": (0.05, 0.04, 0.04), "wears": (0.86, 0.70, 0.72)},
+    {"name": "f_mid_sa",   "gender": 0.05, "age": 0.56, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.24, "asian": 0.16}, "skin": "caucasian", "tone": (0.25, 0.18, 0.13), "hair_asset": "long01", "clothes": "female_elegantsuit01", "hair": (0.05, 0.04, 0.04), "wears": (0.70, 0.80, 0.76)},
+    {"name": "f_old_sa",   "gender": 0.05, "age": 0.85, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.24, "asian": 0.16}, "skin": "caucasian", "tone": (0.25, 0.18, 0.14), "hair_asset": "short02", "clothes": "female_elegantsuit01", "hair": (0.44, 0.43, 0.42), "wears": (0.80, 0.72, 0.62), "gray": True},
+    {"name": "m_young_sa", "gender": 0.95, "age": 0.29, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.22, "asian": 0.18}, "skin": "caucasian", "tone": (0.25, 0.19, 0.14), "hair_asset": "short02", "clothes": "male_casualsuit05", "hair": (0.05, 0.04, 0.04), "wears": (0.76, 0.76, 0.84)},
+    {"name": "m_mid_sa",   "gender": 0.95, "age": 0.54, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.24, "asian": 0.16}, "skin": "caucasian", "tone": (0.23, 0.17, 0.13), "hair_asset": "short01", "clothes": "male_elegantsuit01", "hair": (0.05, 0.04, 0.04), "wears": (0.82, 0.82, 0.86)},
+    {"name": "m_old_sa",   "gender": 0.94, "age": 0.86, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.24, "asian": 0.16}, "skin": "caucasian", "tone": (0.25, 0.18, 0.14), "hair_asset": "short01", "clothes": "male_casualsuit03", "hair": (0.52, 0.51, 0.50), "wears": (0.76, 0.72, 0.68), "gray": True},
+    {"name": "f_young_la", "gender": 0.04, "age": 0.29, "race": "latino", "mix": {"caucasian": 0.64, "asian": 0.2, "african": 0.16}, "skin": "caucasian", "tone": (0.48, 0.37, 0.29), "hair_asset": "long01", "clothes": "female_elegantsuit01", "hair": (0.10, 0.07, 0.05), "wears": (0.84, 0.76, 0.66)},
+    {"name": "f_mid_la",   "gender": 0.04, "age": 0.57, "race": "latino", "mix": {"caucasian": 0.6, "asian": 0.24, "african": 0.16}, "skin": "caucasian", "tone": (0.46, 0.36, 0.26), "hair_asset": "long01", "clothes": "female_elegantsuit01", "hair": (0.08, 0.06, 0.05), "wears": (0.70, 0.74, 0.86)},
+    {"name": "f_old_la",   "gender": 0.05, "age": 0.85, "race": "latino", "mix": {"caucasian": 0.6, "asian": 0.24, "african": 0.16}, "skin": "caucasian", "tone": (0.46, 0.36, 0.26), "hair_asset": "long01", "clothes": "female_elegantsuit01", "hair": (0.50, 0.49, 0.48), "wears": (0.74, 0.66, 0.72), "gray": True},
+    {"name": "m_young_la", "gender": 0.95, "age": 0.27, "race": "latino", "mix": {"caucasian": 0.62, "asian": 0.22, "african": 0.16}, "skin": "caucasian", "tone": (0.47, 0.36, 0.27), "hair_asset": "short04", "clothes": "male_casualsuit01", "hair": (0.08, 0.06, 0.05), "wears": (0.72, 0.78, 0.72)},
+    {"name": "m_mid_la",   "gender": 0.95, "age": 0.55, "race": "latino", "mix": {"caucasian": 0.6, "asian": 0.24, "african": 0.16}, "skin": "caucasian", "tone": (0.45, 0.34, 0.26), "hair_asset": "short02", "clothes": "male_elegantsuit01", "hair": (0.07, 0.05, 0.04), "wears": (0.84, 0.84, 0.88)},
+    {"name": "m_old_la",   "gender": 0.94, "age": 0.86, "race": "latino", "mix": {"caucasian": 0.6, "asian": 0.24, "african": 0.16}, "skin": "caucasian", "tone": (0.46, 0.36, 0.26), "hair_asset": "short01", "clothes": "male_worksuit01", "hair": (0.56, 0.55, 0.54), "wears": (0.74, 0.72, 0.68), "gray": True},
+    {"name": "f_young_me", "gender": 0.04, "age": 0.30, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.10}, "skin": "caucasian", "tone": (0.52, 0.41, 0.31), "hair_asset": "long01", "clothes": "female_elegantsuit01", "hair": (0.06, 0.05, 0.04), "wears": (0.72, 0.70, 0.82)},
+    {"name": "f_mid_me",   "gender": 0.05, "age": 0.57, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.10}, "skin": "caucasian", "tone": (0.50, 0.39, 0.29), "hair_asset": "long01", "clothes": "female_elegantsuit01", "hair": (0.06, 0.05, 0.04), "wears": (0.80, 0.76, 0.66)},
+    {"name": "f_old_me",   "gender": 0.05, "age": 0.86, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.10}, "skin": "caucasian", "tone": (0.50, 0.40, 0.30), "hair_asset": "short02", "clothes": "female_elegantsuit01", "hair": (0.46, 0.45, 0.44), "wears": (0.66, 0.70, 0.76), "gray": True},
+    {"name": "m_young_me", "gender": 0.95, "age": 0.28, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.10}, "skin": "caucasian", "tone": (0.50, 0.40, 0.30), "hair_asset": "short02", "clothes": "male_casualsuit05", "hair": (0.05, 0.04, 0.04), "wears": (0.80, 0.74, 0.70)},
+    {"name": "m_mid_me",   "gender": 0.96, "age": 0.56, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.10}, "skin": "caucasian", "tone": (0.49, 0.38, 0.29), "hair_asset": "short04", "clothes": "male_elegantsuit01", "hair": (0.05, 0.04, 0.04), "wears": (0.78, 0.80, 0.86)},
+    {"name": "m_old_me",   "gender": 0.95, "age": 0.86, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.10}, "skin": "caucasian", "tone": (0.50, 0.39, 0.29), "hair_asset": "short01", "clothes": "male_casualsuit01", "hair": (0.58, 0.57, 0.56), "wears": (0.72, 0.70, 0.74), "gray": True},
 ]
 
 
@@ -269,9 +296,14 @@ def build_human(spec: dict, seed: int):
     rng = random.Random(seed)
     # Ancestry is a three-way mix. Pinning one to 1.0 makes a caricature, so the
     # named ancestry is dominant and the rest is a real mixture.
-    for key in ("african", "asian", "caucasian"):
-        macro["race"][key] = 0.08 + rng.random() * 0.10
-    macro["race"][spec["race"]] = 1.0
+    if "mix" in spec:
+        # A named blend (see the sa/la/me archetypes), jittered a little.
+        for key in ("african", "asian", "caucasian"):
+            macro["race"][key] = spec["mix"].get(key, 0.0) + rng.random() * 0.04
+    else:
+        for key in ("african", "asian", "caucasian"):
+            macro["race"][key] = 0.08 + rng.random() * 0.10
+        macro["race"][spec["race"]] = 1.0
     total = sum(macro["race"].values())
     for key in macro["race"]:
         macro["race"][key] /= total
@@ -1530,6 +1562,9 @@ IRIS_WEIGHTS = {
     "african": ("brown", "brown", "brown", "brown", "grey"),
     "asian": ("brown", "brown", "brown", "brown", "grey"),
     "caucasian": ("brown", "deepblue", "green", "grey"),
+    "southasian": ("brown",),
+    "latino": ("brown", "brown", "brown", "green"),
+    "mena": ("brown", "brown", "brown", "green", "grey"),
 }
 
 
@@ -1613,7 +1648,7 @@ def apply_skin(human, spec: dict) -> bool:
 
     def score(path: str) -> int:
         name = os.path.basename(path).lower()
-        return ((spec["race"] in name) * 4
+        return ((spec.get("skin", spec["race"]) in name) * 4
                 + matches_gender(name, feminine) * 2
                 + (age in name))
 
@@ -2208,6 +2243,10 @@ def build_one(spec: dict, out_dir: str):
                     cutout_materials[slot.material.name] = CUTOFFS.get(kind, DEFAULT_CUTOFF)
     tints = hair_tint(assets, spec.get("hair", (0.10, 0.08, 0.06)))
     tints.update(garment_tint(assets, spec.get("wears")))
+    if spec.get("tone"):
+        for slot in human.material_slots:
+            if slot.material:
+                tints[slot.material.name] = spec["tone"]
     retag_alpha(path, cutout_materials, tints)
     size = recompress_images(path)
     worn = ", ".join(obj.name for obj, _, _ in assets if obj)

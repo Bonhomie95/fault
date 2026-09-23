@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Interstitial } from '@/components/Interstitial';
@@ -11,6 +11,7 @@ import * as haptic from '@/lib/haptics';
 import { useReducedMotion } from '@/lib/motion';
 import { play } from '@/lib/sound';
 import { useGame } from '@/store/game';
+import type { VerdictResult } from '@/lib/api';
 import { useSettings } from '@/store/settings';
 
 /**
@@ -125,10 +126,12 @@ export default function VerdictDelivered() {
                 {result.aftermath}
               </Text>
 
-              {/* GDD 11.4 — instant debate starter.
-                  Currently unreachable: cases are per-player, so sampleSize is
-                  always 1. It needs the shared daily docket. */}
-              {result.consensus.sampleSize > 1 && (
+              {/* The Daily Trial: the same case for the whole world, and how
+                  the world split. Opinion, never the answer. */}
+              {result.daily?.tally && <WorldSplit result={result} />}
+
+              {/* GDD 11.4 — instant debate starter, for ordinary cases. */}
+              {!result.daily && result.consensus.sampleSize > 1 && (
                 <Text style={styles.consensus}>
                   {result.consensus.guiltyPercent}% of jurors convicted.
                   {(result.consensus.guiltyPercent >= 50) === (result.verdict === 'guilty')
@@ -142,6 +145,11 @@ export default function VerdictDelivered() {
               <Text style={styles.earned}>
                 +{result.meritAwarded} MERIT{result.promoted ? '  ·  PROMOTED' : ''}
               </Text>
+              {(result.shieldsUsed ?? 0) > 0 && (
+                <Text style={styles.opened}>
+                  STREAK SHIELD USED · DAY {result.streak} KEPT
+                </Text>
+              )}
               {(result.districtsOpened?.length ?? 0) > 0 && (
                 <Text style={styles.opened}>
                   NEW COURT OPEN: {result.districtsOpened!.join(', ').toUpperCase()}
@@ -180,7 +188,7 @@ export default function VerdictDelivered() {
           <Animated.View entering={FadeIn.duration(600).delay(500)} style={styles.footer}>
             <Pressable onPress={onNext} style={styles.next} accessibilityRole="button">
               <Text style={styles.nextText}>
-                {result.triggerReview ? 'WHAT HAPPENED NEXT' : 'NEXT CASE'}
+                {result.triggerReview ? 'WHAT HAPPENED NEXT' : result.daily ? 'BACK TO THE COURT' : 'NEXT CASE'}
               </Text>
             </Pressable>
           </Animated.View>
@@ -192,8 +200,55 @@ export default function VerdictDelivered() {
   );
 }
 
+/** The world's split on today's trial, and a way to argue about it. */
+function WorldSplit({ result }: { result: VerdictResult }) {
+  const t = result.daily!.tally!;
+  const decided = Math.max(1, t.guilty + t.notGuilty);
+  const guilty = Math.round((t.guilty / decided) * 100);
+  const mine = result.verdict === 'guilty' ? guilty : 100 - guilty;
+  const share = () => {
+    const url = process.env.EXPO_PUBLIC_SHARE_URL;
+    void Share.share({
+      message:
+        `FAULT · Daily Trial ${result.daily!.day}\n` +
+        `I said ${result.verdict === 'guilty' ? 'GUILTY' : 'NOT GUILTY'} with ${result.timeRemaining}s left. ` +
+        `${mine}% of the world agreed with me. What would you say?` +
+        (url ? `\n${url}` : ''),
+    });
+  };
+  return (
+    <View style={styles.world}>
+      <Text style={styles.worldEyebrow}>THE DAILY TRIAL · {t.total.toLocaleString()} JURORS SO FAR</Text>
+      <View style={styles.bar} accessibilityLabel={`${guilty} percent guilty, ${100 - guilty} percent not guilty`}>
+        <View style={[styles.barGuilty, { flex: Math.max(guilty, 1) }]} />
+        <View style={[styles.barNot, { flex: Math.max(100 - guilty, 1) }]} />
+      </View>
+      <View style={styles.barLabels}>
+        <Text style={styles.barLabel}>{guilty}% GUILTY</Text>
+        <Text style={styles.barLabel}>{100 - guilty}% NOT GUILTY</Text>
+      </View>
+      <Text style={styles.consensus}>
+        {mine >= 50 ? `You stood with ${mine}% of the world.` : `Only ${mine}% of the world stood with you.`}
+        {' '}Nobody is told who was right.
+      </Text>
+      <Pressable onPress={share} style={styles.shareBtn} accessibilityRole="button">
+        <Text style={styles.shareText}>SHARE YOUR VERDICT</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Palette.bg },
+  world: { alignSelf: 'stretch', gap: 8, alignItems: 'center' },
+  worldEyebrow: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.6, color: Palette.textMuted },
+  bar: { flexDirection: 'row', height: 8, alignSelf: 'stretch', borderRadius: 4, overflow: 'hidden' },
+  barGuilty: { backgroundColor: '#C23B22' },
+  barNot: { backgroundColor: '#1FA184' },
+  barLabels: { flexDirection: 'row', justifyContent: 'space-between', alignSelf: 'stretch' },
+  barLabel: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Palette.textMuted },
+  shareBtn: { borderWidth: 1, borderColor: Palette.hairline, paddingVertical: 9, paddingHorizontal: 18, borderRadius: 2 },
+  shareText: { fontFamily: Fonts.uiBold, fontSize: 11, letterSpacing: 2, color: Palette.text },
   opened: {
     fontFamily: Fonts.monoBold,
     fontSize: Type.micro,

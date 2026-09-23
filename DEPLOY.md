@@ -40,8 +40,11 @@ The full list of variables, with the reasoning for each, is in
 `server/.env.example`. New in this release:
 
 - `ALLOW_GUEST_AUTH` (default `true`) — "Play as guest"; safe in production.
-- `ADS_SERVER_VERIFIED` (default `false`) — keep false until an ad network
-  with server-side verification is wired in; `/api/store/ad-reward` 404s.
+- `ADS_SERVER_VERIFIED` (default `false`) — set `true` once AdMob's
+  server-side verification callback is configured on the rewarded ad units
+  (section 5). Until then the store offers no rewarded views. Rewarded views
+  are paid ONLY by Google's signed callback (`GET /api/store/ssv`); the
+  client-claim route exists for development and 404s in production.
 - `PUBLIC_BASE_URL` — origin used to build the privacy/terms URLs.
 - `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`,
   `APPLE_CLIENT_ID` — Sign in with Apple token revocation on account deletion.
@@ -103,9 +106,8 @@ After changing `app.json` (permissions, plugins, privacy manifest) run
   Apple authorisation (guideline 5.1.1(v)).
 - **Users and Access → Integrations → In-App Purchase** key → the three
   `APPLE_ISSUER_ID/KEY_ID/PRIVATE_KEY` variables (a different key).
-- Create the in-app products with ids matching `server/src/domain/store.ts`
-  SKUs, once an IAP SDK is chosen (`mobile/lib/purchases.ts`). Until then the
-  store hides every real-money price.
+- Create the in-app products — see section 5 for the exact list. A product
+  that is not approved/active is simply not offered for money in the app.
 
 **Google Play Console**
 
@@ -162,8 +164,18 @@ Functionality*, *not* used for tracking:
 | Purchases | Purchase History | IAP records |
 | Location | Coarse Location | country only; coordinates never leave the device |
 
-Tracking: **No**. No IDFA, no ATT prompt (the `NSUserTrackingUsageDescription`
-string has been removed).
+Plus, for **Google AdMob** (third-party advertising, *not* linked to the
+user, **used for tracking** when the player allows it through ATT):
+
+| Category | Data type | Why |
+| --- | --- | --- |
+| Identifiers | Device ID | advertising (IDFA, only with ATT permission) |
+| Usage Data | Advertising Data | adverts shown/tapped |
+| Usage Data | Product Interaction | ad measurement |
+
+Tracking: **Yes** — the app shows the ATT prompt (text in `app.json`,
+`expo-tracking-transparency`) after Google's consent form, and
+`NSPrivacyTracking` is true in the privacy manifest.
 
 **Google Play Data safety form**
 
@@ -171,19 +183,96 @@ string has been removed).
   *Other info* (juror name); App activity → *Other actions* / in-game
   activity; Financial info → *Purchase history*; Location → *Approximate
   location*.
-- Shared with third parties: **No** (Groq, hosting and Apple/Google act as
-  service providers/processors, which Play does not count as sharing — but
-  re-check Google's current definition).
+- Also collected and **shared** for advertising (Google AdMob): *Device or
+  other IDs* (advertising ID), *App interactions*. Declare "Advertising or
+  marketing" as the purpose, and that the app contains ads.
+- Groq, hosting and Apple/Google act as service providers/processors, which
+  Play does not count as sharing — but re-check Google's current definition.
+- Play Console → Policy → **Ads**: "Yes, my app contains ads". Advertising ID
+  declaration: used for advertising (the AdMob SDK adds the permission).
 - Encrypted in transit: **Yes**. Users can request deletion: **Yes**
   (in-app, Settings → Delete this juror; also provide the web URL Play asks
   for — `https://<api-host>/legal/privacy` (section "Your rights and choices") or a
   support email).
 
 **Reviewer notes** (App Store Connect → App Review Information):
-"Tap PLAY AS GUEST to start without an account. Settings → Delete this juror
+"Tap PLAY AS GUEST to start without an account. The game is free: six
+cases a day plus the Daily Trial. In-app purchases and the Juror Pass
+subscription are in the lobby → The Clerk's Office; Restore Purchases is at
+the bottom of that screen and in Settings. Settings → Delete this juror
 removes the account; Settings → Download my data exports it. Long-press any
 name on THE CITIES to report or hide it."
 
 **Permissions** now requested: iOS *location when in use* only. Android:
 coarse location, internet, vibrate. Microphone, background location, overlay
 and external storage are blocked in `app.json`.
+
+---
+
+## 5. Money: in-app purchases, the Juror Pass and adverts
+
+The catalogue lives in `server/src/domain/store.ts` (`SKUS`). Product ids in
+the stores must match it exactly. `mobile/store-testing/FAULT.storekit`
+mirrors it for simulator testing.
+
+**App Store Connect → In-App Purchases**
+
+| Product id | Type | Price tier (USD) |
+| --- | --- | --- |
+| `starter_bundle` | Non-consumable | 4.99 |
+| `campaign` | Non-consumable | 4.99 |
+| `no_ads` | Non-consumable | 3.99 |
+| `pack_corporate`, `pack_cold_case`, `pack_political` | Non-consumable | 1.99 |
+| `room_oak`, `room_marble`, `room_concrete`, `room_night` | Non-consumable | 1.99 |
+| `seal_brass`, `seal_obsidian`, `seal_ivory` | Non-consumable | 1.99 |
+| `patron` | Non-consumable | 19.99 |
+| `shield_pack` | Consumable | 0.99 |
+| `merit_small` / `merit_medium` / `merit_large` | Consumable | 1.99 / 4.99 / 9.99 |
+
+**Subscriptions**: one group, *Juror Pass*, with `pass_monthly` (1 month,
+4.99) and `pass_yearly` (1 year, 29.99). A 7-day free trial on the yearly
+plan converts well; configure it as an introductory offer — the app shows
+whatever the store returns. Add the subscription's terms to the App Store
+description (auto-renewal wording is also shown in the store screen and in
+Terms §5a) and link the Terms of Use (EULA) in App Store Connect.
+
+**Google Play Console → Monetise**: the same ids as *in-app products*
+(consumable vs non-consumable is decided by the app, which consumes
+`shield_pack` and the Merit packs); `pass_monthly` and `pass_yearly` as
+*subscriptions*, each with one auto-renewing base plan. Link the Play
+service account (`GOOGLE_SERVICE_ACCOUNT_JSON`) with "View financial data"
+and "Manage orders and subscriptions".
+
+**Server variables** for verification: `APPLE_BUNDLE_ID`, `APPLE_ISSUER_ID`,
+`APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `ANDROID_PACKAGE_NAME`,
+`GOOGLE_SERVICE_ACCOUNT_JSON`. Without them every purchase is refused (the
+safe default). Never set `ALLOW_FAKE_PURCHASES` in production — the server
+refuses to boot with it.
+
+**Google AdMob**
+
+1. Create the app for iOS and for Android in AdMob. Create four ad units:
+   iOS interstitial, iOS rewarded, Android interstitial, Android rewarded.
+2. On **both rewarded units** turn on *Server-side verification* with the URL
+   `https://<api-host>/api/store/ssv`. Then set `ADS_SERVER_VERIFIED=true` on
+   Render — and set `ADS_TRUST_CLIENT=false`, which is the internal-test
+   switch that pays rewarded views on the client's word because Google's TEST
+   ad units send no callback. Leaving it on at launch is an open Merit tap.
+3. **Privacy & messaging**: publish a *GDPR* message (EEA/UK/Switzerland) and
+   an *IDFA explainer* message for iOS. The app calls Google's consent form
+   before any ad request and offers *Ad privacy choices* in Settings.
+4. Put the ids in EAS (Project → Environment variables, or `eas.json` env for
+   the production profile):
+   - `ADMOB_IOS_APP_ID`, `ADMOB_ANDROID_APP_ID` (native, read by
+     `app.config.js`; without them builds get Google's TEST app ids)
+   - `EXPO_PUBLIC_ADMOB_IOS_INTERSTITIAL`, `EXPO_PUBLIC_ADMOB_IOS_REWARDED`,
+     `EXPO_PUBLIC_ADMOB_ANDROID_INTERSTITIAL`,
+     `EXPO_PUBLIC_ADMOB_ANDROID_REWARDED` (without them a release build shows
+     no adverts at all — never test ads)
+5. Publish `app-ads.txt` on the developer website listed in both stores.
+6. Optional: `EXPO_PUBLIC_SHARE_URL` — the link added to shared Daily Trial
+   verdicts (your store page or website).
+
+**Pricing and economy knobs** (all server-side, no app release needed):
+`DOCKET.freePerDay` (6), `DOCKET.adCasesPerDay` (3), `MERIT.*`,
+`PASS_MERIT_MULTIPLIER`, `STARTER_WINDOW_HOURS` in `domain/store.ts`.

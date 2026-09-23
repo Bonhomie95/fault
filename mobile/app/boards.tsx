@@ -53,7 +53,7 @@ async function loadHidden(): Promise<string[]> {
 
 export default function Boards() {
   const jurorId = useGame((s) => s.jurorId);
-  const mySeal = sealFrom(useGame((s) => s.entitlements));
+  const mySeal = sealFrom(useGame((s) => s.entitlements), useGame((s) => s.equipped.seal));
   const [board, setBoard] = useState<Board>('peaceful');
   const [view, setView] = useState<BoardView | null>(null);
   const [loading, setLoading] = useState(true);

@@ -13,6 +13,7 @@ import { COUNTRIES, ladderFor, nextTier, profileFor, tierLabel } from '../domain
 import { prisma } from '../lib/prisma.js';
 import { currentDistrictFor } from '../domain/districts.js';
 import { dayKey } from './missions.js';
+import { docketFor, type DocketView } from './economy.js';
 import { computeJurorStats } from './jurorProfile.js';
 
 /**
@@ -161,6 +162,15 @@ export interface StandingView {
   unlocks: { caseArchive: boolean; jurorRecord: boolean; foreignApplications: boolean };
   /** The daily summons: whether today's is waiting, and what it pays. */
   daily: { available: boolean; satToday: boolean; merit: number; day: string };
+  /** How much of today's docket is left, and the shields held. */
+  docket: DocketView;
+  shields: number;
+  /**
+   * Who signs the juror's letter of appointment: a fictional Chief Justice
+   * with a name from the juror's own country. It was always "A. Oyelaran" —
+   * a Yoruba name presiding over Mumbai and Oslo alike.
+   */
+  chiefJustice: string;
 }
 
 /**
@@ -231,6 +241,9 @@ export async function standingFor(user: User): Promise<StandingView> {
     district: seat,
     court: seat ? profile.courtName(user.currentTier, seat) : null,
     daily: dailyFor(user),
+    docket: await docketFor(user),
+    shields: user.streakShields,
+    chiefJustice: chiefJusticeFor(profile, seat ?? country ?? ''),
     casesHeard,
     currentStreak: user.currentStreak,
     longestStreak: user.longestStreak,
@@ -325,4 +338,17 @@ export function eligibleCountries(user: User): { code: string; name: string; lad
   return Object.values(COUNTRIES)
     .filter((c) => c.code !== home)
     .map((c) => ({ code: c.code, name: c.name, ladder: ladderFor(c.code) }));
+}
+
+/** A fictional, stable Chief Justice for a seat: an initial and a local surname. */
+export function chiefJusticeFor(profile: { texture: { givenNames: string[]; surnames: string[] } }, seat: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < seat.length; i++) {
+    h ^= seat.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const n = Math.abs(h);
+  const given = profile.texture.givenNames[n % profile.texture.givenNames.length] ?? 'A';
+  const surname = profile.texture.surnames[(n >> 8) % profile.texture.surnames.length] ?? '';
+  return `${given.charAt(0)}. ${surname}`.trim();
 }

@@ -59,6 +59,8 @@ export default function ColdOpen() {
   const jurorId = useGame((s) => s.jurorId);
   const swearInWith = useGame((s) => s.swearInWith);
   const signInExisting = useGame((s) => s.signInExisting);
+  const offline = useGame((s) => s.offline);
+  const bootstrap = useGame((s) => s.bootstrap);
 
   const [typed, setTyped] = useState('');
   const [name, setName] = useState('');
@@ -192,7 +194,22 @@ export default function ColdOpen() {
           </Text>
         </View>
 
-        {typed.length === HEADLINE.length && !pending && (
+        {/* Signed in, but the court could not be reached to check. Never
+            the sign-in buttons: this juror already has a career. */}
+        {typed.length === HEADLINE.length && offline && (
+          <View style={styles.entry}>
+            <Text style={styles.label}>THE COURT COULD NOT BE REACHED</Text>
+            <Pressable
+              onPress={() => void bootstrap()}
+              style={[styles.provider, styles.providerGhost]}
+              accessibilityRole="button"
+            >
+              <Text style={styles.providerGhostText}>TRY AGAIN</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {typed.length === HEADLINE.length && !pending && !offline && (
           <Animated.View entering={FadeIn.duration(700).delay(300)} style={styles.entry}>
             <Text style={styles.label}>REPORT FOR SERVICE</Text>
 

@@ -9,6 +9,8 @@ import {
   type CityState,
   type ClientCase,
   type Entitlement,
+  type RoomTheme,
+  type SealStyle,
   type Session,
   type Standing,
   type VerdictResult,
@@ -28,6 +30,8 @@ interface GameState {
   clockSeconds: number;
   entitlements: Entitlement[];
   merit: number;
+  /** The courtroom and seal the juror has put on (lib/api Session.equipped). */
+  equipped: { room: RoomTheme | null; seal: SealStyle | null };
   hasBriefed: boolean;
 
   activeCase: ClientCase | null;
@@ -50,6 +54,12 @@ interface GameState {
   standing: Standing | null;
 
   bootstrapping: boolean;
+  /**
+   * The saved session could not be CHECKED — no network, or the server was
+   * down or waking up. The tokens are kept; the cold open offers a retry
+   * instead of the sign-in buttons.
+   */
+  offline: boolean;
   error: string | null;
   /**
    * The signed-in player has not accepted the current Terms and Privacy
@@ -65,7 +75,8 @@ interface GameState {
   swearInWith: (token: ProviderToken, jurorName: string) => Promise<void>;
   signInExisting: (token: ProviderToken) => Promise<boolean>;
   refreshStanding: () => Promise<void>;
-  loadCase: () => Promise<void>;
+  /** The ordinary docket, a special docket by key, or the Daily Trial. */
+  loadCase: (source?: { pack?: string; daily?: boolean }) => Promise<void>;
   /** null = the clock ran out and the player never chose. */
   deliverVerdict: (
     verdict: 'guilty' | 'not_guilty' | null,
@@ -84,6 +95,7 @@ export const useGame = create<GameState>((set, get) => ({
   jurorName: null,
   clockSeconds: 120,
   entitlements: [],
+  equipped: { room: null, seal: null },
   merit: 0,
   hasBriefed: false,
 
@@ -95,6 +107,7 @@ export const useGame = create<GameState>((set, get) => ({
   standing: null,
 
   bootstrapping: true,
+  offline: false,
   error: null,
   consentRequired: false,
 
@@ -114,6 +127,7 @@ export const useGame = create<GameState>((set, get) => ({
       set({ jurorId: null, jurorName: null, activeCase: null, standing: null, consentRequired: false });
     });
 
+    set({ offline: false });
     try {
       const raw = await storage.get(TOKEN_KEY);
       if (!raw) {
@@ -130,12 +144,22 @@ export const useGame = create<GameState>((set, get) => ({
         clockSeconds: session.clockSeconds,
         entitlements: session.entitlements,
         merit: session.merit,
+        equipped: session.equipped ?? { room: null, seal: null },
         // A returning juror has already read the letter.
         hasBriefed: (session.casesHeard ?? 0) > 0,
         consentRequired: session.consentRequired ?? false,
         bootstrapping: false,
       });
     } catch (err) {
+      // Only a session the server REFUSED is thrown away. This used to clear
+      // the tokens on any failure at all — so opening the app on a train, or
+      // while the server restarted or woke from sleep, signed the player out
+      // (an Apple juror then had to sign in again from scratch).
+      const transient = err instanceof ApiError && (err.status === 0 || err.status >= 500);
+      if (transient) {
+        set({ bootstrapping: false, offline: true });
+        return;
+      }
       // Tokens the server will not honour are worse than none. Worth
       // reporting even so: a bootstrap that fails for everyone is an outage,
       // and this catch used to make it invisible.
@@ -234,15 +258,19 @@ export const useGame = create<GameState>((set, get) => ({
     if (!get().jurorId) return;
     try {
       const session = await api.me();
-      set({ merit: session.merit, entitlements: session.entitlements });
+      set({
+        merit: session.merit,
+        entitlements: session.entitlements,
+        equipped: session.equipped ?? { room: null, seal: null },
+      });
     } catch (err) {
       reportError('refreshWallet', err);
     }
   },
 
-  loadCase: async () => {
+  loadCase: async (source) => {
     if (!get().jurorId) throw new Error('not sworn in');
-    const activeCase = await api.nextCase();
+    const activeCase = source?.daily ? await api.dailyCase() : await api.nextCase(source?.pack);
     set({ activeCase });
   },
 

@@ -388,11 +388,13 @@ describe('the client is never told the answer', () => {
   });
 });
 
-describe('the trial gate', () => {
-  it('closes after ten cases and opens with the entitlement', async () => {
+describe('the daily docket', () => {
+  it('closes after the free docket, and a rewarded view or the unlock reopens it', async () => {
+    const { DOCKET } = await import('../src/domain/store.js');
+    const { claimRewardedAd } = await import('../src/services/economy.js');
     const { accessToken, userId } = await swearIn('routes-gate');
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < DOCKET.freePerDay; i++) {
       const c = await api().get('/api/case/next').set(auth(accessToken));
       assert.equal(c.status, 200, `case ${i + 1} refused early`);
       await api()
@@ -403,14 +405,100 @@ describe('the trial gate', () => {
 
     const gated = await api().get('/api/case/next').set(auth(accessToken));
     assert.equal(gated.status, 402);
-    assert.equal(gated.body.error, 'trial_complete');
+    assert.equal(gated.body.error, 'docket_closed');
+    assert.equal(gated.body.docket.left, 0);
+
+    // One rewarded view (Google's callback, in production) opens one case.
+    await claimRewardedAd(userId, 'admob:test-view-0001', 'case');
+    const extra = await api().get('/api/case/next').set(auth(accessToken));
+    assert.equal(extra.status, 200);
+    await api().post('/api/verdict').set(auth(accessToken)).send({ caseId: extra.body.id, verdict: 'guilty' });
+    assert.equal((await api().get('/api/case/next').set(auth(accessToken))).status, 402);
 
     // Granted the way a receipt would grant it — never by the client asking.
     await prisma.userEntitlement.create({
       data: { userId, entitlement: 'campaign', source: 'grant' },
     });
-
     assert.equal((await api().get('/api/case/next').set(auth(accessToken))).status, 200);
+  });
+
+  it('opens with a live pass, and closes again when it lapses', async () => {
+    const { hasEntitlement } = await import('../src/services/economy.js');
+    const { userId } = await swearIn('routes-pass');
+    await prisma.userEntitlement.create({
+      data: { userId, entitlement: 'pass', source: 'store', expiresAt: new Date(Date.now() + 86_400_000) },
+    });
+    assert.equal(await hasEntitlement(userId, 'campaign'), true, 'the pass includes the unlimited docket');
+    assert.equal(await hasEntitlement(userId, 'room_night'), true);
+
+    await prisma.userEntitlement.updateMany({
+      where: { userId, entitlement: 'pass' },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    assert.equal(await hasEntitlement(userId, 'campaign'), false, 'a lapsed pass still unlocks');
+    assert.equal(await hasEntitlement(userId, 'pass'), false);
+  });
+
+  it('never re-delivers a consumable on restore', async () => {
+    const { redeemPurchase } = await import('../src/services/economy.js');
+    const { skuById } = await import('../src/domain/store.js');
+    const { userId } = await swearIn('routes-consumable');
+    const sku = skuById('merit_small')!;
+    const first = await redeemPurchase({ userId, sku, transactionId: 'txn-merit-01', platform: 'android' });
+    const again = await redeemPurchase({ userId, sku, transactionId: 'txn-merit-01', platform: 'android' });
+    assert.equal(first.meritBalance, again.meritBalance, 'restore printed Merit');
+  });
+});
+
+describe('the Daily Trial', () => {
+  it('is free, is served once, and reports how the world split', async () => {
+    const { accessToken } = await swearIn('routes-daily');
+    const status = await api().get('/api/case/daily/status').set(auth(accessToken));
+    assert.equal(status.status, 200);
+    assert.equal(status.body.sat, false);
+
+    const c = await api().get('/api/case/daily').set(auth(accessToken));
+    assert.equal(c.status, 200);
+    assert.equal(c.body.daily, status.body.day);
+    assert.doesNotMatch(JSON.stringify(c.body), /\{[A-Z0-9_]+\}/, 'a slot reached the player');
+
+    // It is not a day's docket case.
+    const standing = await api().get('/api/standing').set(auth(accessToken));
+    assert.equal(standing.body.docket.usedToday, 0);
+
+    const v = await api().post('/api/verdict').set(auth(accessToken)).send({ caseId: c.body.id, verdict: 'guilty' });
+    assert.equal(v.status, 200);
+    assert.ok(v.body.daily.tally.total >= 1);
+    assert.ok(v.body.daily.tally.guilty >= 1);
+
+    const again = await api().get('/api/case/daily').set(auth(accessToken));
+    assert.equal(again.status, 409);
+    assert.equal(again.body.error, 'daily_done');
+  });
+});
+
+describe('streak shields', () => {
+  it('cover a missed day, and only a whole gap', async () => {
+    const { recordDocketDay } = await import('../src/services/missions.js');
+    const { dayKey } = await import('../src/services/missions.js');
+    const { userId } = await swearIn('routes-shield');
+    const twoDaysAgo = dayKey('UTC', new Date(Date.now() - 2 * 86_400_000));
+    await prisma.user.update({
+      where: { id: userId },
+      data: { timezone: 'UTC', lastDocketDay: twoDaysAgo, currentStreak: 9, streakShields: 1 },
+    });
+    const kept = await recordDocketDay(userId);
+    assert.equal(kept.streak, 10);
+    assert.equal(kept.shieldsUsed, 1);
+
+    const fourDaysAgo = dayKey('UTC', new Date(Date.now() - 4 * 86_400_000));
+    await prisma.user.update({
+      where: { id: userId },
+      data: { lastDocketDay: fourDaysAgo, currentStreak: 9, streakShields: 2 },
+    });
+    const broken = await recordDocketDay(userId);
+    assert.equal(broken.streak, 1, 'two shields cannot cover three missed days');
+    assert.equal(broken.shieldsUsed, 0);
   });
 });
 

@@ -2,8 +2,8 @@
 
 Character limits are Apple's / Google's current ones; the counts in brackets
 were checked when this was written. Keep every claim true to the build that
-ships: do not advertise purchases, rewarded ads or Google sign-in until they
-are live in that build.
+ships: the purchases and Juror Pass below must be approved in App Store
+Connect / Play Console before this description goes live.
 
 ---
 
@@ -63,6 +63,11 @@ integrity, organised crime and media pressure all move with what you decide —
 and the city's newspapers print the fallout: backlash, protests, reform bills,
 a syndicate getting bolder.
 
+THE DAILY TRIAL
+One case a day for the whole world — told in your own country, with your
+courts and your names. Deliver your verdict, then see how the world split.
+Share it and argue about it. Nobody is told who was right.
+
 PEOPLE COME BACK
 The defendant you let walk may turn up again — as a witness, a victim, or in
 the dock. The record remembers, and so does the city.
@@ -79,9 +84,19 @@ districts and cities to preside over, then apply to sit in courts beyond your
 own. Compare your city with every other juror's on the boards — the most
 peaceful, and the most lawless.
 
-FAIR BY DESIGN
-Nothing for sale changes a verdict, your standing, or a second on the clock.
-Merit is earned by sitting cases, never by being right.
+FREE TO PLAY, FAIR BY DESIGN
+A free docket of cases every day, plus the Daily Trial. Nothing for sale
+changes a verdict, your standing, or a second on the clock. Merit is earned
+by sitting cases, never by being right. Want more? Special dockets (the
+Boardroom, the Cold Case, the Power docket), new courtrooms, seals and streak
+shields can be earned with Merit or bought.
+
+JUROR PASS
+Unlimited cases, no adverts, every special docket and courtroom, the gold
+seal, +50% Merit and two streak shields each period. Monthly or yearly.
+Payment is charged to your Apple ID / Google account at confirmation. The
+subscription renews automatically unless cancelled at least 24 hours before
+the end of the current period; manage or cancel it in your account settings.
 
 PLAY YOUR WAY
 Play as a guest in seconds, or sign in with Apple to keep your career safe.

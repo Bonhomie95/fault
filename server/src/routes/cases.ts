@@ -2,12 +2,22 @@ import { Router } from 'express';
 import type { Tier } from '@prisma/client';
 import { courtroomLineSchema, type ClientCase, type Evidence, type Witness } from '../domain/case.js';
 import { clockFor } from '../domain/clock.js';
-import { CAMPAIGN_TRIAL_CASES } from '../domain/store.js';
-import { hasEntitlement } from '../services/economy.js';
+import { DOCKET, PACKS } from '../domain/store.js';
+import { docketFor, hasEntitlement } from '../services/economy.js';
+import { dailyFor, dailyTemplate, tallyFor, utcDay } from '../services/dailyTrial.js';
 import { generationLimiter } from '../middleware/limits.js';
 import { prisma } from '../lib/prisma.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../lib/prismaErrors.js';
-import { accentHexFor, nextCase, placeForUser, structureKeyFor } from '../services/caseGenerator.js';
+import {
+  accentHexFor,
+  nextCase,
+  placeForUser,
+  specialCase,
+  structureKeyFor,
+  type PlaceContext,
+} from '../services/caseGenerator.js';
+import type { GeneratedCase } from '../domain/case.js';
+import type { CityMetrics } from '../domain/city.js';
 import { tierLabel } from '../domain/jurisdiction.js';
 import { presentsFeminine } from '../domain/nameGender.js';
 import { deriveCaseMood } from '../services/cityEffects.js';
@@ -16,8 +26,6 @@ import { portraitSeedFor } from '../services/characterPool.js';
 import { requireJuror } from '../middleware/requireJuror.js';
 
 export const caseRouter = Router();
-
-const TRIAL_CASE_LIMIT = 10;
 
 /**
  * Strips everything the player must not see: correct_verdict, evidence_strength,
@@ -165,32 +173,18 @@ caseRouter.get('/next', requireJuror, generationLimiter, async (req, res) => {
     return;
   }
 
-  const heard = await prisma.verdictRecord.count({ where: { userId } });
-  const hasCampaign = await hasEntitlement(userId, 'campaign');
-
-  // The gate reads an entitlement row now, not a boolean the client could set.
-  if (!hasCampaign && heard >= CAMPAIGN_TRIAL_CASES) {
-    res.status(402).json({
-      error: 'trial_complete',
-      message: 'The trial docket is closed. Open the full docket to continue.',
-      casesHeard: heard,
-    });
-    return;
-  }
-
   /**
    * The next number on this juror's docket.
    *
    * Taken from the highest case they have ever been served, not from how many
-   * verdicts they have delivered. Those two used to be the same number, and
-   * the moment a case can exist without a verdict they stop being: a
-   * quarantined case (reported, withdrawn, never judged) leaves `heard`
-   * unchanged, so `heard + 1` would hand the next case a number that is
-   * already taken — and `@@unique([userId, caseNumber])` would turn a player's
-   * report into a 500 on their very next request.
+   * verdicts they have delivered: a quarantined case (reported, never judged)
+   * leaves the verdict count unchanged, so counting verdicts would hand the
+   * next case a number that is already taken.
    *
-   * `heard` is still the right input for the trial gate above, because that
-   * gate is genuinely about cases HEARD.
+   * Read FIRST, before the gates below: two overlapping requests must read
+   * the same number so the second collides and is served the first one's
+   * case (see the catch) — every await between the pending check and this
+   * read is a window in which a juror could be handed two open cases.
    */
   const highest = await prisma.case.aggregate({
     where: { userId },
@@ -198,9 +192,59 @@ caseRouter.get('/next', requireJuror, generationLimiter, async (req, res) => {
   });
   const caseNumber = (highest._max.caseNumber ?? 0) + 1;
 
+  // A special docket, if one was asked for by name.
+  const wanted = typeof req.query.pack === 'string' ? req.query.pack : null;
+  const pack = wanted ? Object.entries(PACKS).find(([, p]) => p.key === wanted) : undefined;
+  if (wanted && !pack) {
+    res.status(404).json({ error: 'no_such_docket' });
+    return;
+  }
+
+  if (pack) {
+    const [entitlement, { key }] = pack;
+    if (!(await hasEntitlement(userId, entitlement as keyof typeof PACKS))) {
+      res.status(402).json({ error: 'pack_locked', message: 'That docket has not been opened.' });
+      return;
+    }
+    const heard = await prisma.case.count({ where: { userId, pack: key } });
+    if (heard >= DOCKET.packCases) {
+      res.status(410).json({ error: 'pack_complete', message: 'Every case on that docket has been heard.' });
+      return;
+    }
+  } else {
+    // The daily docket. The Daily Trial and special dockets do not count
+    // against it — see services/economy.docketFor.
+    const docket = await docketFor(user);
+    if (docket.left === 0) {
+      res.status(402).json({
+        error: 'docket_closed',
+        message: 'Today’s docket is closed. It reopens tomorrow — or open more cases now.',
+        docket,
+      });
+      return;
+    }
+  }
+
+
   const city = await getCityState(userId);
   const place = placeForUser(user);
-  const { generated, source } = await nextCase(userId, caseNumber, city, place);
+  let generated: GeneratedCase;
+  let source: 'cache' | 'live' | 'fallback';
+  if (pack) {
+    const themed = await specialCase(userId, caseNumber, city, place, pack[1].theme);
+    if (!themed) {
+      // Never the ordinary docket in its place: that is not what was bought.
+      res.status(503).json({
+        error: 'docket_busy',
+        message: 'The special docket is still being prepared. Try again in a moment.',
+      });
+      return;
+    }
+    generated = themed;
+    source = 'live';
+  } else {
+    ({ generated, source } = await nextCase(userId, caseNumber, city, place));
+  }
 
   // servedAt is written in the SAME insert as the case, not by a follow-up
   // update. It used to be a second round trip, which left a window in which a
@@ -213,6 +257,7 @@ caseRouter.get('/next', requireJuror, generationLimiter, async (req, res) => {
   try {
     created = await prisma.case.create({
     data: {
+      pack: pack ? pack[1].key : null,
       userId,
       caseNumber,
       // The clock starts the moment the case leaves the building. There is no
@@ -299,3 +344,122 @@ caseRouter.get('/next', requireJuror, generationLimiter, async (req, res) => {
 
   res.json(toClientCase(created, clockFor(created.servedAt).remaining, returning));
 });
+
+/**
+ * The Daily Trial — one case a day for the whole world. See services/dailyTrial.
+ *
+ * Free: it never counts against the daily docket, and it is the reason to open
+ * the app on a day nothing else is.
+ */
+caseRouter.get('/daily/status', requireJuror, async (req, res) => {
+  const day = utcDay();
+  const mine = await prisma.case.findFirst({
+    where: { userId: req.juror.userId, dailyKey: day },
+    select: { id: true, verdict: { select: { verdict: true, wasHung: true } } },
+  });
+  res.json({
+    day,
+    sat: Boolean(mine?.verdict),
+    open: Boolean(mine && !mine.verdict),
+    verdict: mine?.verdict ? (mine.verdict.wasHung ? null : mine.verdict.verdict) : null,
+    tally: mine?.verdict ? await tallyFor(day) : null,
+    // Tomorrow's case arrives at midnight UTC for everyone.
+    nextAt: new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000),
+  });
+});
+
+caseRouter.get('/daily', requireJuror, generationLimiter, async (req, res) => {
+  const { userId, user } = req.juror;
+  const day = utcDay();
+
+  const serve = async (row: Parameters<typeof toClientCase>[0] & { servedAt: Date | null }) => {
+    const names = [row.defendantName, ...(row.witnesses as Witness[]).map((w) => w.name)];
+    const clock = clockFor(row.servedAt);
+    res.json({
+      ...toClientCase(row, clock.remaining, await findReturning(userId, names, row.id)),
+      adjourned: clock.expired,
+      daily: day,
+    });
+  };
+
+  const existing = await prisma.case.findFirst({
+    where: { userId, dailyKey: day },
+    include: { verdict: { select: { id: true } } },
+  });
+  if (existing?.verdict) {
+    res.status(409).json({ error: 'daily_done', message: 'You have sat today’s trial.', tally: await tallyFor(day) });
+    return;
+  }
+  if (existing) {
+    await serve(existing);
+    return;
+  }
+
+  const place = placeForUser(user);
+  const template = await dailyTemplate(day);
+  const generated = dailyFor(template, userId, day, place);
+  const city = await getCityState(userId);
+  const highest = await prisma.case.aggregate({ where: { userId }, _max: { caseNumber: true } });
+
+  try {
+    const created = await insertCase(userId, (highest._max.caseNumber ?? 0) + 1, generated, place, city, {
+      dailyKey: day,
+      jurisdiction: place.court,
+    });
+    await serve(created);
+  } catch (err) {
+    // Two taps at once: the other request made it. Serve that one.
+    if (isUniqueViolation(err, 'dailyKey')) {
+      const raced = await prisma.case.findFirst({ where: { userId, dailyKey: day } });
+      if (raced) {
+        await serve(raced);
+        return;
+      }
+    }
+    throw err;
+  }
+});
+
+/** One case row, from a generated case. */
+function insertCase(
+  userId: string,
+  caseNumber: number,
+  generated: GeneratedCase,
+  place: PlaceContext,
+  city: CityMetrics,
+  extra: { dailyKey?: string; pack?: string; jurisdiction: string },
+) {
+  return prisma.case.create({
+    data: {
+      userId,
+      caseNumber,
+      servedAt: new Date(),
+      title: generated.title,
+      charge: generated.charge,
+      accent: accentHexFor(generated.accent),
+      mood: deriveCaseMood(city),
+      country: place.country,
+      jurisdiction: extra.jurisdiction,
+      tier: place.tier,
+      defendantName: generated.defendant.name,
+      defendantAge: generated.defendant.age,
+      defendantOccupation: generated.defendant.occupation,
+      defendantBackground: generated.defendant.background,
+      defendantWealth: generated.defendant.wealth,
+      defendantAppearance: generated.defendant.appearance,
+      defendantDemeanour: generated.defendant.demeanour,
+      defendantOddity: generated.defendant.oddity,
+      evidence: generated.evidence,
+      witnesses: generated.witnesses,
+      prosecutionArgument: generated.prosecution_argument,
+      lines: generated.courtroom_lines,
+      defenceArgument: generated.defence_argument,
+      correctVerdict: generated.correct_verdict,
+      evidenceStrength: generated.evidence_strength,
+      isHandAuthored: false,
+      structureKey: structureKeyFor(generated),
+      dailyKey: extra.dailyKey ?? null,
+      pack: extra.pack ?? null,
+    },
+  });
+}

@@ -28,13 +28,25 @@ Nothing in the Service is legal advice. The procedures, evidence and outcomes in
 
 ## 5. Virtual items and Merit
 
-The Service includes **Merit**, an in-game currency earned by playing, and items that may be unlocked with Merit or purchased with real money (such as the full docket, case packs, cosmetic seals, or removing advertisements).
+The Service includes **Merit**, an in-game currency earned by playing, and items that may be unlocked with Merit or purchased with real money (such as the unlimited docket, special dockets, extra cases, streak shields, courtrooms and seals, or removing advertisements).
+
+The game is free to play: every day includes a free docket of cases and the Daily Trial. Consumable items (such as Merit, extra cases and streak shields) are used up when used and are not restored after use.
 
 - Merit and all virtual items have **no cash value**, are not your property, and cannot be sold, transferred, exchanged or redeemed for money or anything of value outside the game.
 - You receive a limited, personal, revocable licence to use virtual items within the Service.
 - Nothing in the store changes a verdict, your standing, or the time on the clock.
 - Real-money purchases are processed by Apple or Google under their terms. Refunds are handled by the store you bought from, in line with its policies and your local consumer law. If a purchase is refunded, we may remove the item it granted.
 - We may change, rebalance or retire virtual items, but we will not remove a paid item you own without a good reason (for example, a refund, fraud, or the Service ending).
+
+## 5a. The Juror Pass (subscription)
+
+The **Juror Pass** is an auto-renewing subscription, offered monthly or yearly. While it is active it includes an unlimited docket, no interstitial advertisements, all special dockets and courtrooms, the gold seal, additional Merit from cases, and streak shields each period. It never changes a verdict, your standing, or the clock.
+
+- Payment is charged to your Apple or Google account when you confirm the purchase.
+- The subscription **renews automatically** at the same price and period unless you cancel it at least 24 hours before the end of the current period. Your account is charged for renewal within the 24 hours before the period ends.
+- You can manage or cancel it at any time in your App Store or Google Play account settings (also reachable from the store and Settings in the app). Cancelling stops future renewals; the pass stays active until the end of the period you paid for.
+- If a free trial or introductory price is offered, it is shown before you buy; any unused portion of a free trial ends when you buy a subscription.
+- Items the pass includes are available only while it is active. Items you bought or earned separately are yours regardless.
 
 ## 6. Your content: juror names and reports
 
@@ -60,7 +72,7 @@ The Service, including its software, art, text, music, and generated case conten
 
 ## 9. Advertising
 
-Some versions of the Service may show advertisements between cases — never during one. Watching an advertisement for a reward is always optional.
+The Service shows advertisements, provided by Google AdMob, between cases — never during one. You can remove interstitial advertisements with a purchase or the Juror Pass. Watching an advertisement for a reward (such as Merit or an extra case) is always optional, and a reward is credited only once the advertising network confirms the view. See the Privacy Policy for how advertising uses data and how to change your choices.
 
 ## 10. Changes to the Service and these Terms
 

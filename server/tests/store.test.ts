@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  CAMPAIGN_TRIAL_CASES,
+  DOCKET,
   MERIT,
+  PASS_INCLUDES,
   meritForStreak,
   meritForVerdict,
   SKUS,
@@ -35,21 +36,27 @@ describe('the store cannot sell an advantage', () => {
       'seal_brass',
       'seal_obsidian',
       'seal_ivory',
+      'seal_gold',
       'room_oak',
       'room_concrete',
-      'stock_onionskin',
-      'stock_vellum',
+      'room_marble',
+      'room_night',
+      // all of the above, for a while
+      'pass',
       // a thank-you
       'patron',
     ];
 
     for (const sku of SKUS) {
-      if (sku.grants === null) continue;
-      assert.ok(
-        allowed.includes(sku.grants),
-        `${sku.id} grants "${sku.grants}" — if that is an advantage, it does not belong in the store; if it is not, add it to this list on purpose.`,
-      );
+      for (const g of sku.grants) {
+        assert.ok(
+          allowed.includes(g),
+          `${sku.id} grants "${g}" — if that is an advantage, it does not belong in the store; if it is not, add it to this list on purpose.`,
+        );
+      }
     }
+    // And the pass implies only things on the same list.
+    for (const g of PASS_INCLUDES) assert.ok(allowed.includes(g), `the pass implies "${g}"`);
   });
 
   it('keeps every cosmetic earnable', () => {
@@ -66,7 +73,7 @@ describe('the store cannot sell an advantage', () => {
     for (const sku of SKUS) {
       assert.equal(forbidden.test(sku.id), false, `${sku.id} sounds like an advantage`);
       assert.equal(
-        forbidden.test(String(sku.grants)),
+        forbidden.test(sku.grants.join(' ')),
         false,
         `${sku.id} grants something that sounds like an advantage`,
       );
@@ -137,22 +144,34 @@ describe('the store cannot sell a promise', () => {
       .join('\n');
 
     for (const sku of SKUS) {
-      if (!sku.grants) continue; // Merit bundles grant a balance, not a thing
-      assert.ok(
-        corpus.includes(sku.grants),
-        `${sku.id} is for sale and grants "${sku.grants}", which nothing outside the ` +
-          `catalogue ever reads. Either build the thing or take it off the shelf.`,
-      );
+      for (const g of sku.grants) {
+        assert.ok(
+          corpus.includes(g),
+          `${sku.id} is for sale and grants "${g}", which nothing outside the ` +
+            `catalogue ever reads. Either build the thing or take it off the shelf.`,
+        );
+      }
     }
   });
 
   it('keeps unbuilt entitlements out of the catalogue entirely', () => {
-    // The correct handling, already applied to the room finishes and dossier
-    // stocks: they exist in the schema and are deliberately absent from SKUS.
-    // A schema entry is a plan; a SKU is a promise.
-    const forSale = new Set(SKUS.map((s) => s.grants));
-    for (const unbuilt of ['pack_corporate', 'pack_cold_case', 'pack_political', 'room_oak', 'room_concrete', 'stock_onionskin', 'stock_vellum']) {
+    // The dossier stocks exist in the schema and nothing draws them, so they
+    // are deliberately absent from SKUS. A schema entry is a plan; a SKU is a
+    // promise.
+    const forSale = new Set(SKUS.flatMap((s) => s.grants));
+    for (const unbuilt of ['stock_onionskin', 'stock_vellum']) {
       assert.ok(!forSale.has(unbuilt as never), `${unbuilt} is on sale with nothing behind it`);
+    }
+  });
+
+  it('prices subscriptions as subscriptions, with a period', () => {
+    for (const sku of SKUS.filter((s) => s.kind === 'pass')) {
+      assert.equal(sku.store, 'subscription', sku.id);
+      assert.ok(sku.period, `${sku.id} needs a period for the auto-renew terms`);
+    }
+    // Consumables must be consumed by the store, or they can be bought once.
+    for (const sku of SKUS.filter((s) => s.meritGranted || s.shieldsGranted)) {
+      if (sku.store && sku.kind !== 'bundle') assert.equal(sku.store, 'consumable', sku.id);
     }
   });
 });
@@ -220,8 +239,10 @@ describe('merit is paid for service, never for being right', () => {
   });
 });
 
-describe('the trial', () => {
-  it('is ten cases, as the GDD says', () => {
-    assert.equal(CAMPAIGN_TRIAL_CASES, 10);
+describe('the daily docket', () => {
+  it('is free every day, with a little more for a rewarded view', () => {
+    assert.ok(DOCKET.freePerDay >= 5, 'a docket of fewer than five is a demo, not a game');
+    assert.ok(DOCKET.adCasesPerDay > 0 && DOCKET.adCasesPerDay <= 5);
+    assert.equal(DOCKET.packCases, 10);
   });
 });

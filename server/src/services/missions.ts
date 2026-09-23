@@ -243,14 +243,22 @@ function periodFor(kind: MissionKind, timezone: string): string {
  * The streak. Counts days you turned up, and nothing else — not accuracy, not
  * verdicts. Breaking it costs nothing but the number, because a game about
  * regret should not also punish you for having a life.
+ *
+ * Streak shields cover missed days: one per day, spent automatically, and
+ * only if there are enough to cover the WHOLE gap — a shield that saved three
+ * days of a five-day absence would be spent for nothing.
  */
-export async function recordDocketDay(userId: string): Promise<{ streak: number; isNewDay: boolean }> {
+export async function recordDocketDay(
+  userId: string,
+): Promise<{ streak: number; isNewDay: boolean; shieldsUsed: number }> {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
   const today = dayKey(user.timezone);
-  if (user.lastDocketDay === today) return { streak: user.currentStreak, isNewDay: false };
+  if (user.lastDocketDay === today) return { streak: user.currentStreak, isNewDay: false, shieldsUsed: 0 };
 
-  const yesterday = dayKey(user.timezone, new Date(Date.now() - 86400000));
-  const streak = user.lastDocketDay === yesterday ? user.currentStreak + 1 : 1;
+  const missed = user.lastDocketDay ? daysBetween(user.lastDocketDay, today) - 1 : 0;
+  const shieldsUsed = missed > 0 && missed <= user.streakShields ? missed : 0;
+  const kept = user.lastDocketDay !== null && (missed === 0 || shieldsUsed > 0);
+  const streak = kept ? user.currentStreak + 1 : 1;
 
   await prisma.user.update({
     where: { id: userId },
@@ -259,10 +267,16 @@ export async function recordDocketDay(userId: string): Promise<{ streak: number;
       currentStreak: streak,
       longestStreak: Math.max(streak, user.longestStreak),
       lastSeenAt: new Date(),
+      ...(shieldsUsed ? { streakShields: { decrement: shieldsUsed } } : {}),
     },
   });
 
-  return { streak, isNewDay: true };
+  return { streak, isNewDay: true, shieldsUsed };
+}
+
+/** Whole days from one YYYY-MM-DD to another. */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 
 /** What the verdict route passes in. */

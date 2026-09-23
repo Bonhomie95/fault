@@ -14,12 +14,14 @@ import type { Entitlement } from '@/lib/api';
  * any size, and cannot be a missing asset in production.
  */
 
-export type SealKind = 'patron' | 'seal_brass' | 'seal_obsidian' | 'seal_ivory';
+export type SealKind = 'patron' | 'seal_brass' | 'seal_obsidian' | 'seal_ivory' | 'seal_gold';
 
 const SEALS: Record<SealKind, { ring: string; face: string; ink: string; glyph: string }> = {
   seal_brass: { ring: '#8A6A2F', face: '#C79A3C', ink: '#3A2C10', glyph: '§' },
   seal_obsidian: { ring: '#2A2A33', face: '#15151C', ink: '#8E8EA8', glyph: '§' },
   seal_ivory: { ring: '#B9B096', face: '#E8E1CC', ink: '#4A4433', glyph: '§' },
+  /** The Juror Pass seal. Lapses with the pass, like everything it brings. */
+  seal_gold: { ring: '#B8860B', face: '#F2C94C', ink: '#4A3505', glyph: '§' },
   /**
    * The patron's mark.
    *
@@ -42,8 +44,10 @@ const SEALS: Record<SealKind, { ring: string; face: string; ink: string; glyph: 
  * somebody who paid for it and then earned another should not silently lose
  * the mark they paid for.
  */
-export function sealFrom(entitlements: Entitlement[]): SealKind | null {
-  const order: SealKind[] = ['patron', 'seal_obsidian', 'seal_brass', 'seal_ivory'];
+export function sealFrom(entitlements: Entitlement[], preferred?: SealKind | null): SealKind | null {
+  // The one the juror chose, while they still own it.
+  if (preferred && entitlements.includes(preferred)) return preferred;
+  const order: SealKind[] = ['patron', 'seal_gold', 'seal_obsidian', 'seal_brass', 'seal_ivory'];
   return order.find((s) => entitlements.includes(s)) ?? null;
 }
 

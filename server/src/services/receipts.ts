@@ -30,10 +30,14 @@ export interface ReceiptClaim {
   platform: 'ios' | 'android';
   /** Apple: signedTransactionInfo (JWS). Google: purchaseToken. */
   receipt: string;
+  /** Set by the route from OUR catalogue, never by the client. */
+  subscription?: boolean;
 }
 
 export interface ReceiptVerdict {
   valid: boolean;
+  /** A subscription's expiry, as the store reports it. */
+  expiresAt?: Date;
   /** Why not, for logs. Never returned to the client — it leaks configuration. */
   reason?: string;
 }
@@ -151,12 +155,18 @@ async function appleServerCheck(claim: ReceiptClaim): Promise<ReceiptVerdict> {
     bundleId?: string;
     productId?: string;
     revocationDate?: number;
+    expiresDate?: number;
   };
 
   if (info.bundleId !== env.APPLE_BUNDLE_ID) return { valid: false, reason: 'apple: bundle mismatch' };
   if (info.productId !== claim.sku) return { valid: false, reason: 'apple: product mismatch' };
   if (info.revocationDate) return { valid: false, reason: 'apple: revoked' };
 
+  if (claim.subscription) {
+    // A lapsed renewal is a real transaction for a period that is over.
+    if (!info.expiresDate || info.expiresDate <= Date.now()) return { valid: false, reason: 'apple: expired' };
+    return { valid: true, expiresAt: new Date(info.expiresDate) };
+  }
   return { valid: true };
 }
 
@@ -173,6 +183,7 @@ async function verifyGoogle(claim: ReceiptClaim): Promise<ReceiptVerdict> {
 
   try {
     const token = await googleAccessToken();
+    if (claim.subscription) return await verifyGoogleSubscription(claim, token);
     const url =
       `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/` +
       `${encodeURIComponent(env.ANDROID_PACKAGE_NAME)}/purchases/products/` +
@@ -190,6 +201,33 @@ async function verifyGoogle(claim: ReceiptClaim): Promise<ReceiptVerdict> {
   } catch (err) {
     return { valid: false, reason: (err as Error).message };
   }
+}
+
+/**
+ * Subscriptions live behind a different Play endpoint, and the answer is a
+ * state and an expiry per line item rather than a purchase state.
+ */
+async function verifyGoogleSubscription(claim: ReceiptClaim, token: string): Promise<ReceiptVerdict> {
+  const url =
+    `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/` +
+    `${encodeURIComponent(env.ANDROID_PACKAGE_NAME)}/purchases/subscriptionsv2/tokens/` +
+    `${encodeURIComponent(claim.receipt)}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return { valid: false, reason: `play subs api ${res.status}` };
+
+  const body = (await res.json()) as {
+    subscriptionState?: string;
+    lineItems?: { productId?: string; expiryTime?: string }[];
+  };
+  // Active, or in the grace period Google gives a failed card: both are paid.
+  if (body.subscriptionState !== 'SUBSCRIPTION_STATE_ACTIVE' && body.subscriptionState !== 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD') {
+    return { valid: false, reason: `subscriptionState ${body.subscriptionState}` };
+  }
+  const line = body.lineItems?.find((l) => l.productId === claim.sku);
+  if (!line?.expiryTime) return { valid: false, reason: 'play: product mismatch' };
+  const expiresAt = new Date(line.expiryTime);
+  if (!(expiresAt.getTime() > Date.now())) return { valid: false, reason: 'play: expired' };
+  return { valid: true, expiresAt };
 }
 
 /** Service-account JWT → OAuth token, the Google way. */
@@ -235,7 +273,9 @@ export async function verifyReceipt(claim: ReceiptClaim): Promise<ReceiptVerdict
   // The escape hatch, on its own flag and refused in production at boot.
   if (env.ALLOW_FAKE_PURCHASES && env.NODE_ENV !== 'production') {
     console.warn(`[receipts] FAKE PURCHASE ACCEPTED: ${claim.sku} — ALLOW_FAKE_PURCHASES is on`);
-    return { valid: true };
+    return claim.subscription
+      ? { valid: true, expiresAt: new Date(Date.now() + 30 * 86_400_000) }
+      : { valid: true };
   }
 
   const verdict =

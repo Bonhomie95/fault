@@ -4,6 +4,7 @@ import { aiEnabled, checkModelAvailable, keyCount } from './lib/groq.js';
 import { log } from './lib/log.js';
 import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
+import { warmDailyTrial } from './services/dailyTrial.js';
 
 const server = app.listen(env.PORT, () => {
   log.info('listening', { port: env.PORT });
@@ -24,6 +25,9 @@ const server = app.listen(env.PORT, () => {
    * Behind the listen callback so a slow provider never delays the port
    * opening, and non-fatal because the fallback docket is a designed mode.
    */
+  // Today's Daily Trial, written before the first juror asks for it.
+  if (env.NODE_ENV !== 'test') warmDailyTrial();
+
   if (aiEnabled) {
     void checkModelAvailable().then((result) => {
       if (result.ok) return;

@@ -15,6 +15,7 @@ import { useSettings } from '@/store/settings';
 export default function Briefing() {
   const jurorName = useGame((s) => s.jurorName);
   const district = useGame((s) => s.standing?.district);
+  const chiefJustice = useGame((s) => s.standing?.chiefJustice);
   const markBriefed = useGame((s) => s.markBriefed);
   // The longest prose in the game and the first thing anyone reads. If the
   // text-size setting does not reach the letter, it does not reach the moment
@@ -69,7 +70,7 @@ export default function Briefing() {
 
         <Animated.View entering={FadeIn.duration(1000).delay(1800)} style={styles.signature}>
           <View style={styles.rule} />
-          <Text style={styles.signatureName}>A. Oyelaran</Text>
+          {chiefJustice ? <Text style={styles.signatureName}>{chiefJustice}</Text> : null}
           <Text style={styles.signatureTitle}>Chief Justice, {courtCityFor(district)}</Text>
         </Animated.View>
       </Animated.View>

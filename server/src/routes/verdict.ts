@@ -8,11 +8,12 @@ import { districtOpens } from '../domain/news.js';
 import { printStories, printVerdict, viewOf } from '../services/news.js';
 import { CLOCK_SECONDS, clockFor } from '../domain/clock.js';
 import { rankFor, xpForVerdict, trustForVerdict } from '../domain/progression.js';
-import { meritForStreak, meritForVerdict } from '../domain/store.js';
+import { meritForStreak, meritForVerdict, PASS_MERIT_MULTIPLIER } from '../domain/store.js';
+import { recordDailyVerdict } from '../services/dailyTrial.js';
 import { prisma } from '../lib/prisma.js';
 import { verdictLimiter } from '../middleware/limits.js';
 import { requireJuror } from '../middleware/requireJuror.js';
-import { grantMerit } from '../services/economy.js';
+import { grantMerit, hasEntitlement } from '../services/economy.js';
 import { noteCaseHeard } from '../services/ads.js';
 import { placeForUser, refillCaseCache } from '../services/caseGenerator.js';
 import { awardXp } from '../services/progression.js';
@@ -202,8 +203,11 @@ verdictRouter.post('/', requireJuror, verdictLimiter, async (req, res) => {
   const xpAwarded = Math.round(
     xpForVerdict({ tier: caseData.tier, wasHung, timeRemaining, clockSeconds: CLOCK_SECONDS }) * reward,
   );
+  // The Juror Pass pays half as much Merit again. Merit only: XP is rank, and
+  // rank is never for sale.
+  const passBoost = (await hasEntitlement(userId, 'pass')) ? PASS_MERIT_MULTIPLIER : 1;
   const meritAwarded = Math.round(
-    meritForVerdict({ wasHung, timeRemaining, clockSeconds: CLOCK_SECONDS }) * reward,
+    meritForVerdict({ wasHung, timeRemaining, clockSeconds: CLOCK_SECONDS }) * reward * passBoost,
   );
   const rankBefore = rankFor(user.xp).level;
 
@@ -359,6 +363,11 @@ verdictRouter.post('/', requireJuror, verdictLimiter, async (req, res) => {
   const totalVotes = caseData.consensusGuilty + caseData.consensusNotGuilty + 1;
   const guiltyVotes = caseData.consensusGuilty + (verdict === 'guilty' ? 1 : 0);
 
+  // The Daily Trial: how the world split. Opinion, never the answer.
+  const daily = caseData.dailyKey
+    ? { day: caseData.dailyKey, tally: await recordDailyVerdict(caseData.dailyKey, wasHung ? null : verdict) }
+    : null;
+
   // Whether an ad is due, decided here and never by the client. Comes after
   // the verdict, never during the case.
   const ad = await noteCaseHeard(userId);
@@ -403,6 +412,9 @@ verdictRouter.post('/', requireJuror, verdictLimiter, async (req, res) => {
     headlines: printed.map(viewOf),
     districtsOpened: opened.map((d) => d.name),
     rewardMultiplier: reward,
+    streak: streak.streak,
+    shieldsUsed: streak.shieldsUsed,
+    daily,
   });
 });
 

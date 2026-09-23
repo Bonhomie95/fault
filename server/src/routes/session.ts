@@ -37,6 +37,8 @@ sessionRouter.get('/me', requireJuror, async (req, res) => {
     entitlements: await entitlementsFor(userId),
     merit: user.merit,
     casesHeard,
+    /** The courtroom and seal the juror has put on. */
+    equipped: { room: user.roomTheme, seal: user.sealStyle },
     /**
      * True when the player has not accepted the CURRENT Terms and Privacy
      * Policy — either they swore in before consent was recorded at all, or

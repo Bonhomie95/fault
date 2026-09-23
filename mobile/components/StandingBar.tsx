@@ -20,7 +20,7 @@ import { useGame } from '@/store/game';
 
 export function StandingBar({ standing }: { standing: Standing }) {
   // The seal is the one thing in this bar the player chose rather than earned.
-  const seal = sealFrom(useGame((s) => s.entitlements));
+  const seal = sealFrom(useGame((s) => s.entitlements), useGame((s) => s.equipped.seal));
 
   const pct =
     standing.xpForNextRank === null

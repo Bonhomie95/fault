@@ -98,6 +98,13 @@ enum Entitlement {
   stock_onionskin // the dossier's paper
   stock_vellum
 
+  room_marble
+  room_night
+  seal_gold     // the Juror Pass seal; only while the pass is live
+
+  // ---- subscription ----
+  pass          // the Juror Pass: expires (UserEntitlement.expiresAt)
+
   // ---- support ----
   patron        // named in the credits; a seal and a line, nothing more
 }
@@ -183,6 +190,19 @@ model User {
   // skips — and because the roll must not be re-rollable by reopening the app.
   casesSinceAd  Int     @default(0)
   adEveryNCases Int     @default(3)
+
+  // ---- The daily docket ----
+  /// Streak shields held. One is spent, automatically, to cover each missed
+  /// day so a streak survives a day off. Bought or earned; never needed.
+  streakShields Int     @default(0)
+  /// Extra cases opened today beyond the free docket (rewarded view or
+  /// Merit), and the player's day they belong to. A new day zeroes them.
+  bonusCases    Int     @default(0)
+  bonusCasesDay String?
+  /// Which cosmetics are on: the courtroom and the seal. Must be owned —
+  /// the store route checks — and an expired pass quietly falls back.
+  roomTheme     String?
+  sealStyle     String?
 
   // ---- The map ----
   /// The district the player is currently presiding in, within their current
@@ -288,6 +308,9 @@ model UserEntitlement {
   entitlement Entitlement
   source      PurchaseSource
   grantedAt   DateTime    @default(now())
+  /// Null = forever. Set for subscriptions; the store's own expiry, re-read
+  /// from Apple or Google on every renewal/restore.
+  expiresAt   DateTime?
 
   @@unique([userId, entitlement])
   @@index([userId])
@@ -344,6 +367,8 @@ model AdEvent {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   kind      String   // "rewarded" | "interstitial"
+  /// What a rewarded view paid: "merit" or "case".
+  reward    String?
   /// The ad network's own view id, so one view cannot be claimed twice.
   viewId    String?  @unique
   meritPaid Int      @default(0)
@@ -534,12 +559,20 @@ model Case {
   /// wrong, and deleting it destroys the only record of that.
   quarantinedAt       DateTime?
 
+  /// A special docket this case was heard from ("corporate", "cold_case",
+  /// "political"), or null for the ordinary docket. Packs are counted by it.
+  pack                String?
+  /// The Daily Trial this case is ("2026-09-22"), or null. One case, the same
+  /// facts for every juror in the world that day; see DailyTrial.
+  dailyKey            String?
+
   createdAt           DateTime       @default(now())
 
   verdict             VerdictRecord?
   characters          Character[]
 
   @@unique([userId, caseNumber])
+  @@unique([userId, dailyKey])
   @@index([userId, structureKey])
   @@map("cases")
 }
@@ -687,4 +720,21 @@ enum NewsKind {
   press
   echo
   city
+}
+
+/// The Daily Trial: one case a day, the same facts for everyone, told in each
+/// juror's own country. The tally is how the world split — never whether it
+/// was right.
+model DailyTrial {
+  day        String   @id // YYYY-MM-DD, UTC
+  /// The generated case (GeneratedCase JSON) with its placeholder cast, or
+  /// null when the day fell back to the authored docket (seedIndex).
+  payload    Json?
+  seedIndex  Int?
+  guilty     Int      @default(0)
+  notGuilty  Int      @default(0)
+  hung       Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@map("daily_trials")
 }

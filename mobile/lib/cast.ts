@@ -17,8 +17,9 @@ import type { ClientCase } from '@/lib/api';
  *   age       the defendant's stated age, because a 71-year-old played by a
  *             twenty-something reads as a casting error, not as a person
  *   country   the court's region — names come from the local register, so
- *             the faces do too. Regions this cannot place (US, UK, BR, ZA,
- *             IN…) have no preference, since their registers are mixed.
+ *             the faces do too. Mixed countries (US, UK, BR, ZA…) draw each
+ *             person from a realistic mix (REGION); unlisted countries have
+ *             no preference.
  *
  * Nothing here can see the verdict, the evidence or the presentation scores,
  * so no face is ever a clue — the same guarantee the rest of the room makes.
@@ -26,7 +27,12 @@ import type { ClientCase } from '@/lib/api';
 
 export type Role = 'defendant' | 'witness1' | 'witness2' | 'prosecution' | 'defence';
 
-type Ancestry = 'af' | 'as' | 'ca';
+/**
+ * The rendered ancestries (tools/suspect/export_suspect.py): African, East and
+ * South-East Asian, European, South Asian, Latin American, and Middle Eastern
+ * / North African.
+ */
+type Ancestry = 'af' | 'as' | 'ca' | 'sa' | 'la' | 'me';
 type AgeBand = 'young' | 'mid' | 'old';
 
 interface Person {
@@ -41,16 +47,67 @@ const PEOPLE: Person[] = Object.keys(SPRITES).map((key) => {
   return { key, feminine: g === 'f', age, ancestry };
 });
 
-/** Where the docket is heard, reduced to the one thing casting uses. */
-const REGION: Record<string, Ancestry> = {
-  NG: 'af', GH: 'af', KE: 'af', UG: 'af', TZ: 'af', ET: 'af', RW: 'af', CM: 'af',
-  SN: 'af', CI: 'af', ZW: 'af', ZM: 'af', BW: 'af', MW: 'af',
-  CN: 'as', JP: 'as', KR: 'as', TW: 'as', HK: 'as', SG: 'as', VN: 'as', TH: 'as',
-  PH: 'as', MY: 'as', ID: 'as',
-  NO: 'ca', SE: 'ca', DK: 'ca', FI: 'ca', IS: 'ca', DE: 'ca', NL: 'ca', PL: 'ca',
-  CZ: 'ca', IE: 'ca', FR: 'ca', IT: 'ca', ES: 'ca', PT: 'ca', AT: 'ca', CH: 'ca',
-  RU: 'ca', UA: 'ca',
+type Mix = Partial<Record<Ancestry, number>>;
+
+/**
+ * Who you would expect to see in a courtroom in this country, roughly.
+ *
+ * Weights, not a single answer: a London or Toronto courtroom is a mix, and
+ * one face for the whole country would be wrong in a different way. Each
+ * person in the room draws their own ancestry from the mix, by seed, so the
+ * same name is still the same face every time.
+ */
+const AF: Mix = { af: 1 };
+const AS: Mix = { as: 1 };
+const EU: Mix = { ca: 0.9, me: 0.05, af: 0.05 };
+const SA: Mix = { sa: 1 };
+const LA: Mix = { la: 0.85, ca: 0.1, af: 0.05 };
+const ME: Mix = { me: 0.9, af: 0.05, sa: 0.05 };
+
+const REGION: Record<string, Mix> = {
+  // Africa, sub-Saharan
+  NG: AF, GH: AF, KE: AF, UG: AF, TZ: AF, ET: AF, RW: AF, CM: AF, SN: AF, CI: AF,
+  ZW: AF, ZM: AF, BW: AF, MW: AF,
+  ZA: { af: 0.75, ca: 0.12, sa: 0.05, la: 0.08 },
+  // North Africa and the Middle East
+  EG: ME, MA: ME, DZ: ME, TN: ME, SA: ME, AE: { me: 0.45, sa: 0.4, as: 0.1, ca: 0.05 },
+  QA: { me: 0.45, sa: 0.45, as: 0.1 }, KW: { me: 0.6, sa: 0.3, as: 0.1 },
+  TR: { me: 0.7, ca: 0.3 }, IL: { me: 0.55, ca: 0.4, af: 0.05 },
+  // South Asia
+  IN: SA, PK: SA, BD: SA, LK: SA, NP: SA,
+  // East and South-East Asia
+  CN: AS, JP: AS, KR: AS, TW: AS, HK: AS, VN: AS, TH: AS, PH: AS, ID: AS,
+  SG: { as: 0.75, sa: 0.15, me: 0.1 }, MY: { as: 0.6, sa: 0.15, me: 0.25 },
+  // Latin America and the Caribbean
+  MX: LA, CO: LA, PE: LA, AR: { la: 0.6, ca: 0.4 }, CL: { la: 0.7, ca: 0.3 },
+  BR: { la: 0.55, ca: 0.2, af: 0.25 }, JM: { af: 0.9, la: 0.05, sa: 0.05 },
+  TT: { af: 0.45, sa: 0.4, la: 0.15 },
+  // Europe
+  NO: EU, SE: EU, DK: EU, FI: EU, IS: EU, DE: EU, NL: EU, PL: EU, CZ: EU, IE: EU,
+  FR: { ca: 0.75, me: 0.12, af: 0.13 }, IT: EU, ES: { ca: 0.8, la: 0.12, me: 0.08 },
+  PT: EU, AT: EU, CH: EU, BE: EU, GR: EU, RO: EU, HU: EU, RU: EU, UA: EU,
+  GB: { ca: 0.72, sa: 0.12, af: 0.1, as: 0.03, me: 0.03 },
+  // The Anglosphere and other mixed countries
+  US: { ca: 0.58, la: 0.18, af: 0.14, as: 0.06, sa: 0.02, me: 0.02 },
+  CA: { ca: 0.68, as: 0.12, sa: 0.1, af: 0.05, la: 0.05 },
+  AU: { ca: 0.75, as: 0.14, sa: 0.06, me: 0.05 },
+  NZ: { ca: 0.75, as: 0.15, sa: 0.05, la: 0.05 },
 };
+
+/** One ancestry from a mix, by seed — stable for the same person. */
+function drawAncestry(mix: Mix, seed: number): Ancestry {
+  const entries = Object.entries(mix) as [Ancestry, number][];
+  const total = entries.reduce((n, [, w]) => n + w, 0);
+  let r = rand(seed, ANCESTRY_CHANNEL) * total;
+  for (const [a, w] of entries) {
+    r -= w;
+    if (r <= 0) return a;
+  }
+  return entries[entries.length - 1]![0];
+}
+
+/** A channel of its own, so ancestry does not correlate with which face in it. */
+const ANCESTRY_CHANNEL = 29;
 
 /** Stable 32-bit hash of a name — the same person, forever. */
 export function hashName(name: string): number {
@@ -81,7 +138,7 @@ export function isFeminine(seed: number): boolean {
  */
 function castOne(
   seed: number,
-  opts: { age?: number; region?: Ancestry; taken: Set<string>; feminine?: boolean | null },
+  opts: { age?: number; region?: Mix; taken: Set<string>; feminine?: boolean | null },
 ): string {
   // The name decides when it can (the server reads it — "Ngozi" is a woman);
   // the seed decides when the name could be either.
@@ -91,7 +148,7 @@ function castOne(
   // room less uniform — but every name comes from the local register, and a
   // Yoruba name on a face from the other side of the world is a casting
   // error, not diversity. Variety comes from age and the person instead.
-  const local = opts.region != null;
+  const want = opts.region ? drawAncestry(opts.region, seed) : null;
 
   const pool = PEOPLE.filter((p) => p.feminine === feminine && !opts.taken.has(p.key));
   const candidates = pool.length ? pool : PEOPLE.filter((p) => !opts.taken.has(p.key));
@@ -99,7 +156,7 @@ function castOne(
 
   const scored = candidates.map((p) => ({
     p,
-    score: (band && p.age === band ? 2 : 0) + (local && p.ancestry === opts.region ? 3 : 0),
+    score: (band && p.age === band ? 2 : 0) + (want && p.ancestry === want ? 3 : 0),
   }));
   const best = Math.max(...scored.map((s) => s.score));
   const top = scored.filter((s) => s.score === best).map((s) => s.p);

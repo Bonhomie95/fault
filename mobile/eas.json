@@ -20,7 +20,14 @@
       "They are deliberately unresolvable (RFC 2606). A release build that still",
       "carries one shows a 'cannot reach its server' screen naming this variable",
       "instead of failing every request as a connection problem \u2014 see lib/api.ts",
-      "and DEPLOY.md."
+      "and DEPLOY.md.",
+      "",
+      "ADVERTS: the preview/development profiles carry GOOGLE'S PUBLIC TEST ad",
+      "units, and app.config.js falls back to Google's test APP ids. That is",
+      "correct for internal testing and NOT for release: serving test ads to",
+      "the public is an AdMob policy violation, and they earn nothing. Before",
+      "the store build, set the real unit ids on the production profile and",
+      "ADMOB_IOS_APP_ID / ADMOB_ANDROID_APP_ID as EAS secrets (DEPLOY.md 5)."
     ],
     "development": {
       "developmentClient": true,
@@ -29,14 +36,22 @@
         "simulator": true
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": ""
+        "EXPO_PUBLIC_API_URL": "",
+        "EXPO_PUBLIC_ADMOB_IOS_INTERSTITIAL": "ca-app-pub-3940256099942544/4411468910",
+        "EXPO_PUBLIC_ADMOB_IOS_REWARDED": "ca-app-pub-3940256099942544/1712485313",
+        "EXPO_PUBLIC_ADMOB_ANDROID_INTERSTITIAL": "ca-app-pub-3940256099942544/1033173712",
+        "EXPO_PUBLIC_ADMOB_ANDROID_REWARDED": "ca-app-pub-3940256099942544/5224354917"
       }
     },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://fault-api-3l28.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://fault-api-3l28.onrender.com",
+        "EXPO_PUBLIC_ADMOB_IOS_INTERSTITIAL": "ca-app-pub-3940256099942544/4411468910",
+        "EXPO_PUBLIC_ADMOB_IOS_REWARDED": "ca-app-pub-3940256099942544/1712485313",
+        "EXPO_PUBLIC_ADMOB_ANDROID_INTERSTITIAL": "ca-app-pub-3940256099942544/1033173712",
+        "EXPO_PUBLIC_ADMOB_ANDROID_REWARDED": "ca-app-pub-3940256099942544/5224354917"
       }
     },
     "production": {

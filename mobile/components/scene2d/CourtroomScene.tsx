@@ -1,4 +1,6 @@
 import { memo, useCallback, useEffect, useId, useMemo } from 'react';
+import { useGame } from '@/store/game';
+import { roomFor } from './themes';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Svg, {
   Circle,
@@ -892,6 +894,11 @@ export const CourtroomScene = memo(function CourtroomScene({
 }: SceneProps) {
   const reduced = useReducedMotion();
   const accent = activeCase.accent;
+  // The finish the juror put on, while they own it (store cosmetics).
+  const finish = roomFor(
+    useGame((g) => g.equipped.room),
+    useGame((g) => g.entitlements),
+  );
 
   // Framing — a quick cut between marks, eased. Reduced motion makes it instant.
   const { width: screenW, height: screenH } = useWindowDimensions();
@@ -1075,18 +1082,18 @@ export const CourtroomScene = memo(function CourtroomScene({
         <Defs>
           {/* the one lit thing in the room is the person on trial */}
           <RadialGradient id="spot" cx="50%" cy="30%" rx="60%" ry="55%">
-            <Stop offset="0" stopColor="#FFF4E4" stopOpacity={0.16} />
-            <Stop offset="0.55" stopColor="#FFF4E4" stopOpacity={0.04} />
-            <Stop offset="1" stopColor="#FFF4E4" stopOpacity={0} />
+            <Stop offset="0" stopColor={finish.spot} stopOpacity={finish.spotOpacity} />
+            <Stop offset="0.55" stopColor={finish.spot} stopOpacity={finish.spotOpacity / 4} />
+            <Stop offset="1" stopColor={finish.spot} stopOpacity={0} />
           </RadialGradient>
           <LinearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#15130F" />
-            <Stop offset="1" stopColor="#0D0D0C" />
+            <Stop offset="0" stopColor={finish.wallTop} />
+            <Stop offset="1" stopColor={finish.wallBottom} />
           </LinearGradient>
         </Defs>
 
         {/* the room itself, oversized so no framing move shows an edge */}
-        <Rect x={-400} y={-400} width={1200} height={1520} fill="#0D0D0D" />
+        <Rect x={-400} y={-400} width={1200} height={1520} fill={finish.base} />
 
         <AnimatedG animatedProps={backProps}>
           {/* panelled back wall, in the case's one colour, barely */}
@@ -1099,33 +1106,39 @@ export const CourtroomScene = memo(function CourtroomScene({
               y1={-60}
               x2={-100 + i * 60}
               y2={240}
-              stroke="#000000"
-              strokeOpacity={0.35}
+              stroke={finish.seam}
+              strokeOpacity={finish.seamOpacity}
               strokeWidth={1.2}
             />
           ))}
 
+          {/* tall windows, for a room that has a sky behind it (night session) */}
+          {finish.windows &&
+            [-40, 60, 280, 380].map((x) => (
+              <Rect key={`win-${x}`} x={x} y={-30} width={46} height={120} rx={23} fill={finish.windows!.color} opacity={finish.windows!.opacity} />
+            ))}
+
           {/* the public gallery — somebody came to watch. Shapes, not faces. */}
           <G opacity={0.9}>
-            <Rect x={40} y={150} width={320} height={44} rx={4} fill="#141417" />
-            <Rect x={40} y={110} width={320} height={40} rx={4} fill="#101013" />
+            <Rect x={40} y={150} width={320} height={44} rx={4} fill={finish.galleryFront} />
+            <Rect x={40} y={110} width={320} height={40} rx={4} fill={finish.galleryBack} />
             {Array.from({ length: 7 }, (_, i) => (
               <G key={`g0-${i}`}>
-                <Circle cx={64 + i * 46} cy={150} r={12} fill="#1C1C22" />
-                <Rect x={50 + i * 46} y={158} width={28} height={24} rx={6} fill="#181820" />
+                <Circle cx={64 + i * 46} cy={150} r={12} fill={finish.galleryHead} />
+                <Rect x={50 + i * 46} y={158} width={28} height={24} rx={6} fill={finish.galleryBody} />
               </G>
             ))}
             {Array.from({ length: 7 }, (_, i) => (
               <G key={`g1-${i}`}>
-                <Circle cx={86 + i * 46} cy={112} r={11} fill="#17171C" />
-                <Rect x={73 + i * 46} y={119} width={26} height={22} rx={6} fill="#141419" />
+                <Circle cx={86 + i * 46} cy={112} r={11} fill={finish.galleryHead} opacity={0.85} />
+                <Rect x={73 + i * 46} y={119} width={26} height={22} rx={6} fill={finish.galleryBody} opacity={0.85} />
               </G>
             ))}
           </G>
 
           {/* the judge's bench, behind everything, unoccupied */}
-          <Rect x={96} y={186} width={208} height={70} rx={3} fill="#121210" />
-          <Rect x={112} y={176} width={176} height={16} rx={3} fill="#17170F" />
+          <Rect x={96} y={186} width={208} height={70} rx={3} fill={finish.benchBody} />
+          <Rect x={112} y={176} width={176} height={16} rx={3} fill={finish.benchTop} />
 
           {/* the spotlight, cast down the accused */}
           <Ellipse cx={ACCUSED.x} cy={ACCUSED.y - 30} rx={150} ry={230} fill="url(#spot)" />
@@ -1207,12 +1220,12 @@ export const CourtroomScene = memo(function CourtroomScene({
       <Svg {...svgProps} style={StyleSheet.absoluteFill} pointerEvents="none">
         <Defs>
           <LinearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#2B2418" />
-            <Stop offset="1" stopColor="#15120C" />
+            <Stop offset="0" stopColor={finish.woodTop} />
+            <Stop offset="1" stopColor={finish.woodBottom} />
           </LinearGradient>
           <LinearGradient id="woodDark" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#1E1A12" />
-            <Stop offset="1" stopColor="#0E0D0A" />
+            <Stop offset="0" stopColor={finish.woodDarkTop} />
+            <Stop offset="1" stopColor={finish.woodDarkBottom} />
           </LinearGradient>
           <RadialGradient id="vign" cx="50%" cy="42%" rx="75%" ry="75%">
             <Stop offset="0.6" stopColor="#000000" stopOpacity={0} />
@@ -1222,18 +1235,18 @@ export const CourtroomScene = memo(function CourtroomScene({
         <AnimatedG animatedProps={frontProps}>
           {/* counsel tables */}
           <Rect x={46} y={388} width={140} height={70} fill="url(#woodDark)" />
-          <Rect x={42} y={382} width={148} height={9} rx={2} fill="#2E271B" />
+          <Rect x={42} y={382} width={148} height={9} rx={2} fill={finish.tableRail} />
           <Rect x={214} y={388} width={140} height={70} fill="url(#woodDark)" />
-          <Rect x={210} y={382} width={148} height={9} rx={2} fill="#2E271B" />
+          <Rect x={210} y={382} width={148} height={9} rx={2} fill={finish.tableRail} />
 
           {/* the witness box */}
           <Rect x={264} y={340} width={102} height={90} fill="url(#wood)" />
-          <Rect x={259} y={333} width={112} height={10} rx={2} fill="#3A3122" />
+          <Rect x={259} y={333} width={112} height={10} rx={2} fill={finish.boxRail} />
           <Rect x={276} y={352} width={78} height={66} fill="none" stroke="#000000" strokeOpacity={0.35} />
 
           {/* the dock — the accused stands behind its rail */}
           <Rect x={76} y={396} width={248} height={86} fill="url(#wood)" />
-          <Rect x={70} y={388} width={260} height={11} rx={2} fill="#3F3525" />
+          <Rect x={70} y={388} width={260} height={11} rx={2} fill={finish.dockRail} />
           <Rect x={70} y={388} width={260} height={2} fill="#FFF2DC" opacity={0.12} />
           {[0, 1, 2].map((i) => (
             <Rect
@@ -1249,8 +1262,8 @@ export const CourtroomScene = memo(function CourtroomScene({
           ))}
 
           {/* the exhibit table — nearest the jury, in front of everything */}
-          <Rect x={92} y={452} width={216} height={16} rx={2} fill="#26261F" />
-          <Rect x={104} y={468} width={192} height={78} fill="#131311" />
+          <Rect x={92} y={452} width={216} height={16} rx={2} fill={finish.exhibitTop} />
+          <Rect x={104} y={468} width={192} height={78} fill={finish.exhibitBody} />
           {activeCase.evidence.slice(0, 3).map((e, i) => {
             const ex = 150 + i * 50;
             const open = examinedEvidence === e.id && tab === 'evidence';

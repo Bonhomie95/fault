@@ -119,6 +119,11 @@ export interface PlaceContext {
 }
 
 interface GenerationContext {
+  /**
+   * A special docket's theme (domain/store PACKS), or the Daily Trial's brief.
+   * Shapes the kind of case; changes nothing about how it is judged.
+   */
+  special?: string;
   city: CityMetrics;
   jurorProfileSummary: string;
   weakestBias: string;
@@ -322,7 +327,7 @@ Tier: this is a ${place.tierLabel}-level matter. A district case is a human
 argument between neighbours; a national or international one is a matter of
 law, precedent and states. Scale the stakes and the language to the rung.
 
-Current city state (0-100 each):
+${ctx.special ? `SPECIAL DOCKET — this case MUST fit this brief:\n${ctx.special}\n\n` : ''}Current city state (0-100 each):
 - crime rate: ${Math.round(ctx.city.crimeRate)}
 - judicial trust: ${Math.round(ctx.city.judicialTrust)}
 - wealth disparity: ${Math.round(ctx.city.wealthDisparity)}
@@ -340,8 +345,8 @@ Characters available from previous cases:
 ${poolText}
 ${echoText}${twinText}${usedText}
 
-Naming: "name" is the person's name alone — "Tunde Balogun", never "Tunde
-Balogun, gate security" and never "Inspector Tunde Balogun". Their standing goes
+Naming: "name" is the person's name alone — "Anna Weber", never "Anna
+Weber, gate security" and never "Inspector Anna Weber". Their standing goes
 in "role" ("gate security", "the estranged husband"). Names are identity keys
 that persist across cases; a name with a title welded on becomes a different
 person the next time they appear.
@@ -424,7 +429,7 @@ Exactly 3 evidence items and exactly 2 witnesses.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Stable 32-bit hash — same juror and case, same fallback cast, forever. */
-function hashSeed(input: string): number {
+export function hashSeed(input: string): number {
   let h = 2166136261;
   for (let i = 0; i < input.length; i++) {
     h ^= input.charCodeAt(i);
@@ -990,6 +995,26 @@ async function doRefill(userId: string, caseNumber: number, city: CityMetrics, p
  * would break the premise on case one. They are now purely the emergency
  * buffer. A scripted opening per country is a content problem, not a code one.
  */
+/**
+ * A case written to a brief — a special docket, or the Daily Trial.
+ *
+ * Never from the buffer (the buffer is ordinary cases) and never from the
+ * authored docket (which has no themes): null means "not now", and the caller
+ * says so rather than serving something that is not what was bought.
+ */
+export async function specialCase(
+  userId: string,
+  caseNumber: number,
+  city: CityMetrics,
+  place: PlaceContext,
+  special: string,
+  budgetMs = 14_000,
+): Promise<GeneratedCase | null> {
+  const ctx = await buildContext(userId, caseNumber, city, place);
+  ctx.special = special;
+  return generateOne(ctx, { urgent: true, deadline: Date.now() + budgetMs });
+}
+
 export async function nextCase(
   userId: string,
   caseNumber: number,

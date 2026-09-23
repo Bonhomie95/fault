@@ -1,3 +1,4 @@
+import { api, ApiError } from '@/lib/api';
 import { reportError } from '@/lib/report';
 
 /**
@@ -39,10 +40,11 @@ export interface AdBackend {
    */
   showInterstitial(): Promise<boolean>;
   /**
-   * Show a rewarded ad. Resolves with the network's view id if it was watched
-   * to completion, or null if it was skipped or unavailable.
+   * Show a rewarded ad. Resolves with a view id if it was watched to
+   * completion, or null if it was skipped or unavailable. `reward` travels to
+   * the network's server-side verification, which is what actually pays.
    */
-  showRewarded(): Promise<string | null>;
+  showRewarded(reward?: 'merit' | 'case'): Promise<string | null>;
 }
 
 let backend: AdBackend | null = null;
@@ -87,20 +89,53 @@ export async function showInterstitial(): Promise<boolean> {
 }
 
 /**
- * Show a rewarded ad and return the view id to claim Merit against.
+ * Show a rewarded ad and return the view id to claim against.
  *
  * Null means nothing to claim — skipped, unavailable, or failed. The caller
  * must not grant anything on a null; the server would refuse it anyway, which
  * is the correct division of trust.
  */
-export async function showRewarded(): Promise<string | null> {
+export async function showRewarded(reward: 'merit' | 'case' = 'merit'): Promise<string | null> {
   if (!backend) return null;
 
   try {
     if (!(await backend.isReady())) return null;
-    return await backend.showRewarded();
+    return await backend.showRewarded(reward);
   } catch (err) {
     reportError('ads.rewarded', err);
     return null;
   }
+}
+
+/**
+ * Watch a rewarded ad and wait until the SERVER has paid for it.
+ *
+ * In production Google's callback pays (a second or two after the ad
+ * closes), so this watches the balance move. In development, where test ads
+ * send no callback, the server accepts the app's claim instead. Either way the
+ * app never decides that it has been paid — it waits to be told.
+ */
+export async function earnReward(reward: 'merit' | 'case'): Promise<'paid' | 'skipped' | 'pending'> {
+  const before = await api.store().catch(() => null);
+  const viewId = await showRewarded(reward);
+  if (!viewId) return 'skipped';
+
+  try {
+    await api.claimAdReward(viewId, reward);
+    return 'paid';
+  } catch (err) {
+    // 404: production — the claim route does not exist; Google's call pays.
+    if (!(err instanceof ApiError) || err.status !== 404) return 'pending';
+  }
+
+  const moved = (s: Awaited<ReturnType<typeof api.store>>) =>
+    reward === 'merit'
+      ? s.merit > (before?.merit ?? Infinity)
+      : s.docket.bonus > (before?.docket.bonus ?? Infinity);
+  for (let i = 0; i < 8; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const now = await api.store().catch(() => null);
+    if (now && moved(now)) return 'paid';
+  }
+  return 'pending';
 }

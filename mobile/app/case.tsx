@@ -297,8 +297,11 @@ export default function CaseFile() {
             <Text style={styles.charge}>Charge: {activeCase.charge}</Text>
             {/* The real court this sits in. The place is real; everyone in the
                 room is invented. */}
-            {activeCase.place.jurisdiction.length > 0 && (
-              <Text style={styles.jurisdiction}>{activeCase.place.jurisdiction}</Text>
+            {(activeCase.place.jurisdiction.length > 0 || activeCase.daily) && (
+              <Text style={styles.jurisdiction} numberOfLines={1}>
+                {activeCase.daily ? 'THE DAILY TRIAL · ' : ''}
+                {activeCase.place.jurisdiction}
+              </Text>
             )}
             {/* Reporting a case, deliberately understated.
                 These files are model-written and unreviewed, so a player needs
