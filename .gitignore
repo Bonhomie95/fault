@@ -44,3 +44,6 @@ dump.rdb
 # pack, which is not a reasonable thing to ask of a fresh checkout.
 tools/suspect/build/
 tools/portraits/frames/
+
+# Test builds served over the local network (large binaries, not source)
+dist-test/

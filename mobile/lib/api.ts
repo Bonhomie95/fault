@@ -104,6 +104,21 @@ export function setSignedOutHandler(handler: () => void) {
  */
 const TIMEOUT_MS = 15_000;
 
+/**
+ * A request may be retried after a timeout, twice, before the player is told
+ * the court did not answer.
+ *
+ * A HOSTED server that has been idle sleeps, and the first request of the day
+ * wakes it — which takes the better part of a minute on a small plan. Fifteen
+ * seconds of that is a "check your connection" on a perfectly good
+ * connection, which is what a tester sees on their very first launch. Only
+ * safe-to-repeat requests qualify: reads, and the handful of writes that are
+ * idempotent by construction (signing in with the same secret returns the
+ * same juror; accepting the terms twice is accepting them once).
+ */
+const RETRY_TIMEOUT_PATHS = ['/api/auth/sign-in', '/api/auth/nonce', '/api/session/consent'];
+const TIMEOUT_ATTEMPTS = 3;
+
 /** Only ever one refresh in flight; a burst of 401s must not become a burst of
  *  refreshes, each rotating the token out from under the last. */
 let refreshing: Promise<RefreshResult> | null = null;
@@ -188,7 +203,19 @@ async function request<T>(
 ): Promise<T> {
   const { method = 'GET', body, auth = true } = options;
 
-  let res = await send(path, method, body, auth);
+  // Waking a sleeping server is not a failure the player should have to read
+  // about. See RETRY_TIMEOUT_PATHS.
+  const mayRetry = method === 'GET' || RETRY_TIMEOUT_PATHS.includes(path);
+  let res: Response;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      res = await send(path, method, body, auth);
+      break;
+    } catch (err) {
+      const timedOut = err instanceof ApiError && err.code === 'timeout';
+      if (!timedOut || !mayRetry || attempt >= TIMEOUT_ATTEMPTS) throw err;
+    }
+  }
 
   // One transparent retry after a refresh. An expired access token is the
   // normal case every 30 minutes, not an error the player should ever see.

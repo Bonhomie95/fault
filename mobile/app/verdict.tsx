@@ -218,7 +218,9 @@ function WorldSplit({ result }: { result: VerdictResult }) {
   };
   return (
     <View style={styles.world}>
-      <Text style={styles.worldEyebrow}>THE DAILY TRIAL · {t.total.toLocaleString()} JURORS SO FAR</Text>
+      <Text style={styles.worldEyebrow}>
+        THE DAILY TRIAL · {t.total.toLocaleString()} JUROR{t.total === 1 ? '' : 'S'} SO FAR
+      </Text>
       <View style={styles.bar} accessibilityLabel={`${guilty} percent guilty, ${100 - guilty} percent not guilty`}>
         <View style={[styles.barGuilty, { flex: Math.max(guilty, 1) }]} />
         <View style={[styles.barNot, { flex: Math.max(100 - guilty, 1) }]} />

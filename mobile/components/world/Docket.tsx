@@ -57,7 +57,9 @@ export function DailyTrialCard({
           {status.verdict
             ? `You said ${status.verdict === 'guilty' ? 'GUILTY' : 'NOT GUILTY'}. `
             : 'The clock decided for you. '}
-          {t ? `The world: ${guilty}% guilty, ${100 - guilty}% not guilty, from ${t.total.toLocaleString()} jurors.` : ''}
+          {t
+            ? `The world: ${guilty}% guilty, ${100 - guilty}% not guilty, from ${t.total.toLocaleString()} juror${t.total === 1 ? '' : 's'}.`
+            : ''}
         </Text>
         <Text style={styles.dailyMeta}>NEXT TRIAL IN {hours}H</Text>
       </View>
