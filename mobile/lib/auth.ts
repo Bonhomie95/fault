@@ -110,9 +110,16 @@ export async function signInWithApple(issued: SignInNonce): Promise<ProviderToke
 }
 
 /**
- * Google, via the system browser (AuthSession). We ask for an id_token
- * directly rather than an access token: the id_token is what our server can
- * verify offline against Google's JWKS.
+ * Google, via the system browser (AuthSession), authorization code + PKCE.
+ *
+ * NOT the implicit `response_type=id_token` flow this used to use. Google
+ * refuses that for the iOS and Android client types outright
+ * ("unsupported_response_type"), so the button could never have worked on a
+ * phone — only a Web client may use it, and a Web client cannot redirect to
+ * an app. Code + PKCE is the flow Google documents for installed apps: the
+ * client is public, there is no secret on the device, and the id_token comes
+ * back from the token endpoint where our server can still verify it offline
+ * against Google's JWKS.
  */
 const GOOGLE_DISCOVERY = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -128,29 +135,53 @@ export function googleClientId(): string | null {
   return web ?? null;
 }
 
+/**
+ * The redirect Google requires for an installed app: the client id with its
+ * dot-separated parts reversed, as a URL scheme. `fault://` is ours and Google
+ * will not accept it. app.config.js registers this same scheme natively, from
+ * the same environment variables, so the two cannot drift.
+ */
+export function googleRedirectScheme(clientId: string): string {
+  return `com.googleusercontent.apps.${clientId.replace('.apps.googleusercontent.com', '')}`;
+}
+
 export async function signInWithGoogle(issued: SignInNonce): Promise<ProviderToken> {
   const clientId = googleClientId();
   if (!clientId) throw new Error('No Google client id configured');
 
-  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'fault' });
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: googleRedirectScheme(clientId),
+    path: 'oauth2redirect',
+  });
 
   const request = new AuthSession.AuthRequest({
     clientId,
     redirectUri,
     scopes: ['openid', 'profile', 'email'],
-    // implicit id_token: nothing to exchange, nothing to keep secret on device
-    responseType: AuthSession.ResponseType.IdToken,
-    // Google embeds the raw value, unlike Apple.
+    responseType: AuthSession.ResponseType.Code,
+    usePKCE: true,
+    // Google embeds the raw value, unlike Apple, and carries it through the
+    // code exchange into the id_token our server checks.
     extraParams: { nonce: issued.nonce },
   });
 
   const result = await request.promptAsync(GOOGLE_DISCOVERY);
-
   if (result.type !== 'success') throw new Error('Google sign-in was cancelled');
-  const token = result.params.id_token;
-  if (!token) throw new Error('Google returned no id token');
 
-  return { provider: 'google', token, nonce: issued.nonce };
+  const tokens = await AuthSession.exchangeCodeAsync(
+    {
+      clientId,
+      redirectUri,
+      code: result.params.code,
+      // A public client has no secret; PKCE is what proves this is the same
+      // app that asked.
+      extraParams: { code_verifier: request.codeVerifier ?? '' },
+    },
+    GOOGLE_DISCOVERY,
+  );
+
+  if (!tokens.idToken) throw new Error('Google returned no id token');
+  return { provider: 'google', token: tokens.idToken, nonce: issued.nonce };
 }
 
 /**

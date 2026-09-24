@@ -65,6 +65,21 @@ const SKAD_NETWORKS = [
   'ydx93a7ass.skadnetwork',
 ];
 
+/**
+ * Google's OAuth redirect for an installed app is the client id reversed, as a
+ * URL scheme — `fault://` is ours and Google refuses it. The scheme has to be
+ * registered natively (Info.plist / intent filter), and it is derived here
+ * from the same environment variables lib/auth reads, so the native side and
+ * the JS side cannot disagree about what the redirect is.
+ */
+const reversed = (id) =>
+  id ? `com.googleusercontent.apps.${id.replace('.apps.googleusercontent.com', '')}` : null;
+
+const GOOGLE_SCHEMES = [
+  reversed(process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS),
+  reversed(process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID),
+].filter(Boolean);
+
 const TEST_APP_IDS = {
   ios: 'ca-app-pub-3940256099942544~1458002511',
   android: 'ca-app-pub-3940256099942544~3347511713',
@@ -72,8 +87,19 @@ const TEST_APP_IDS = {
 
 module.exports = ({ config }) => ({
   ...config,
+  scheme: [config.scheme, ...GOOGLE_SCHEMES].filter(Boolean),
   plugins: [
     ...config.plugins,
+    [
+      // Xcode 26 refuses to build a target whose deployment target is below
+      // iOS 15, and several pods (Google Mobile Ads' resource bundle, SDWebImage,
+      // RNSVG's filters) still ship 9.0–12.4. Setting it here rather than in the
+      // Podfile means `expo prebuild` cannot throw the fix away.
+      'expo-build-properties',
+      { ios: { deploymentTarget: '15.1' } },
+    ],
+    // ...and the same for the resource-bundle targets it does not reach.
+    './plugins/withPodDeploymentTarget',
     [
       'react-native-google-mobile-ads',
       {

@@ -59,6 +59,55 @@ TestFlight (needs the $99/yr Apple Developer Program).
 5. Set the scheme's Build Configuration to **Release** so it runs without a
    Metro server, then Run.
 
+## Signing in
+
+Guest works everywhere and needs nothing. The other two doors have conditions.
+
+**Google.** The three OAuth client ids are in `mobile/.env` and on Render, each
+one identified against Google's own endpoint rather than guessed:
+
+| Platform | Client id |
+| --- | --- |
+| iOS | `831982871130-s7poee6m9opjpptd6ppid43ql4r9pttm` |
+| Android | `831982871130-gqhj3ifdgil3g9d70dnufb7pa7imjil6` |
+| Web | `831982871130-6k0v9seov080ojeumbpmhutgq4b8tq3f` |
+
+Two things had to change for the button to work at all. The app asked for an
+id_token directly (the implicit flow); Google answers
+`unsupported_response_type` to that for iOS and Android clients, so it is now
+authorization code + PKCE. And the redirect is no longer `fault://` — Google
+only accepts the reversed client id as a scheme, which `app.config.js` now
+registers natively from the same variables.
+
+**Android still needs one change only you can make:** Google Cloud Console →
+Credentials → the Android client → tick **Enable Custom URI scheme**. Until
+then Google answers "Custom URI scheme is not enabled for your Android
+client" and the button fails. iOS needs nothing.
+
+**Apple.** Needs a paid Apple Developer Program membership — the Sign in with
+Apple entitlement cannot be provisioned under free signing, so on a personal
+team the button is there but the sheet will not complete. `APPLE_BUNDLE_ID`
+(`com.bonhomie95.fault`) is already set on both sides for when it is.
+
+## Running it on this Mac
+
+```bash
+cd mobile && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 npx expo run:ios
+```
+
+The locale is not decoration. Homebrew's Ruby 4 defaults to US-ASCII without
+one, and CocoaPods then dies inside `unicode_normalize` with
+`Encoding::CompatibilityError` before it even reads the Podfile. Export it in
+your shell and you can drop the prefix.
+
+If pods still fail with `invalid byte sequence in UTF-8` from the post-install
+hook, delete `mobile/ios/build` and `mobile/ios/build-release` first: React
+Native's hook walks every Info.plist under `ios/`, and the compiled binary
+plists left behind by an old build are not text.
+
+`mobile/.env` points at Render, so this build talks to the deployed server and
+no local Postgres, Redis or Groq key is needed.
+
 ## What is fake during the test
 
 | Thing | State |
