@@ -9,6 +9,7 @@ expo-env.d.ts
 .vscode
 ios/
 android/
+/brag-output
 
 
 # Secrets — the Groq key and DB URL live here

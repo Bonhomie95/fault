@@ -89,6 +89,62 @@ Apple entitlement cannot be provisioned under free signing, so on a personal
 team the button is there but the sheet will not complete. `APPLE_BUNDLE_ID`
 (`com.bonhomie95.fault`) is already set on both sides for when it is.
 
+## Metro's port: 8081 by default, but it does not have to be
+
+A Debug build asks for its JavaScript from **localhost:8081**, and on this
+project that default cannot be changed at build time: the Podfile turns on
+`RCT_USE_PREBUILT_RNCORE` whenever the new architecture is on, so React core
+arrives as a prebuilt xcframework already compiled with 8081. Setting
+`RCT_METRO_PORT` in the Podfile or in Xcode looks like it should work and does
+nothing — the code was compiled before it ever reached your machine.
+
+With several React Native projects on one Mac, whichever one starts first takes
+8081, and both failure modes are silent:
+
+| What is on 8081 | What happens |
+| --- | --- |
+| Nothing | `RCTBundleURLProvider` finds no packager and returns nil. The build dies in `factory.startReactNative` with **EXC_BREAKPOINT** — that is `RCTFatal("No script URL provided")` — naming nothing useful. |
+| **Another Expo app** | Worse. Every Expo app answers `/.expo/.virtual-metro-entry.bundle`, so it returns HTTP 200 and its *own* JavaScript. FAULT's binary runs a different app's bundle, reaches for a native module that is not there, and dies the same way. |
+| FAULT's Metro | Works. |
+
+Check who has it before blaming the build:
+
+```bash
+lsof -nP -iTCP:8081 -sTCP:LISTEN
+```
+
+### Running on another port anyway
+
+The port is a *default*, not a wall. `RCTBundleURLProvider` reads
+`RCT_jsLocation` from the app's own `NSUserDefaults` **first**, and only falls
+back to guessing `localhost:8081` when that is unset. So a per-device override
+costs one command and no rebuild:
+
+```bash
+# simulator — point this app at Metro on 8083
+xcrun simctl spawn booted defaults write com.bonhomie95.fault RCT_jsLocation -string "localhost:8083"
+npx expo start --port 8083
+
+# undo
+xcrun simctl spawn booted defaults delete com.bonhomie95.fault RCT_jsLocation
+```
+
+Verified: with nothing on 8081 and that key set, the app bundled from 8083 in
+620ms.
+
+On **Android** it is simpler still — the device always asks its own
+`localhost:8081`, and `adb` decides where that lands:
+
+```bash
+adb reverse tcp:8081 tcp:8083   # device's 8081 → this Mac's 8083
+```
+
+`npx expo run:android --port 8083` sets that up for you.
+
+If you want a proper UI for this rather than a defaults key — scan or type any
+Metro URL at launch — that is what **expo-dev-client** adds. It is not
+installed here; say the word and it is a small change.
+
 ## Running it on this Mac
 
 ```bash
