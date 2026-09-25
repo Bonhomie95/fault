@@ -87,6 +87,8 @@ module.exports = ({ config }) => ({
     // Google's reversed-client-id redirect schemes, appended to Info.plist
     // rather than added to `scheme` (which confuses expo-linking).
     './plugins/withGoogleSignInScheme',
+    // iOS 27's SDK refuses to launch an app that has not adopted UIScene.
+    './plugins/withUISceneLifecycle',
     [
       'react-native-google-mobile-ads',
       {

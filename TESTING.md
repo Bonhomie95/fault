@@ -89,6 +89,43 @@ Apple entitlement cannot be provisioned under free signing, so on a personal
 team the button is there but the sheet will not complete. `APPLE_BUNDLE_ID`
 (`com.bonhomie95.fault`) is already set on both sides for when it is.
 
+## iOS 27: the app must adopt the UIScene life cycle
+
+Built with Xcode 27 (iOS SDK 27), an app that creates its window the old way —
+in `application(_:didFinishLaunchingWithOptions:)` — is killed the instant it
+launches:
+
+```
+_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption:
+Application failed to launch: UIScene life cycle is required for apps built
+with this SDK.
+```
+
+Xcode shows it as **`Thread 1: EXC_BREAKPOINT`** on the `AppDelegate` class
+line, which points at nothing useful.
+
+**It only fires on iOS 27.** The same binary runs fine on an iOS 26 simulator,
+so this hides from anyone testing on an older simulator and appears the moment
+a real device is on 27. If a device crashes at launch and the simulator does
+not, look here first.
+
+Expo SDK 54 has not adopted scenes — `ExpoAppDelegate.swift` carries a literal
+`// TODO: - Configuring and Discarding Scenes`, and 54.0.37 is the last patch on
+that line. So the app does it itself, in
+[`plugins/withUISceneLifecycle.js`](mobile/plugins/withUISceneLifecycle.js),
+which adds a `SceneDelegate` to `AppDelegate.swift` and the scene manifest to
+Info.plist. It lives in a plugin because `expo prebuild` rewrites
+`AppDelegate.swift`.
+
+The plugin also forwards URL opens and user activities from the scene back into
+the app delegate. Under scenes UIKit stops calling those app-delegate methods,
+and Expo's subscriber chain — deep links, and the Google OAuth redirect that
+sign-in depends on — hangs off exactly those methods.
+
+Verified on an iOS 27.0 simulator (crashed before, runs after) and on iOS 26.4
+(no regression). **Delete this plugin when Expo ships scene support** rather
+than maintaining it.
+
 ## Metro's port: 8081 by default, but it does not have to be
 
 A Debug build asks for its JavaScript from **localhost:8081**, and on this
@@ -157,9 +194,10 @@ one, and CocoaPods then dies inside `unicode_normalize` with
 your shell and you can drop the prefix.
 
 If pods still fail with `invalid byte sequence in UTF-8` from the post-install
-hook, delete `mobile/ios/build` and `mobile/ios/build-release` first: React
-Native's hook walks every Info.plist under `ios/`, and the compiled binary
-plists left behind by an old build are not text.
+hook, delete **every** `mobile/ios/build*` directory first (`build`,
+`build-debug`, `build-release`): React Native's hook walks every Info.plist
+under `ios/`, and the compiled binary plists left behind by an old build are
+not text.
 
 `mobile/.env` points at Render, so this build talks to the deployed server and
 no local Postgres, Redis or Groq key is needed.
