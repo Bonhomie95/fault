@@ -17,6 +17,7 @@ import { Seal, sealFrom } from '@/components/Seal';
 import { api, ApiError, type Board, type BoardEntry, type BoardView } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { storage } from '@/lib/storage';
+import { Enter } from '@/components/Enter';
 import { CityPulse } from '@/components/world/CityPulse';
 import { useGame } from '@/store/game';
 
@@ -173,9 +174,9 @@ export default function Boards() {
         {/* Your city first, then everyone else's — the comparison only means
             something next to the numbers it is being compared with. */}
         {city && (
-          <View style={styles.pulseWrap}>
+          <Enter style={styles.pulseWrap}>
             <CityPulse city={city} />
-          </View>
+          </Enter>
         )}
 
         <View style={styles.tabs}>

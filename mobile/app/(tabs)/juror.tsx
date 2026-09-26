@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
+import { Enter } from '@/components/Enter';
 import { Elevation, Fonts, IMPACT_LEADING, Palette, Radius, Space, Type } from '@/constants/theme';
 import { useGame } from '@/store/game';
 
@@ -31,7 +32,7 @@ export default function Juror() {
         <Text style={styles.title}>CHAMBERS</Text>
 
         {standing && (
-          <View style={styles.card}>
+          <Enter style={styles.card}>
             <Text style={styles.name}>{standing.jurorName}</Text>
             <Text style={styles.meta}>
               {standing.rankTitle} · {standing.tierLabel}
@@ -41,36 +42,48 @@ export default function Juror() {
             <Text style={styles.metaFaint}>
               {standing.district} · STANDING {standing.trust} · {standing.trustLabel.toUpperCase()}
             </Text>
-          </View>
+          </Enter>
         )}
 
         <View style={styles.links}>
-          <Button
-            label="Juror record"
-            onPress={() => router.push('/record')}
-            variant="secondary"
-            disabled={!recordOpen}
-            hint={recordOpen ? 'What the court has learned about how you judge' : `Opens at 10 cases · ${heard}/10 heard`}
-          />
-          <Button
-            label="Past cases"
-            onPress={() => router.push('/archive')}
-            variant="secondary"
-            disabled={!archiveOpen}
-            hint={archiveOpen ? 'Every case you have heard' : 'Opens to jurors of rank 2'}
-          />
-          <Button
-            label="The Clerk’s Office"
-            onPress={() => router.push('/store')}
-            variant="secondary"
-            hint="Dockets, courtrooms and Merit"
-          />
-          <Button
-            label="Settings"
-            onPress={() => router.push('/settings')}
-            variant="secondary"
-            hint="Sound, text size, privacy and your account"
-          />
+          <Enter index={1}>
+            <Button
+              label="Juror record"
+              onPress={() => router.push('/record')}
+              variant="secondary"
+              disabled={!recordOpen}
+              hint={recordOpen ? 'What the court has learned about how you judge' : `Opens at 10 cases · ${heard}/10 heard`}
+              icon="bar-chart-2"
+            />
+          </Enter>
+          <Enter index={2}>
+            <Button
+              label="Past cases"
+              onPress={() => router.push('/archive')}
+              variant="secondary"
+              disabled={!archiveOpen}
+              hint={archiveOpen ? 'Every case you have heard' : 'Opens to jurors of rank 2'}
+              icon="archive"
+            />
+          </Enter>
+          <Enter index={3}>
+            <Button
+              label="The Clerk’s Office"
+              onPress={() => router.push('/store')}
+              variant="secondary"
+              hint="Dockets, courtrooms and Merit"
+              icon="shopping-bag"
+            />
+          </Enter>
+          <Enter index={4}>
+            <Button
+              label="Settings"
+              onPress={() => router.push('/settings')}
+              variant="secondary"
+              hint="Sound, text size, privacy and your account"
+              icon="sliders"
+            />
+          </Enter>
         </View>
       </ScrollView>
     </SafeAreaView>

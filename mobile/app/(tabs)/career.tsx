@@ -8,6 +8,7 @@ import { Fonts, Palette, Type } from '@/constants/theme';
 import { ApiError, api, type District, type JurisdictionsView, type Mission, type Tier } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
+import { Enter } from '@/components/Enter';
 import { DailySummons } from '@/components/world/LobbyWorld';
 import { useGame } from '@/store/game';
 
@@ -164,7 +165,7 @@ export default function Career() {
           {notice && <Text style={styles.notice}>{notice}</Text>}
 
           {/* ---- The ladder ---- */}
-          <Section title="THE LADDER">
+          <Section title="THE LADDER" index={1}>
             {ladder?.map((rung) => (
               <View key={rung.tier} style={styles.rung}>
                 <Text style={[styles.rungMark, rung.reached && styles.rungMarkOn]}>
@@ -209,7 +210,7 @@ export default function Career() {
           </Section>
 
           {/* ---- The map: districts that open by rank ---- */}
-          <Section title="COURTS OF THE CITY">
+          <Section title="COURTS OF THE CITY" index={2}>
             <Text style={styles.sectionNote}>
               Each court opens as your rank rises. Further courts are harder — more of their cases have
               no clean answer — and pay more for every sitting.
@@ -250,15 +251,17 @@ export default function Career() {
           {/* The court's call. It used to sit on the docket, above the day's
               cases — a claim button in the way of the one button that matters.
               It belongs with the other things a juror claims. */}
-          <DailySummons
-            standing={standing}
-            onCollected={() => {
-              void refreshStanding();
-            }}
-          />
+          <Enter index={3}>
+            <DailySummons
+              standing={standing}
+              onCollected={() => {
+                void refreshStanding();
+              }}
+            />
+          </Enter>
 
           {/* ---- Missions ---- */}
-          <Section title="STANDING ORDERS">
+          <Section title="STANDING ORDERS" index={4}>
             {missions === null && <ActivityIndicator color={Palette.textMuted} />}
             {missions?.map((m) => (
               <View key={m.key} style={styles.mission}>
@@ -305,7 +308,7 @@ export default function Career() {
           </Section>
 
           {/* ---- Foreign benches ---- */}
-          <Section title="OTHER JURISDICTIONS">
+          <Section title="OTHER JURISDICTIONS" index={5}>
             {foreignLock && <Text style={styles.locked}>{foreignLock}</Text>}
 
             {jurisdictions?.applications.map((a) => (
@@ -353,12 +356,26 @@ function timeLeft(iso: string): string {
   return h >= 48 ? `${Math.floor(h / 24)}D LEFT` : h >= 1 ? `${Math.floor(h)}H LEFT` : `${Math.max(1, Math.floor(h * 60))}M LEFT`;
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/**
+ * `index` is the section's position down the page, so the screen settles top
+ * to bottom rather than appearing all at once. Passed rather than counted: the
+ * sections are written out by hand, and a counter here would be a hook-ordering
+ * problem waiting to happen.
+ */
+function Section({
+  title,
+  index = 0,
+  children,
+}: {
+  title: string;
+  index?: number;
+  children: React.ReactNode;
+}) {
   return (
-    <View style={styles.section}>
+    <Enter index={index} style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {children}
-    </View>
+    </Enter>
   );
 }
 

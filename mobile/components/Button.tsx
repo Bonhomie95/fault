@@ -1,3 +1,4 @@
+import Feather from '@expo/vector-icons/Feather';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Elevation, Fonts, Layout, Palette, Radius, Space, Type, Verdict } from '@/constants/theme';
@@ -31,6 +32,13 @@ interface ButtonProps {
   busy?: boolean;
   /** Paints the button in the case's colour. Primary only. */
   accent?: string;
+  /**
+   * A Feather glyph before the label.
+   *
+   * Four secondary buttons stacked in a column are four identical grey
+   * rectangles; the icon is what the eye finds before it reads any of them.
+   */
+  icon?: keyof typeof Feather.glyphMap;
   style?: ViewStyle;
   /** Overrides the label for screen readers when the label alone is not enough. */
   accessibilityLabel?: string;
@@ -46,6 +54,7 @@ export function Button({
   disabled = false,
   busy = false,
   accent,
+  icon,
   style,
   accessibilityLabel,
 }: ButtonProps) {
@@ -93,16 +102,25 @@ export function Button({
         {busy ? (
           <ActivityIndicator color={variant === 'primary' ? Palette.bg : Palette.text} />
         ) : (
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.label,
-              variant === 'primary' && styles.labelOnFill,
-              variant === 'ghost' && styles.labelGhost,
-            ]}
-          >
-            {label}
-          </Text>
+          <View style={styles.row}>
+            {icon ? (
+              <Feather
+                name={icon}
+                size={18}
+                color={variant === 'primary' ? Palette.bg : Palette.textMuted}
+              />
+            ) : null}
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.label,
+                variant === 'primary' && styles.labelOnFill,
+                variant === 'ghost' && styles.labelGhost,
+              ]}
+            >
+              {label}
+            </Text>
+          </View>
         )}
       </AnimatedPressable>
 
@@ -125,9 +143,10 @@ const styles = StyleSheet.create({
     ...Elevation.card,
   },
   secondary: {
-    backgroundColor: Palette.surfaceRaised,
+    backgroundColor: Palette.surfaceHigh,
     borderWidth: 1,
     borderColor: Palette.hairlineBright,
+    ...Elevation.card,
   },
   ghost: {
     backgroundColor: 'transparent',
@@ -138,11 +157,16 @@ const styles = StyleSheet.create({
   },
   // 0.4, and it stops responding. Both, because opacity alone is a look and
   // not a state.
+  // Was 0.38, which on a near-black room left the label at roughly the
+  // contrast of the background it sat on — unreadable rather than unavailable.
+  // A disabled control still has to be legible; that is what the hint under it
+  // is explaining.
   dead: {
-    opacity: 0.38,
+    opacity: 0.6,
     shadowOpacity: 0,
     elevation: 0,
   },
+  row: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
   label: {
     fontFamily: Fonts.impact,
     fontSize: Type.subhead,

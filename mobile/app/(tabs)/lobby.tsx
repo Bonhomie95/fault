@@ -6,6 +6,7 @@ import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
 import { CityScene } from '@/components/three/CityScene';
 import { Button } from '@/components/Button';
+import { Enter } from '@/components/Enter';
 import { Accents, Elevation, Fonts, IMPACT_LEADING, Palette, Radius, Space, Type } from '@/constants/theme';
 import { ApiError, api, type NewsStory, type StoreView } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
@@ -152,18 +153,24 @@ export default function Lobby() {
           </View>
 
           {/* Who you are and where you sit — the record, on the way in. */}
-          {standing && <StandingBar standing={standing} />}
+          {standing && (
+            <Enter>
+              <StandingBar standing={standing} />
+            </Enter>
+          )}
 
           {/* The one thing this screen is for. It is the only filled button on
               the page, because it is the only action that matters. */}
           {/* One case for the whole world, today. */}
-          <DailyTrialCard
-            refreshKey={focusKey}
-            onOpen={() => void open({ daily: true })}
-            busy={opening === 'daily'}
-          />
+          <Enter index={1}>
+            <DailyTrialCard
+              refreshKey={focusKey}
+              onOpen={() => void open({ daily: true })}
+              busy={opening === 'daily'}
+            />
+          </Enter>
 
-          <View style={styles.caseFile}>
+          <Enter index={2} style={styles.caseFile}>
             <Text style={styles.caseFileEyebrow}>
               NEXT ON THE DOCKET{docketLine(standing?.docket) ? ` · ${docketLine(standing?.docket)}` : ''}
             </Text>
@@ -178,7 +185,7 @@ export default function Lobby() {
               accessibilityLabel="Open the next case file. The clock starts immediately."
               style={styles.caseFileBtn}
             />
-          </View>
+          </Enter>
 
           {/* NOT an entering animation, deliberately.
               This is the only thing on the screen that explains why the one

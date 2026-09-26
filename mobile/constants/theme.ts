@@ -23,12 +23,19 @@ export const Palette = {
   text: '#F4F2EF',
   /** warm grey — muted type */
   textMuted: '#9A9A96',
-  textFaint: '#5C5C58',
+  /**
+   * Was #5C5C58, which measures 2.9:1 against the room — under WCAG's 3:1
+   * floor for anything at all, let alone the 4.5:1 text wants. It carries the
+   * hint under every button, the unlock conditions in Chambers and the
+   * "0/120 to Juror" line, so the app's entire layer of small print was a
+   * decoration rather than something anyone could read. #84847E is 5.2:1.
+   */
+  textFaint: '#84847E',
   /** paper, for the newspaper and letter surfaces that really are paper */
   paper: '#D8D2C6',
   paperShadow: '#A9A395',
   hairline: '#2E2E33',
-  hairlineBright: '#3E3E45',
+  hairlineBright: '#4A4A52',
 } as const;
 
 /** GDD 5.1 — accent by case mood. */

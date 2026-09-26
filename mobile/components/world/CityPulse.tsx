@@ -1,4 +1,12 @@
+import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import { Accents, Fonts, Palette, Radius, Space, Type } from '@/constants/theme';
 import type { CityState } from '@/lib/api';
 
@@ -17,12 +25,12 @@ export function CityPulse({ city }: { city: CityState }) {
   return (
     <View style={styles.pulse}>
       <Text style={styles.title}>CITY PULSE</Text>
-      <PulseBar label="Crime" value={city.crimeRate} tint={Accents.violent} />
-      <PulseBar label="Trust" value={city.judicialTrust} tint={Accents.systemic} />
-      <PulseBar label="Disparity" value={city.wealthDisparity} tint={Accents.financial} />
-      <PulseBar label="Syndicate" value={city.organizedCrimePower} tint={Accents.passion} />
-      <PulseBar label="Police" value={city.policeIntegrity} tint={Accents.systemic} />
-      <PulseBar label="Press" value={city.mediaPressure} tint={Accents.financial} />
+      <PulseBar label="Crime" value={city.crimeRate} tint={Accents.violent} index={0} />
+      <PulseBar label="Trust" value={city.judicialTrust} tint={Accents.systemic} index={1} />
+      <PulseBar label="Disparity" value={city.wealthDisparity} tint={Accents.financial} index={2} />
+      <PulseBar label="Syndicate" value={city.organizedCrimePower} tint={Accents.passion} index={3} />
+      <PulseBar label="Police" value={city.policeIntegrity} tint={Accents.systemic} index={4} />
+      <PulseBar label="Press" value={city.mediaPressure} tint={Accents.financial} index={5} />
       {city.activeFactions.length > 0 && (
         <Text style={styles.factions}>{city.activeFactions.join(' · ').toUpperCase()}</Text>
       )}
@@ -30,8 +38,34 @@ export function CityPulse({ city }: { city: CityState }) {
   );
 }
 
-function PulseBar({ label, value, tint }: { label: string; value: number; tint: string }) {
+/**
+ * The bars fill rather than simply being full.
+ *
+ * Six numbers that are already at rest read as a printed table. Filling them
+ * in sequence says these are readings, and that they move — which is the whole
+ * claim the screen is making about the player's verdicts.
+ */
+function PulseBar({
+  label,
+  value,
+  tint,
+  index,
+}: {
+  label: string;
+  value: number;
+  tint: string;
+  index: number;
+}) {
   const pct = Math.max(0, Math.min(100, value));
+  const reduced = useReducedMotion();
+  const grown = useSharedValue(reduced ? pct : 0);
+
+  useEffect(() => {
+    grown.value = reduced ? pct : withDelay(index * 70, withTiming(pct, { duration: 650 }));
+  }, [pct, index, reduced, grown]);
+
+  const fill = useAnimatedStyle(() => ({ width: `${grown.value}%` }));
+
   return (
     <View
       style={styles.barRow}
@@ -40,7 +74,7 @@ function PulseBar({ label, value, tint }: { label: string; value: number; tint: 
     >
       <Text style={styles.barLabel}>{label}</Text>
       <View style={styles.barTrack}>
-        <View style={[styles.barFill, { width: `${pct}%`, backgroundColor: tint }]} />
+        <Animated.View style={[styles.barFill, { backgroundColor: tint }, fill]} />
       </View>
       <Text style={styles.barValue}>{Math.round(pct)}</Text>
     </View>
