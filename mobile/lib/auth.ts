@@ -138,21 +138,41 @@ export function googleClientId(): string | null {
 /**
  * The redirect Google requires for an installed app: the client id with its
  * dot-separated parts reversed, as a URL scheme. `fault://` is ours and Google
- * will not accept it. app.config.js registers this same scheme natively, from
- * the same environment variables, so the two cannot drift.
+ * will not accept it. A config plugin registers this same scheme natively,
+ * from the same environment variables, so the two cannot drift.
  */
 export function googleRedirectScheme(clientId: string): string {
   return `com.googleusercontent.apps.${clientId.replace('.apps.googleusercontent.com', '')}`;
+}
+
+/**
+ * The full redirect URI, written out rather than built by
+ * `AuthSession.makeRedirectUri()`.
+ *
+ * makeRedirectUri defers to `Linking.createURL`, which splices in the dev
+ * server's host when one exists. In a build talking to Metro that produced
+ *
+ *   com.googleusercontent.apps.123://192.168.1.5:8081/oauth2redirect
+ *
+ * and Google answers `Error 400: invalid_request` — "this app doesn't comply
+ * with Google's OAuth 2.0 policy for keeping apps secure". The address of a
+ * laptop on someone's Wi-Fi has no business in an OAuth redirect, and it also
+ * meant the URI changed with the network, so it could never have been
+ * registered. Release builds fared no better: with no host they yielded a
+ * triple-slashed `scheme:///oauth2redirect`.
+ *
+ * Google documents exactly one form for an installed app — scheme, one colon,
+ * one slash, path — and it is the same in development and in production.
+ */
+export function googleRedirectUri(clientId: string): string {
+  return `${googleRedirectScheme(clientId)}:/oauth2redirect`;
 }
 
 export async function signInWithGoogle(issued: SignInNonce): Promise<ProviderToken> {
   const clientId = googleClientId();
   if (!clientId) throw new Error('No Google client id configured');
 
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: googleRedirectScheme(clientId),
-    path: 'oauth2redirect',
-  });
+  const redirectUri = googleRedirectUri(clientId);
 
   const request = new AuthSession.AuthRequest({
     clientId,

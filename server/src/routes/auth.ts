@@ -14,7 +14,7 @@ import {
   type VerifiedIdentity,
 } from '../services/auth.js';
 import { getCityState } from '../services/cityState.js';
-import { consumeNonce, issueNonce, nonceStoreReady } from '../services/nonces.js';
+import { consumeNonce, issueNonce, nonceIsLive, nonceStoreReady } from '../services/nonces.js';
 import { issueTokens, revokeAll, rotateRefresh } from '../services/tokens.js';
 import { authLimiter, nonceLimiter, refreshLimiter } from '../middleware/limits.js';
 import { requireJuror } from '../middleware/requireJuror.js';
@@ -110,15 +110,34 @@ async function verify(
   if (provider === 'guest') return verifyGuest(token);
 
   // Both real providers must present a nonce this server issued and has not
-  // already spent. Consuming it here — before the token is verified — means a
-  // replay cannot burn attempts against a nonce that is still good.
+  // already spent.
+  //
+  // This CHECKS the nonce but does not spend it, because a first-time Apple or
+  // Google sign-in sends this endpoint two requests with the same provider
+  // token: one to find out a name is needed, one carrying it. Spending here
+  // burned the nonce on the first, so the second was refused as a replay and
+  // nobody could ever complete a new sign-in. The nonce is spent at the two
+  // points below where a sign-in actually succeeds, which is still exactly
+  // once and still atomic.
   if (!nonce) throw new Error('sign-in nonce is required');
-  if (!(await consumeNonce(nonce))) {
+  if (!(await nonceIsLive(nonce))) {
     throw new Error('sign-in nonce is unknown, expired, or already used');
   }
 
   if (provider === 'apple') return verifyApple(token, nonce);
   return verifyGoogle(token, nonce);
+}
+
+/**
+ * Spend the nonce, at the moment a sign-in is about to succeed.
+ *
+ * Providers that carry no nonce (guest, and `device` in development) have
+ * nothing to spend and pass straight through. For the rest this is the single
+ * atomic use: two concurrent replays race on Redis DEL and exactly one wins.
+ */
+async function spend(nonce: string | undefined): Promise<boolean> {
+  if (!nonce) return true;
+  return consumeNonce(nonce);
 }
 
 /**
@@ -153,6 +172,10 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
   });
 
   if (existing) {
+    if (!(await spend(nonce))) {
+      res.status(401).json({ error: 'could not verify that sign-in' });
+      return;
+    }
     const updated = await prisma.user.update({
       where: { id: existing.userId },
       data: {
@@ -196,6 +219,11 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
   const check = checkJurorName(jurorName);
   if (!check.ok) {
     res.status(400).json({ error: 'juror_name_rejected', reason: check.reason, message: check.message });
+    return;
+  }
+
+  if (!(await spend(nonce))) {
+    res.status(401).json({ error: 'could not verify that sign-in' });
     return;
   }
 

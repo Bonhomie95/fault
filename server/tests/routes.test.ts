@@ -945,3 +945,29 @@ describe('xp awards are exact', () => {
     assert.equal(user.rank, 2, 'the stored rank did not follow the xp');
   });
 });
+
+describe('the sign-in nonce', () => {
+  it('survives being checked, and is still spent exactly once', async () => {
+    const { issueNonce, nonceIsLive, consumeNonce } = await import('../src/services/nonces.js');
+    const { nonce } = await issueNonce();
+
+    // Swearing in a NEW Apple or Google juror takes two requests carrying the
+    // same provider token: one that comes back 409 `juror_name_required`, and
+    // one that carries the name they chose. A provider token holds exactly one
+    // nonce and the client cannot mint another without sending the player back
+    // through the provider sheet.
+    //
+    // Checking used to SPEND the nonce, so the second request was refused as a
+    // replay — "could not verify that sign-in" — and nobody could complete a
+    // first sign-in with Apple or Google at all. Guest never noticed, because
+    // guest carries no nonce.
+    assert.equal(await nonceIsLive(nonce), true);
+    assert.equal(await nonceIsLive(nonce), true, 'checking a nonce must not spend it');
+
+    // Spending is still single-use and still atomic: concurrent replays race
+    // on Redis DEL and exactly one wins.
+    assert.equal(await consumeNonce(nonce), true);
+    assert.equal(await consumeNonce(nonce), false, 'a spent nonce must not work twice');
+    assert.equal(await nonceIsLive(nonce), false);
+  });
+});

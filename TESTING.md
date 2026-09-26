@@ -72,12 +72,26 @@ one identified against Google's own endpoint rather than guessed:
 | Android | `831982871130-gqhj3ifdgil3g9d70dnufb7pa7imjil6` |
 | Web | `831982871130-6k0v9seov080ojeumbpmhutgq4b8tq3f` |
 
-Two things had to change for the button to work at all. The app asked for an
-id_token directly (the implicit flow); Google answers
-`unsupported_response_type` to that for iOS and Android clients, so it is now
-authorization code + PKCE. And the redirect is no longer `fault://` — Google
-only accepts the reversed client id as a scheme, which `app.config.js` now
-registers natively from the same variables.
+Three things had to change for the button to work at all.
+
+1. The app asked for an id_token directly (the implicit flow); Google answers
+   `unsupported_response_type` to that for iOS and Android clients, so it is
+   now authorization code + PKCE.
+2. The redirect is no longer `fault://` — Google only accepts the reversed
+   client id as a scheme, registered natively by
+   `plugins/withGoogleSignInScheme.js` from the same variables lib/auth reads.
+3. The redirect URI is now written out literally instead of built by
+   `AuthSession.makeRedirectUri()`. That helper defers to
+   `Linking.createURL`, which splices in the **dev server's host** — so a build
+   talking to Metro sent Google
+   `com.googleusercontent.apps.123://192.168.1.5:8081/oauth2redirect` and got
+   back *"Access blocked: Authorization Error — Error 400: invalid_request"*.
+   A laptop's address on someone's Wi-Fi has no business in an OAuth redirect,
+   and it changed with the network, so it could never have been registered.
+   Release builds were no better: with no host they produced a triple-slashed
+   `scheme:///oauth2redirect`. The correct form — scheme, one colon, one slash,
+   path — is identical in development and production, and was verified against
+   Google's endpoint both ways round.
 
 **Android still needs one change only you can make:** Google Cloud Console →
 Credentials → the Android client → tick **Enable Custom URI scheme**. Until

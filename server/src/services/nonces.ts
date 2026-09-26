@@ -64,6 +64,23 @@ export async function issueNonce(): Promise<IssuedNonce> {
 }
 
 /**
+ * Is this nonce still good, without spending it?
+ *
+ * Sign-in for a NEW Apple or Google juror takes two requests: one that
+ * discovers the court has never met them (409 `juror_name_required`) and one
+ * that carries the name they chose. Both present the same provider token, and
+ * a provider token carries exactly one nonce — the client cannot mint a fresh
+ * one without sending the player back through the provider sheet.
+ *
+ * So the first request must CHECK the nonce without burning it, or the second
+ * is rejected as a replay and no new juror can ever swear in. Spending happens
+ * at the point the sign-in actually completes; see `consumeNonce`.
+ */
+export async function nonceIsLive(nonce: string): Promise<boolean> {
+  return (await redis.exists(key(nonce))) === 1;
+}
+
+/**
  * Spend a nonce. True only the first time, and only within the TTL.
  *
  * DEL returns the number of keys removed, which makes this atomic without a

@@ -69,7 +69,16 @@ function unitIds(g: Gma): { interstitial: string | null; rewarded: string | null
  * advert's lifetime.
  */
 function adCovering(on: boolean): void {
-  if (Platform.OS === 'ios') StatusBar.setHidden(on, 'none');
+  if (Platform.OS !== 'ios') return;
+  // iOS 27 retired the app-wide status bar API: `setStatusBarHidden` is now a
+  // documented no-op and only logs a deprecation line each time an advert
+  // opens. Calling it there would be code that pretends to do something, so
+  // it is skipped — but that means the close-button problem this exists to
+  // solve is UNMITIGATED on iOS 27 and has to be re-checked on a device.
+  // Under the scene life cycle the status bar belongs to whichever view
+  // controller is on screen, which during an advert is Google's, not ours.
+  if (Number.parseInt(String(Platform.Version), 10) >= 27) return;
+  StatusBar.setHidden(on, 'none');
 }
 
 /** How long a rewarded advert may take to LOAD before the slot is given up. */
