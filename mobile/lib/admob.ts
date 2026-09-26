@@ -122,6 +122,26 @@ async function requestTracking(): Promise<void> {
 }
 
 /**
+ * Google's own sample publisher, the owner of every `TestIds` unit.
+ *
+ * It matters beyond the adverts themselves: Google's consent SDK (UMP) shows
+ * whatever forms the PUBLISHER behind the app id has published, and on the
+ * sample account one of them is an "App Tracking Transparency" explainer
+ * reading
+ *
+ *   "Our app wants to stay free for you — Ads help support our business. Tap
+ *    Allow on the next screen…"
+ *
+ * That is Google's copy, shown in Google's voice, begging on our behalf, to a
+ * juror who has not seen a single case yet. It is not in this app's source and
+ * cannot be edited from it.
+ */
+const GOOGLE_SAMPLE_PUBLISHER = 'ca-app-pub-3940256099942544';
+
+const onSampleAccount = (ids: { interstitial: string | null; rewarded: string | null }) =>
+  [ids.interstitial, ids.rewarded].some((id) => id?.startsWith(GOOGLE_SAMPLE_PUBLISHER));
+
+/**
  * Consent, tracking, SDK — once per launch, never blocking the game.
  * Resolves false when there will be no ads this session.
  */
@@ -130,10 +150,24 @@ export function startAds(): Promise<boolean> {
   if (!g) return Promise.resolve(false);
   started ??= (async () => {
     try {
-      const consent = await g.AdsConsent.gatherConsent();
-      privacyOptionsRequired =
-        consent.privacyOptionsRequirementStatus === g.AdsConsentPrivacyOptionsRequirementStatus.REQUIRED;
-      if (!consent.canRequestAds) return false;
+      const ids = unitIds(g);
+      if (!ids.interstitial && !ids.rewarded) return false;
+
+      // Consent belongs to the publisher. On the sample account that is
+      // Google, so running their form here would show a juror Google's
+      // pre-tracking sales pitch on behalf of an app that does not own it.
+      // Real consent runs against a real account; test builds skip it.
+      if (onSampleAccount(ids)) {
+        privacyOptionsRequired = false;
+      } else {
+        const consent = await g.AdsConsent.gatherConsent();
+        privacyOptionsRequired =
+          consent.privacyOptionsRequirementStatus ===
+          g.AdsConsentPrivacyOptionsRequirementStatus.REQUIRED;
+        if (!consent.canRequestAds) return false;
+      }
+
+      // Apple's prompt, with OUR words in it (NSUserTrackingUsageDescription).
       await requestTracking();
       await g.default().setRequestConfiguration({
         // A courtroom game rated for teens: no mature advertising.
@@ -141,8 +175,6 @@ export function startAds(): Promise<boolean> {
         tagForUnderAgeOfConsent: false,
       });
       await g.default().initialize();
-      const ids = unitIds(g);
-      if (!ids.interstitial && !ids.rewarded) return false;
       setAdBackend(backendFor(g, ids));
       return true;
     } catch (err) {
