@@ -17,6 +17,7 @@ import { Seal, sealFrom } from '@/components/Seal';
 import { api, ApiError, type Board, type BoardEntry, type BoardView } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { storage } from '@/lib/storage';
+import { CityPulse } from '@/components/world/CityPulse';
 import { useGame } from '@/store/game';
 
 /**
@@ -53,6 +54,7 @@ async function loadHidden(): Promise<string[]> {
 
 export default function Boards() {
   const jurorId = useGame((s) => s.jurorId);
+  const city = useGame((s) => s.city);
   const mySeal = sealFrom(useGame((s) => s.entitlements), useGame((s) => s.equipped.seal));
   const [board, setBoard] = useState<Board>('peaceful');
   const [view, setView] = useState<BoardView | null>(null);
@@ -167,6 +169,14 @@ export default function Boards() {
             {view ? `${view.ranked} cities under judgement` : 'Ranked by what your verdicts built'}
           </Text>
         </View>
+
+        {/* Your city first, then everyone else's — the comparison only means
+            something next to the numbers it is being compared with. */}
+        {city && (
+          <View style={styles.pulseWrap}>
+            <CityPulse city={city} />
+          </View>
+        )}
 
         <View style={styles.tabs}>
           <BoardTab
@@ -285,12 +295,6 @@ export default function Boards() {
             </Pressable>
           </Animated.View>
         )}
-
-        <View style={styles.footer}>
-          <Pressable onPress={() => router.replace('/lobby')} style={styles.back}>
-            <Text style={styles.backText}>BACK TO DOCKET</Text>
-          </Pressable>
-        </View>
       </SafeAreaView>
     </View>
   );
@@ -325,6 +329,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingTop: 8, gap: 3 },
   title: { fontFamily: Fonts.display, fontSize: 30, color: Palette.text },
   subtitle: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.4, color: Palette.textMuted },
+  pulseWrap: { paddingHorizontal: 20, marginTop: 16 },
   tabs: { flexDirection: 'row', marginTop: 16, paddingHorizontal: 20, gap: 4 },
   tab: {
     flex: 1,

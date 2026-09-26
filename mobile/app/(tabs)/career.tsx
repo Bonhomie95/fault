@@ -8,6 +8,7 @@ import { Fonts, Palette, Type } from '@/constants/theme';
 import { ApiError, api, type District, type JurisdictionsView, type Mission, type Tier } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
+import { DailySummons } from '@/components/world/LobbyWorld';
 import { useGame } from '@/store/game';
 
 /**
@@ -246,6 +247,16 @@ export default function Career() {
             ))}
           </Section>
 
+          {/* The court's call. It used to sit on the docket, above the day's
+              cases — a claim button in the way of the one button that matters.
+              It belongs with the other things a juror claims. */}
+          <DailySummons
+            standing={standing}
+            onCollected={() => {
+              void refreshStanding();
+            }}
+          />
+
           {/* ---- Missions ---- */}
           <Section title="STANDING ORDERS">
             {missions === null && <ActivityIndicator color={Palette.textMuted} />}
@@ -328,18 +339,6 @@ export default function Career() {
             ))}
           </Section>
         </ScrollView>
-
-        <View style={styles.footer}>
-          <Pressable
-            onPress={() => router.replace('/lobby')}
-            style={styles.back}
-            accessibilityRole="button"
-            accessibilityLabel="Back to the docket"
-            hitSlop={8}
-          >
-            <Text style={styles.backText}>BACK TO DOCKET</Text>
-          </Pressable>
-        </View>
       </SafeAreaView>
 
       {/* An application is filed once. Two taps must not be two applications. */}

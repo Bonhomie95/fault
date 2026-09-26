@@ -100,14 +100,15 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="briefing" />
-        <Stack.Screen name="lobby" />
+        {/* The docket, the papers, the career, the cities and chambers. The
+            group does not appear in the URL, so /lobby and the rest still
+            resolve exactly as they did. */}
+        <Stack.Screen name="(tabs)" />
         <Stack.Screen name="case" />
         <Stack.Screen name="verdict" />
         <Stack.Screen name="review" />
         <Stack.Screen name="record" />
         <Stack.Screen name="archive" />
-        <Stack.Screen name="career" />
-        <Stack.Screen name="boards" />
         <Stack.Screen name="store" options={{ presentation: 'modal', gestureEnabled: true }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal', gestureEnabled: true }} />
         {/* Reachable before sign-in: the cold open asks for agreement to these. */}

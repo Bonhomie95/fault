@@ -1,6 +1,5 @@
-import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Fonts, Palette, Space, Type } from '@/constants/theme';
 import { api, type NewsStory } from '@/lib/api';
@@ -85,15 +84,6 @@ export default function Papers() {
             setLoading(true);
             void load(items[items.length - 1]!.at);
           }}
-          ListFooterComponent={
-            <Pressable
-              onPress={() => (router.canGoBack() ? router.back() : router.replace('/lobby'))}
-              style={styles.back}
-              accessibilityRole="button"
-            >
-              <Text style={styles.backText}>BACK TO THE COURT</Text>
-            </Pressable>
-          }
         />
       </SafeAreaView>
     </View>

@@ -95,7 +95,7 @@ export function docketLine(d: DocketView | undefined): string | null {
   if (!d) return null;
   if (d.unlimited) return 'UNLIMITED DOCKET';
   const total = d.freePerDay + d.bonus;
-  return `${d.left} OF ${total} CASES LEFT TODAY`;
+  return `${d.left} OF ${total} LEFT`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
   daily: {
     backgroundColor: '#17130A',
     borderRadius: Radius.lg,
-    padding: Space.xl,
+    padding: Space.lg,
     gap: Space.sm,
     borderWidth: 1,
     borderColor: GOLD + '88',
@@ -289,8 +289,8 @@ const styles = StyleSheet.create({
   dailyEyebrow: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 2, color: GOLD },
   dailyTitle: {
     fontFamily: Fonts.impact,
-    fontSize: Type.title,
-    lineHeight: Type.title * IMPACT_LEADING,
+    fontSize: Type.heading,
+    lineHeight: Type.heading * IMPACT_LEADING,
     color: Palette.text,
   },
   dailyBody: { fontFamily: Fonts.ui, fontSize: Type.small, lineHeight: 20, color: Palette.textMuted },
