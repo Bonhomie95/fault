@@ -115,12 +115,13 @@ export interface PlaceContext {
   /**
    * A handful of real names from this country's own pool, rotated per case.
    *
-   * Naming the traditions is not enough on its own. Asked for "a Nigerian
-   * name" the model returns its most internationally famous ones every time,
-   * which is how six consecutive cases arrived as Okafor, Chukwu, Eze and
-   * Balogun — all south-eastern or south-western, in a country whose largest
-   * group is northern. A concrete sample that CHANGES per case is the thing
-   * that actually moves it off that mode.
+   * NOT what fixes the names — enforceCast rewrites every name the model
+   * produces, so the model's naming never reaches a player. This is here for
+   * what survives substitution: who the model writes ABOUT. Asked for a case
+   * in Nigeria it reaches for Lagos and the south every time, and a sample
+   * drawn one-per-tradition tells it the room also contains a Kanuri trader
+   * and a Tiv clerk, which shapes the occupations, the neighbourhoods and the
+   * texture of the testimony even after the names are replaced.
    */
   nameSeed: string;
   tier: Tier;

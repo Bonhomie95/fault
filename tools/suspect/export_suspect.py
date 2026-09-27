@@ -284,6 +284,54 @@ ARCHETYPES = [
     {"name": "m_young_me", "gender": 0.95, "age": 0.28, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.10}, "skin": "caucasian", "tone": (0.50, 0.40, 0.30), "hair_asset": "short02", "clothes": "male_casualsuit05", "hair": (0.05, 0.04, 0.04), "wears": (0.80, 0.74, 0.70)},
     {"name": "m_mid_me",   "gender": 0.96, "age": 0.56, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.10}, "skin": "caucasian", "tone": (0.49, 0.38, 0.29), "hair_asset": "short04", "clothes": "male_elegantsuit01", "hair": (0.05, 0.04, 0.04), "wears": (0.78, 0.80, 0.86)},
     {"name": "m_old_me",   "gender": 0.95, "age": 0.86, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.10}, "skin": "caucasian", "tone": (0.50, 0.39, 0.29), "hair_asset": "short01", "clothes": "male_casualsuit01", "hair": (0.58, 0.57, 0.56), "wears": (0.72, 0.70, 0.74), "gray": True},
+
+    # A SECOND person for every archetype above.
+    #
+    # The cast was one face per presentation x age x ancestry, so a juror
+    # in Lagos met the same six people for an entire career — every
+    # Nigerian defendant, witness and both counsel drawn from six sprites,
+    # and a room of five people could not be filled without repeats.
+    #
+    # Each is built from its base by moving the age within its band and
+    # taking a different hairstyle and a different garment, so it reads as
+    # another person rather than the same one in another shirt. Garments
+    # are drawn only from what the exporter actually permits — the branded
+    # and unsuitable sets are excluded here as well as there, because a
+    # pinned garment that is not permitted is now a hard error.
+    {"name": "f_mid_af_b", "gender": 0.06, "age": 0.53, "race": "african", "hair_asset": "short02", "clothes": "male_casualsuit01", "hair": (0.12, 0.11, 0.11), "wears": (0.92, 0.86, 0.68)},
+    {"name": "f_old_af_b", "gender": 0.06, "age": 0.89, "race": "african", "hair_asset": "short04", "clothes": "male_casualsuit03", "hair": (0.38, 0.37, 0.36), "wears": (0.7, 0.6, 0.58), "gray": True},
+    {"name": "f_young_as_b", "gender": 0.05, "age": 0.25, "race": "asian", "hair_asset": "short01", "clothes": "male_casualsuit05", "hair": (0.05, 0.03, 0.03), "wears": (0.76, 0.92, 0.84)},
+    {"name": "f_mid_as_b", "gender": 0.06, "age": 0.61, "race": "asian", "hair_asset": "short02", "clothes": "male_elegantsuit01", "hair": (0.12, 0.11, 0.11), "wears": (0.68, 0.64, 0.72)},
+    {"name": "f_old_as_b", "gender": 0.06, "age": 0.81, "race": "asian", "hair_asset": "short02", "clothes": "male_worksuit01", "hair": (0.4, 0.39, 0.38), "wears": (0.78, 0.76, 0.72), "gray": True},
+    {"name": "f_young_ca_b", "gender": 0.06, "age": 0.35, "race": "caucasian", "hair_asset": "short01", "clothes": "female_elegantsuit01", "hair": (0.18, 0.11, 0.06), "wears": (0.68, 0.64, 0.72)},
+    {"name": "f_mid_ca_b", "gender": 0.07, "age": 0.53, "race": "caucasian", "hair_asset": "short02", "clothes": "male_casualsuit03", "hair": (0.36, 0.25, 0.17), "wears": (0.86, 0.8, 0.76)},
+    {"name": "f_old_ca_b", "gender": 0.07, "age": 0.91, "race": "caucasian", "hair_asset": "short04", "clothes": "male_casualsuit05", "hair": (0.6, 0.58, 0.56), "wears": (0.62, 0.58, 0.66), "gray": True},
+    {"name": "m_mid_af_b", "gender": 0.94, "age": 0.5, "race": "african", "hair_asset": "short01", "clothes": "male_casualsuit01", "hair": (0.03, 0.03, 0.03), "wears": (0.86, 0.86, 0.9)},
+    {"name": "m_old_af_b", "gender": 0.93, "age": 0.91, "race": "african", "hair_asset": "short04", "clothes": "male_casualsuit05", "hair": (0.46, 0.46, 0.45), "wears": (0.64, 0.62, 0.58), "gray": True},
+    {"name": "m_young_as_b", "gender": 0.94, "age": 0.23, "race": "asian", "hair_asset": "short01", "clothes": "male_elegantsuit01", "hair": (0.04, 0.03, 0.03), "wears": (0.78, 0.8, 0.84)},
+    {"name": "m_mid_as_b", "gender": 0.94, "age": 0.55, "race": "asian", "hair_asset": "short04", "clothes": "male_worksuit01", "hair": (0.04, 0.03, 0.03), "wears": (0.72, 0.72, 0.76)},
+    {"name": "m_old_as_b", "gender": 0.93, "age": 0.81, "race": "asian", "hair_asset": "short01", "clothes": "male_casualsuit01", "hair": (0.48, 0.46, 0.45), "wears": (0.78, 0.76, 0.72), "gray": True},
+    {"name": "m_young_ca_b", "gender": 0.94, "age": 0.32, "race": "caucasian", "hair_asset": "short02", "clothes": "male_casualsuit05", "hair": (0.33, 0.22, 0.12), "wears": (0.62, 0.66, 0.62)},
+    {"name": "m_mid_ca_b", "gender": 0.95, "age": 0.57, "race": "caucasian", "hair_asset": "short02", "clothes": "male_casualsuit05", "hair": (0.12, 0.08, 0.05), "wears": (0.92, 0.92, 0.92)},
+    {"name": "m_old_ca_b", "gender": 0.94, "age": 0.91, "race": "caucasian", "hair_asset": "short04", "clothes": "male_worksuit01", "hair": (0.61, 0.6, 0.58), "wears": (0.66, 0.64, 0.62), "gray": True},
+    {"name": "f_young_sa_b", "gender": 0.05, "age": 0.25, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.22, "asian": 0.18}, "skin": "caucasian", "tone": (0.291, 0.213, 0.157), "hair_asset": "short04", "clothes": "male_casualsuit03", "hair": (0.03, 0.03, 0.03), "wears": (0.92, 0.76, 0.78)},
+    {"name": "f_mid_sa_b", "gender": 0.06, "age": 0.61, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.24, "asian": 0.16}, "skin": "caucasian", "tone": (0.225, 0.162, 0.117), "hair_asset": "short01", "clothes": "male_casualsuit05", "hair": (0.03, 0.03, 0.03), "wears": (0.62, 0.72, 0.68)},
+    {"name": "f_old_sa_b", "gender": 0.06, "age": 0.8, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.24, "asian": 0.16}, "skin": "caucasian", "tone": (0.28, 0.202, 0.157), "hair_asset": "long01", "clothes": "male_elegantsuit01", "hair": (0.5, 0.49, 0.48), "wears": (0.86, 0.78, 0.68), "gray": True},
+    {"name": "m_young_sa_b", "gender": 0.94, "age": 0.34, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.22, "asian": 0.18}, "skin": "caucasian", "tone": (0.225, 0.171, 0.126), "hair_asset": "short04", "clothes": "male_worksuit01", "hair": (0.03, 0.03, 0.03), "wears": (0.68, 0.68, 0.76)},
+    {"name": "m_mid_sa_b", "gender": 0.94, "age": 0.49, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.24, "asian": 0.16}, "skin": "caucasian", "tone": (0.258, 0.19, 0.146), "hair_asset": "short02", "clothes": "male_casualsuit01", "hair": (0.03, 0.03, 0.03), "wears": (0.88, 0.88, 0.92)},
+    {"name": "m_old_sa_b", "gender": 0.93, "age": 0.91, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.24, "asian": 0.16}, "skin": "caucasian", "tone": (0.225, 0.162, 0.126), "hair_asset": "short04", "clothes": "male_casualsuit05", "hair": (0.58, 0.57, 0.56), "wears": (0.68, 0.64, 0.6), "gray": True},
+    {"name": "f_young_la_b", "gender": 0.05, "age": 0.24, "race": "latino", "mix": {"caucasian": 0.64, "asian": 0.2, "african": 0.16}, "skin": "caucasian", "tone": (0.538, 0.414, 0.325), "hair_asset": "short04", "clothes": "male_casualsuit05", "hair": (0.08, 0.05, 0.03), "wears": (0.9, 0.82, 0.72)},
+    {"name": "f_mid_la_b", "gender": 0.05, "age": 0.62, "race": "latino", "mix": {"caucasian": 0.6, "asian": 0.24, "african": 0.16}, "skin": "caucasian", "tone": (0.414, 0.324, 0.234), "hair_asset": "short01", "clothes": "male_elegantsuit01", "hair": (0.06, 0.04, 0.03), "wears": (0.62, 0.66, 0.78)},
+    {"name": "f_old_la_b", "gender": 0.06, "age": 0.8, "race": "latino", "mix": {"caucasian": 0.6, "asian": 0.24, "african": 0.16}, "skin": "caucasian", "tone": (0.515, 0.403, 0.291), "hair_asset": "short02", "clothes": "male_worksuit01", "hair": (0.56, 0.55, 0.54), "wears": (0.8, 0.72, 0.78), "gray": True},
+    {"name": "m_young_la_b", "gender": 0.94, "age": 0.32, "race": "latino", "mix": {"caucasian": 0.62, "asian": 0.22, "african": 0.16}, "skin": "caucasian", "tone": (0.423, 0.324, 0.243), "hair_asset": "short02", "clothes": "male_casualsuit05", "hair": (0.06, 0.04, 0.03), "wears": (0.64, 0.7, 0.64)},
+    {"name": "m_mid_la_b", "gender": 0.94, "age": 0.5, "race": "latino", "mix": {"caucasian": 0.6, "asian": 0.24, "african": 0.16}, "skin": "caucasian", "tone": (0.504, 0.381, 0.291), "hair_asset": "short01", "clothes": "male_casualsuit05", "hair": (0.05, 0.03, 0.03), "wears": (0.9, 0.9, 0.92)},
+    {"name": "m_old_la_b", "gender": 0.93, "age": 0.91, "race": "latino", "mix": {"caucasian": 0.6, "asian": 0.24, "african": 0.16}, "skin": "caucasian", "tone": (0.414, 0.324, 0.234), "hair_asset": "short04", "clothes": "male_elegantsuit01", "hair": (0.62, 0.61, 0.6), "wears": (0.66, 0.64, 0.6), "gray": True},
+    {"name": "f_young_me_b", "gender": 0.05, "age": 0.25, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.1}, "skin": "caucasian", "tone": (0.582, 0.459, 0.347), "hair_asset": "short04", "clothes": "male_elegantsuit01", "hair": (0.04, 0.03, 0.03), "wears": (0.78, 0.76, 0.88)},
+    {"name": "f_mid_me_b", "gender": 0.06, "age": 0.62, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.1}, "skin": "caucasian", "tone": (0.45, 0.351, 0.261), "hair_asset": "short01", "clothes": "male_worksuit01", "hair": (0.04, 0.03, 0.03), "wears": (0.72, 0.68, 0.58)},
+    {"name": "f_old_me_b", "gender": 0.06, "age": 0.81, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.1}, "skin": "caucasian", "tone": (0.56, 0.448, 0.336), "hair_asset": "long01", "clothes": "male_casualsuit01", "hair": (0.52, 0.51, 0.5), "wears": (0.72, 0.76, 0.82), "gray": True},
+    {"name": "m_young_me_b", "gender": 0.94, "age": 0.33, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.1}, "skin": "caucasian", "tone": (0.45, 0.36, 0.27), "hair_asset": "short04", "clothes": "male_worksuit01", "hair": (0.03, 0.03, 0.03), "wears": (0.72, 0.66, 0.62)},
+    {"name": "m_mid_me_b", "gender": 0.95, "age": 0.51, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.1}, "skin": "caucasian", "tone": (0.549, 0.426, 0.325), "hair_asset": "short01", "clothes": "male_casualsuit01", "hair": (0.03, 0.03, 0.03), "wears": (0.84, 0.86, 0.92)},
+    {"name": "m_old_me_b", "gender": 0.94, "age": 0.91, "race": "mena", "mix": {"caucasian": 0.76, "african": 0.14, "asian": 0.1}, "skin": "caucasian", "tone": (0.45, 0.351, 0.261), "hair_asset": "short04", "clothes": "male_casualsuit05", "hair": (0.64, 0.63, 0.62), "wears": (0.64, 0.62, 0.66), "gray": True},
 ]
 
 
@@ -1542,7 +1590,21 @@ def matches_gender(name: str, feminine: bool) -> bool:
 # Garments with a MakeHuman logo printed ON them, as opposed to a credit line
 # in the unused corner of the UV sheet. The courtroom camera frames the chest,
 # so a defendant in a branded t-shirt is what the player would be looking at.
-BRANDED_CLOTHES = {"male_casualsuit06"}
+# Garments with the MakeHuman logo printed on the chest. A defendant wearing a
+# 3D-software logo into court is the one detail that breaks the room.
+#
+# male_casualsuit06 was the only one listed, and the other four were recorded
+# in a note rather than in the code — which was harmless only for as long as
+# every archetype pinned a garment by hand and none of them pinned these. The
+# moment a pin fell through to the seeded pick (see `choose`), the logo was one
+# roll away.
+BRANDED_CLOTHES = {
+    "male_casualsuit06",
+    "male_casualsuit02",
+    "male_casualsuit04",
+    "female_casualsuit01",
+    "female_casualsuit02",
+}
 # Not branded — just wrong. `female_sportsuit01` is a cropped sports top over
 # leggings, and once the crop dropped far enough to keep the hands it dropped
 # far enough to show that it leaves the midriff bare. A defendant is dressed
@@ -1594,6 +1656,18 @@ def dress(human, spec: dict, seed: int):
             exact = [p for p in paths if os.path.splitext(os.path.basename(p))[0] == pinned]
             if exact:
                 return exact[0]
+            # Loud, and fatal for clothes.
+            #
+            # This used to fall through to the seeded pick silently, which is
+            # how pinning an excluded garment produced a RANDOM one instead —
+            # and the random pool is exactly where the branded garments live.
+            # A cast member wearing something nobody chose is worse than a
+            # failed export, because the export failure is visible.
+            if subdir == "clothes":
+                raise SystemExit(
+                    f"pinned garment {pinned!r} is not available "
+                    f"(missing, branded, or unsuitable) — fix the archetype"
+                )
             print(f"  ! pinned {subdir} {pinned} not installed; picking instead")
         if gendered:
             paths = [p for p in paths if matches_gender(os.path.basename(p), feminine)] or paths
