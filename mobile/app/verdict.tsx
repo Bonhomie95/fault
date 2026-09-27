@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Interstitial } from '@/components/Interstitial';
 import { AccusedReaction } from '@/components/scene2d/AccusedReaction';
 import { askForReminders } from '@/lib/reminders';
-import { Fonts, Palette, Type } from '@/constants/theme';
+import { Accents, Fonts, Palette, Type } from '@/constants/theme';
 import * as haptic from '@/lib/haptics';
 import { useReducedMotion } from '@/lib/motion';
 import { play } from '@/lib/sound';
@@ -95,8 +95,8 @@ export default function VerdictDelivered() {
           accent, so the one word this entire screen exists to deliver was
           rendered invisible, on top of its own colour, every single time. */}
       <Animated.View
-        entering={FadeIn.duration(90)}
-        exiting={FadeOut.duration(600)}
+        entering={reducedMotion ? undefined : FadeIn.duration(300)}
+        exiting={reducedMotion ? undefined : FadeOut.duration(600)}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       >
@@ -105,18 +105,18 @@ export default function VerdictDelivered() {
 
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
-          <Animated.Text entering={FadeIn.duration(240)} style={[styles.verdict, { color: accent }]}>
+          <Animated.Text entering={reducedMotion ? undefined : FadeIn.duration(240)} style={[styles.verdict, { color: accent }]}>
             {label}
           </Animated.Text>
 
-          <Animated.Text entering={FadeIn.duration(400).delay(200)} style={styles.timing}>
+          <Animated.Text entering={reducedMotion ? undefined : FadeIn.duration(400).delay(200)} style={styles.timing}>
             {result.wasHung
               ? 'THE CLOCK DECIDED · RECORDED AS HUNG'
               : `DELIVERED WITH ${result.timeRemaining}S REMAINING`}
           </Animated.Text>
 
           {phase === 'aftermath' && (
-            <Animated.View entering={FadeIn.duration(900)} style={styles.aftermathBlock}>
+            <Animated.View entering={reducedMotion ? undefined : FadeIn.duration(600)} style={styles.aftermathBlock}>
               <Text
                 style={[
                   styles.aftermath,
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
   barNot: { backgroundColor: '#1FA184' },
   barLabels: { flexDirection: 'row', justifyContent: 'space-between', alignSelf: 'stretch' },
   barLabel: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Palette.textMuted },
-  shareBtn: { borderWidth: 1, borderColor: Palette.hairline, paddingVertical: 9, paddingHorizontal: 18, borderRadius: 2 },
+  shareBtn: { borderWidth: 1, borderColor: Palette.hairline, paddingVertical: 9, paddingHorizontal: 18, borderRadius: 24 },
   shareText: { fontFamily: Fonts.uiBold, fontSize: 11, letterSpacing: 2, color: Palette.text },
   opened: {
     fontFamily: Fonts.monoBold,
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginBottom: 10,
     backgroundColor: Palette.paper,
-    borderRadius: 10,
+    borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 10,
     gap: 3,
@@ -315,16 +315,17 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: Type.micro,
     letterSpacing: 1.8,
-    color: '#D4860A',
+    color: Accents.financial,
     textAlign: 'center',
   },
   footer: { paddingHorizontal: 22, paddingBottom: 12 },
   next: {
     borderWidth: 1,
-    borderColor: Palette.hairline,
+    borderColor: Palette.hairlineBright,
+    backgroundColor: Palette.surfaceHigh,
     paddingVertical: 16,
     alignItems: 'center',
-    borderRadius: 2,
+    borderRadius: 24,
   },
   nextText: {
     fontFamily: Fonts.uiBold,

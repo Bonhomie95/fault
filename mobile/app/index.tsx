@@ -7,12 +7,15 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  ScrollView,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import { NewspaperScene } from '@/components/three/NewspaperScene';
+import { Courthouse } from '@/components/Courthouse';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useReducedMotion } from '@/lib/motion';
 import { Fonts, Palette, Type } from '@/constants/theme';
 import { api, ApiError } from '@/lib/api';
 import {
@@ -25,30 +28,14 @@ import {
   type ProviderToken,
   type SignInNonce,
 } from '@/lib/auth';
-import { localNewspaper } from '@/lib/press';
+
 import { useGame } from '@/store/game';
 
-const HEADLINE = 'CITY COURT SEEKS JUROR';
+const HEADLINE = 'Every verdict\nhas a next chapter.';
 
-/**
- * Nobody is sworn in yet, so there is no assigned district — this is the
- * paper for wherever the phone thinks it is. Once the player signs in, every
- * other screen uses their real one, which may not be this.
- */
-const MASTHEAD = localNewspaper();
+const MASTHEAD = 'FAULT /';
 
-/**
- * GDD 6, Screen 1 — Cold Open.
- * No logo. No tutorial. Just an assignment.
- */
-/**
- * Why a provider sheet might have failed, in a sentence a player can act on.
- *
- * Apple Sign In needs an entitlement that only exists in a build of THIS app;
- * in Expo Go the button is hosted by Expo's own bundle id and the sheet always
- * fails. That is the single most likely reason this screen is being read, and
- * it is not something a player could guess.
- */
+/** Explain provider availability without blocking guest play. */
 function providerHint(): string {
   return isExpoGo()
     ? 'Apple and Google sign-in need a development build — use “Play as guest” here.'
@@ -62,7 +49,8 @@ export default function ColdOpen() {
   const offline = useGame((s) => s.offline);
   const bootstrap = useGame((s) => s.bootstrap);
 
-  const [typed, setTyped] = useState('');
+  const reducedMotion = useReducedMotion();
+  const [typed] = useState(HEADLINE);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,17 +65,6 @@ export default function ColdOpen() {
 
   useEffect(() => {
     void isAppleAvailable().then(setAppleReady);
-  }, []);
-
-  // The headline types itself out (GDD 6, Screen 1).
-  useEffect(() => {
-    let i = 0;
-    const id = setInterval(() => {
-      i++;
-      setTyped(HEADLINE.slice(0, i));
-      if (i >= HEADLINE.length) clearInterval(id);
-    }, 62);
-    return () => clearInterval(id);
   }, []);
 
   /**
@@ -174,25 +151,27 @@ export default function ColdOpen() {
 
   return (
     <View style={styles.root}>
-      <View style={StyleSheet.absoluteFill}>
-        <NewspaperScene />
-      </View>
+
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.overlay}
       >
+        <SafeAreaView style={{ flex: 1 }}><ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.masthead}>
           <Text style={styles.mastheadText}>{MASTHEAD}</Text>
-          <Text style={styles.mastheadRule}>ESTABLISHED 1961 · CITY EDITION</Text>
+          <Text style={styles.mastheadRule}>THE VERDICT IS YOURS</Text>
         </View>
 
+        <Courthouse compact />
         <View style={styles.headlineBlock}>
           <Text style={styles.headline}>
             {typed}
             {typed.length < HEADLINE.length && <Text style={styles.caret}>▌</Text>}
           </Text>
         </View>
+
+        <Text style={styles.intro}>A legal drama in two minutes. Read between the lines. Make the call. Live with the consequences.</Text>
 
         {/* Signed in, but the court could not be reached to check. Never
             the sign-in buttons: this juror already has a career. */}
@@ -210,14 +189,14 @@ export default function ColdOpen() {
         )}
 
         {typed.length === HEADLINE.length && !pending && !offline && (
-          <Animated.View entering={FadeIn.duration(700).delay(300)} style={styles.entry}>
+          <Animated.View entering={reducedMotion ? undefined : FadeIn.duration(450)} style={styles.entry}>
             <Text style={styles.label}>REPORT FOR SERVICE</Text>
 
             {appleReady && (
               <AppleAuthentication.AppleAuthenticationButton
                 buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
                 buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                cornerRadius={2}
+                cornerRadius={24}
                 style={styles.appleButton}
                 onPress={() => authenticate(async (nonce) => signInWithApple(await nonce()))}
               />
@@ -324,6 +303,7 @@ export default function ColdOpen() {
             {error && <Text style={styles.error}>{error}</Text>}
           </Animated.View>
         )}
+      </ScrollView></SafeAreaView>
       </KeyboardAvoidingView>
     </View>
   );
@@ -333,57 +313,58 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Palette.bg },
   overlay: {
     flex: 1,
-    justifyContent: 'center',
     paddingHorizontal: 28,
   },
+  scroll: { flexGrow: 1, justifyContent: 'center', paddingVertical: 24 },
+  intro: { fontFamily: Fonts.ui, fontSize: Type.small, color: Palette.textMuted, lineHeight: 22, textAlign: 'center', marginTop: 12, maxWidth: 340, alignSelf: 'center' },
   masthead: { alignItems: 'center', marginBottom: 26 },
-  // Type on the newspaper is ink, so it is the one place we go dark-on-light.
+  // Brand and editorial type share the same warm foreground.
   mastheadText: {
     fontFamily: Fonts.display,
-    fontSize: 15,
+    fontSize: Type.heading,
     letterSpacing: 5,
-    color: Palette.bg,
+    color: Palette.text,
   },
   mastheadRule: {
     fontFamily: Fonts.mono,
     fontSize: Type.micro,
     letterSpacing: 2,
-    color: '#6B6558',
+    color: Palette.textMuted,
     marginTop: 3,
   },
-  headlineBlock: { minHeight: 108, justifyContent: 'center' },
+  headlineBlock: { minHeight: 94, justifyContent: 'center' },
   headline: {
     fontFamily: Fonts.display,
-    fontSize: 38,
+    fontSize: Type.title,
     lineHeight: 42,
-    color: Palette.bg,
+    color: Palette.text,
     textAlign: 'center',
   },
   caret: { color: '#C23B22' },
-  entry: { marginTop: 34, alignItems: 'center' },
+  entry: { marginTop: 24, alignItems: 'center' },
   label: {
     fontFamily: Fonts.mono,
     fontSize: Type.micro,
     letterSpacing: 3,
-    color: '#6B6558',
+    color: Palette.textMuted,
     marginBottom: 8,
   },
   input: {
     fontFamily: Fonts.monoBold,
     fontSize: 20,
-    color: Palette.bg,
+    color: Palette.text,
     borderBottomWidth: 1,
-    borderBottomColor: '#6B6558',
+    borderBottomColor: Palette.hairlineBright,
     paddingVertical: 6,
     minWidth: 220,
     textAlign: 'center',
   },
   accept: {
     marginTop: 30,
-    backgroundColor: Palette.bg,
+    backgroundColor: Palette.surfaceHigh,
     paddingHorizontal: 26,
     paddingVertical: 14,
-    borderRadius: 2,
+    borderRadius: 24,
     minWidth: 220,
     alignItems: 'center',
   },
@@ -399,15 +380,15 @@ const styles = StyleSheet.create({
     marginTop: 10,
     width: 250,
     height: 46,
-    backgroundColor: Palette.bg,
+    backgroundColor: Palette.surfaceHigh,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 2,
+    borderRadius: 24,
   },
   providerGhost: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#6B6558',
+    borderColor: Palette.hairlineBright,
   },
   providerText: {
     fontFamily: Fonts.uiBold,
@@ -419,24 +400,24 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: Type.micro,
     letterSpacing: 1.6,
-    color: '#4A4A45',
+    color: Palette.textMuted,
   },
   busy: { marginTop: 16 },
   consent: {
     fontFamily: Fonts.mono,
     fontSize: Type.micro,
     lineHeight: 17,
-    color: '#4A4A45',
+    color: Palette.textMuted,
     textAlign: 'center',
     marginTop: 16,
     maxWidth: 270,
   },
-  consentLink: { color: Palette.bg, textDecorationLine: 'underline' },
+  consentLink: { color: Palette.text, textDecorationLine: 'underline' },
   note: {
     fontFamily: Fonts.mono,
     fontSize: Type.micro,
     lineHeight: 16,
-    color: '#6B6558',
+    color: Palette.textMuted,
     textAlign: 'center',
     marginTop: 12,
     maxWidth: 250,

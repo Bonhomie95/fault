@@ -24,7 +24,7 @@ import { Fonts, Palette, Type } from '@/constants/theme';
  *    is usually locked is a tab that teaches players to ignore the bar.
  */
 
-const GOLD = '#D4A017';
+const GOLD = '#BCE8D5';
 
 export default function TabLayout() {
   return (
@@ -42,7 +42,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="lobby"
         options={{
-          title: 'DOCKET',
+          title: 'Play',
           tabBarIcon: ({ color }) => <Feather name="folder" size={20} color={color} />,
           tabBarAccessibilityLabel: 'The docket. Today’s cases and the Daily Trial.',
         }}
@@ -50,7 +50,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="news"
         options={{
-          title: 'PAPERS',
+          title: 'Stories',
           tabBarIcon: ({ color }) => <Feather name="file-text" size={20} color={color} />,
           tabBarAccessibilityLabel: 'The papers. What your city printed about your verdicts.',
         }}
@@ -58,7 +58,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="career"
         options={{
-          title: 'CAREER',
+          title: 'Career',
           tabBarIcon: ({ color }) => <Feather name="award" size={20} color={color} />,
           tabBarAccessibilityLabel: 'Your career. Rank, courts and standing orders.',
         }}
@@ -66,7 +66,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="boards"
         options={{
-          title: 'CITIES',
+          title: 'World',
           tabBarIcon: ({ color }) => <Feather name="globe" size={20} color={color} />,
           tabBarAccessibilityLabel: 'The cities. How every juror’s city compares.',
         }}
@@ -74,7 +74,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="juror"
         options={{
-          title: 'JUROR',
+          title: 'You',
           tabBarIcon: ({ color }) => <Feather name="user" size={20} color={color} />,
           tabBarAccessibilityLabel: 'Your chambers. Record, past cases, the store and settings.',
         }}
@@ -85,7 +85,7 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   bar: {
-    backgroundColor: Palette.bg,
+    backgroundColor: Palette.surface,
     borderTopColor: Palette.hairline,
     borderTopWidth: 1,
     // The room has no windows, and the bar is part of the room.
@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
     // Type.micro is the floor the type scale allows; anything smaller is a
     // label nobody over forty can read on a phone.
     fontSize: Type.micro,
-    letterSpacing: 0.8,
+    letterSpacing: 0,
     marginTop: 3,
   },
   item: { paddingVertical: 4 },

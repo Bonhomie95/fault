@@ -70,7 +70,7 @@ export function StandingBar({ standing }: { standing: Standing }) {
 
 /** Standing is the one place the palette is allowed to editorialise. */
 function trustColour(trust: number) {
-  if (trust >= 70) return { color: '#1D7E6A' };
+  if (trust >= 70) return { color: '#85D4C2' };
   if (trust >= 50) return { color: Palette.text };
   if (trust >= 35) return { color: '#D4860A' };
   return { color: '#C23B22' };
@@ -78,10 +78,10 @@ function trustColour(trust: number) {
 
 const styles = StyleSheet.create({
   root: {
-    backgroundColor: 'rgba(21,21,19,0.9)',
+    backgroundColor: Palette.surface,
     borderWidth: 1,
     borderColor: Palette.hairline,
-    borderRadius: 2,
+    borderRadius: 20,
     padding: 14,
     gap: 9,
   },
@@ -110,8 +110,8 @@ const styles = StyleSheet.create({
     letterSpacing: 1.8,
     color: Palette.textFaint,
   },
-  track: { height: 2, backgroundColor: Palette.hairline },
-  fill: { height: 2, backgroundColor: Palette.text },
+  track: { height: 4, backgroundColor: Palette.hairline },
+  fill: { height: 4, backgroundColor: '#BCE8D5', borderRadius: 4 },
   footRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   foot: {
     fontFamily: Fonts.mono,

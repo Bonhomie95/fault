@@ -73,7 +73,7 @@ export function VerdictButton({ label, accent, disabled = false, onConfirm }: Ve
       <Animated.View style={[styles.fill, { backgroundColor: accent }, fillStyle]} />
       <View style={styles.labelWrap}>
         <Animated.Text style={[styles.label, labelStyle]}>{label}</Animated.Text>
-        <Text style={styles.hint}>HOLD</Text>
+        <Text style={styles.hint}>Hold to confirm</Text>
       </View>
     </Pressable>
   );
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 62,
     borderWidth: 1,
-    borderRadius: 2,
+    borderRadius: 20,
     overflow: 'hidden',
     justifyContent: 'center',
     backgroundColor: Palette.surface,
@@ -99,13 +99,13 @@ const styles = StyleSheet.create({
   labelWrap: { alignItems: 'center', gap: 2 },
   label: {
     fontFamily: Fonts.uiBold,
-    fontSize: 15,
+    fontSize: Type.small,
     letterSpacing: 1.6,
   },
   hint: {
     fontFamily: Fonts.mono,
     fontSize: Type.micro,
-    letterSpacing: 2,
+    letterSpacing: 0,
     color: Palette.textFaint,
   },
 });

@@ -1,13 +1,14 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
-import { CityScene } from '@/components/three/CityScene';
+import { Courthouse } from '@/components/Courthouse';
+import Feather from '@expo/vector-icons/Feather';
 import { Button } from '@/components/Button';
 import { Enter } from '@/components/Enter';
-import { Accents, Elevation, Fonts, IMPACT_LEADING, Palette, Radius, Space, Type } from '@/constants/theme';
+import { Accents, Fonts, Palette, Space, Type } from '@/constants/theme';
 import { ApiError, api, type NewsStory, type StoreView } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
@@ -132,61 +133,34 @@ export default function Lobby() {
 
   return (
     <View style={styles.root}>
-      {/* Orun City, as your verdicts have left it. */}
-      <View style={styles.sceneWrap}>
-        {city ? <CityScene city={city} /> : <View style={styles.sceneFallback} />}
-        <View style={styles.sceneScrim} pointerEvents="none" />
-      </View>
-
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.header}>
-            <Text style={styles.docket}>CASE DOCKET</Text>
-            {city && (
-              <View style={styles.chapterRow}>
-                <View style={styles.chip}>
-                  <Text style={styles.chipText}>CHAPTER {city.chapter}</Text>
-                </View>
-                <Text style={styles.chapter}>{city.casesHeard} HEARD</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Who you are and where you sit — the record, on the way in. */}
-          {standing && (
-            <Enter>
-              <StandingBar standing={standing} />
-            </Enter>
-          )}
-
-          {/* The one thing this screen is for. It is the only filled button on
-              the page, because it is the only action that matters. */}
-          {/* One case for the whole world, today. */}
-          <Enter index={1}>
-            <DailyTrialCard
-              refreshKey={focusKey}
-              onOpen={() => void open({ daily: true })}
-              busy={opening === 'daily'}
-            />
+          <Enter style={styles.header}>
+            <View><Text style={styles.brand}>FAULT<Text style={{ color: Accents.financial }}> /</Text></Text><Text style={styles.eyebrow}>A CITY SHAPED BY YOU</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel="Open settings" onPress={() => router.push('/settings')} style={styles.settings}><Feather name="sliders" size={19} color={Palette.text}/></Pressable>
           </Enter>
-
+          <Enter index={1} style={styles.welcome}>
+            <Text style={styles.title}>The city is listening.</Text>
+            <Text style={styles.subtitle}>One seat. Two minutes. A lasting consequence.</Text>
+          </Enter>
           <Enter index={2} style={styles.caseFile}>
-            <Text style={styles.caseFileEyebrow}>
-              NEXT ON THE DOCKET{docketLine(standing?.docket) ? ` · ${docketLine(standing?.docket)}` : ''}
-            </Text>
-            <Text style={styles.caseFileLabel}>A CASE FILE{'\n'}IS WAITING</Text>
-            <Button
-              label="Open the file"
-              onPress={beginCase}
-              variant="primary"
-              busy={opening === 'next'}
-              accent={Accents.financial}
-              hint="The clock starts immediately"
-              accessibilityLabel="Open the next case file. The clock starts immediately."
-              style={styles.caseFileBtn}
-            />
+            <View style={styles.heroTop}><View style={styles.live}><View style={styles.dot}/><Text style={styles.liveText}>COURT IN SESSION</Text></View><Text style={styles.chapter}>CH. {String(city?.chapter ?? 1).padStart(2, '0')}</Text></View>
+            <Courthouse />
+            <View style={styles.heroCopy}>
+              <Text style={styles.caseFileEyebrow}>YOUR NEXT VERDICT</Text>
+              <Text style={styles.caseFileLabel}>A life in the balance.</Text>
+              <Text style={styles.description}>Hear their story. Question the evidence.
+Decide where the truth lies.</Text>
+              <Button label="Hear a case   →" icon="folder" onPress={beginCase} variant="primary" busy={opening === 'next'} accent={Accents.financial} accessibilityLabel="Hear the next case. The clock starts immediately." />
+              <View style={styles.heroFoot}><Feather name="clock" size={12} color={Palette.textMuted}/><Text style={styles.foot}>Clock starts on entry</Text><Text style={styles.foot}>{docketLine(standing?.docket) ?? '120 SECONDS'}</Text></View>
+            </View>
           </Enter>
-
+          <Enter index={3} style={styles.links}>
+            <Pressable accessibilityRole="button" onPress={() => router.push('/news')} style={styles.link}><Feather name="radio" size={20} color="#E9C7A1"/><Text style={styles.linkTitle}>The city speaks</Text><Text style={styles.linkDetail}>Read the aftermath  ↗</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={() => router.push('/career')} style={styles.link}><Feather name="compass" size={20} color={Accents.financial}/><Text style={styles.linkTitle}>Your next chapter</Text><Text style={styles.linkDetail}>Explore your career  ↗</Text></Pressable>
+          </Enter>
+          {standing && <Enter index={4}><Text style={styles.section}>YOUR STANDING</Text><StandingBar standing={standing} /></Enter>}
+          <Enter index={5}><DailyTrialCard refreshKey={focusKey} onOpen={() => void open({ daily: true })} busy={opening === 'daily'} /></Enter>
           {/* NOT an entering animation, deliberately.
               This is the only thing on the screen that explains why the one
               button that matters did nothing — the trial docket is closed and
@@ -228,92 +202,33 @@ export default function Lobby() {
   );
 }
 
-/**
- * A city meter.
- *
- * This used to be `'█'.repeat(filled)` — a bar drawn out of block characters in
- * a monospace font, quantised to seven steps, so a shift from 50 to 57 moved
- * nothing at all. It is geometry now: real width, real colour, and the number
- * in a tabular face so the column does not jitter as digits change.
- *
- * Colour is by role rather than by good/bad, because none of these are good or
- * bad — a city with no crime and no trust is not a city anyone wants.
- */
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Palette.bg },
-  sceneWrap: { ...StyleSheet.absoluteFillObject },
-  sceneFallback: { flex: 1, backgroundColor: Palette.bg },
-  // Keeps the type legible over a moving city without hiding it.
-  sceneScrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(11,11,12,0.62)',
-  },
   safe: { flex: 1 },
-  // Home is one screen. Everything that is not "hear a case today" now lives
-  // in its own tab, and what is left is sized to land above the tab bar
-  // without a scroll on a 375pt phone.
-  content: { padding: Space.xl, paddingTop: Space.md, gap: Space.md, paddingBottom: Space.lg },
-
-  header: { gap: Space.sm },
-  docket: {
-    fontFamily: Fonts.impact,
-    fontSize: Type.title,
-    lineHeight: Type.title * IMPACT_LEADING,
-    letterSpacing: 0.5,
-    color: Palette.text,
-    textTransform: 'uppercase',
-  },
-  chapterRow: { flexDirection: 'row', alignItems: 'center', gap: Space.md },
-  chip: {
-    backgroundColor: Palette.surfaceHigh,
-    paddingHorizontal: Space.md,
-    paddingVertical: Space.xs + 1,
-    borderRadius: Radius.pill,
-  },
-  chipText: {
-    fontFamily: Fonts.uiBold,
-    fontSize: Type.micro,
-    letterSpacing: 1.4,
-    color: Palette.text,
-  },
-  chapter: {
-    fontFamily: Fonts.mono,
-    fontSize: Type.micro,
-    letterSpacing: 1.8,
-    color: Palette.textMuted,
-  },
-
-  caseFile: {
-    backgroundColor: Palette.surfaceRaised,
-    borderRadius: Radius.lg,
-    padding: Space.lg,
-    gap: Space.sm,
-    borderWidth: 1,
-    borderColor: Palette.hairlineBright,
-    ...Elevation.raised,
-  },
-  caseFileEyebrow: {
-    fontFamily: Fonts.mono,
-    fontSize: Type.micro,
-    letterSpacing: 2.2,
-    color: Accents.financial,
-  },
-  caseFileLabel: {
-    fontFamily: Fonts.impact,
-    fontSize: Type.title,
-    lineHeight: Type.title * IMPACT_LEADING,
-    color: Palette.text,
-    textTransform: 'uppercase',
-  },
-  caseFileBtn: { marginTop: Space.lg },
-
-  gate: {
-    fontFamily: Fonts.ui,
-    fontSize: Type.small,
-    lineHeight: 20,
-    color: Accents.financial,
-    textAlign: 'center',
-  },
-
-
+  content: { paddingHorizontal: Space.xl, paddingTop: Space.lg, paddingBottom: Space.xxl, gap: Space.xl, maxWidth: 620, width: '100%', alignSelf: 'center' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  brand: { fontFamily: Fonts.uiBold, fontSize: Type.heading, letterSpacing: 5, color: Palette.text },
+  eyebrow: { fontFamily: Fonts.ui, fontSize: Type.micro, letterSpacing: 2, color: Palette.textMuted, marginTop: 6 },
+  settings: { width: 44, height: 44, borderRadius: 22, backgroundColor: Palette.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Palette.hairline },
+  welcome: { gap: 8 },
+  title: { fontFamily: Fonts.displayRegular, fontSize: Type.title, color: Palette.text },
+  subtitle: { fontFamily: Fonts.ui, fontSize: Type.small, color: Palette.textMuted, lineHeight: 21 },
+  caseFile: { backgroundColor: Palette.surface, borderRadius: 28, borderWidth: 1, borderColor: Palette.hairline, overflow: 'hidden' },
+  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingBottom: 0 },
+  live: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Accents.financial },
+  liveText: { fontFamily: Fonts.uiBold, fontSize: Type.micro, letterSpacing: 1.4, color: Accents.financial },
+  chapter: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Palette.textMuted },
+  heroCopy: { padding: 22, paddingTop: 0, gap: 14 },
+  caseFileEyebrow: { fontFamily: Fonts.uiBold, fontSize: Type.micro, letterSpacing: 2, color: '#E9C7A1' },
+  caseFileLabel: { fontFamily: Fonts.displayRegular, fontSize: Type.title, lineHeight: 38, color: Palette.text },
+  description: { fontFamily: Fonts.ui, fontSize: Type.small, lineHeight: 22, color: Palette.textMuted, marginBottom: 4 },
+  heroFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 5 },
+  foot: { fontFamily: Fonts.ui, fontSize: Type.micro, color: Palette.textMuted },
+  links: { flexDirection: 'row', gap: 12 },
+  link: { flex: 1, padding: 16, borderRadius: 20, backgroundColor: Palette.surface, gap: 10, borderWidth: 1, borderColor: Palette.hairline },
+  linkTitle: { fontFamily: Fonts.uiBold, fontSize: Type.small, color: Palette.text },
+  linkDetail: { fontFamily: Fonts.ui, fontSize: Type.micro, lineHeight: 17, color: Palette.textMuted },
+  section: { fontFamily: Fonts.uiBold, fontSize: Type.micro, letterSpacing: 2, color: Palette.textMuted, marginBottom: 12 },
+  gate: { fontFamily: Fonts.ui, fontSize: Type.small, lineHeight: 20, color: Accents.financial, textAlign: 'center' },
 });

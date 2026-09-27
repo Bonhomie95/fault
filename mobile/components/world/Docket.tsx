@@ -15,7 +15,7 @@ import { play } from '@/lib/sound';
  * the honest ways to open it again.
  */
 
-const GOLD = '#D4A017';
+const GOLD = '#BCE8D5';
 
 /* ------------------------------------------------------------------ *
  * The Daily Trial.
@@ -69,7 +69,7 @@ export function DailyTrialCard({
   return (
     <View style={styles.daily}>
       <Text style={styles.dailyEyebrow}>THE DAILY TRIAL · FREE</Text>
-      <Text style={styles.dailyTitle}>ONE CASE.{'\n'}THE WHOLE WORLD.</Text>
+      <Text style={styles.dailyTitle}>One case. A world of opinions.</Text>
       <Text style={styles.dailyBody}>
         Every juror on Earth hears this case today, in their own country. Deliver your verdict, then see
         how the world split.
@@ -77,7 +77,7 @@ export function DailyTrialCard({
       <Button
         label={status.open ? 'Return to the trial' : 'Sit today’s trial'}
         onPress={onOpen}
-        variant="primary"
+        variant="secondary"
         busy={busy}
         accent={GOLD}
         hint="The clock starts immediately"
@@ -277,7 +277,7 @@ export function DocketClosed({
 
 const styles = StyleSheet.create({
   daily: {
-    backgroundColor: '#17130A',
+    backgroundColor: Palette.surface,
     borderRadius: Radius.lg,
     padding: Space.lg,
     gap: Space.sm,

@@ -132,7 +132,7 @@ export function Button({
 const styles = StyleSheet.create({
   base: {
     minHeight: Layout.touchMin + 8,
-    borderRadius: Radius.md,
+    borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Space.xl,
@@ -168,11 +168,11 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
   label: {
-    fontFamily: Fonts.impact,
+    fontFamily: Fonts.uiBold,
     fontSize: Type.subhead,
-    letterSpacing: 1.2,
+    letterSpacing: 0,
     color: Palette.text,
-    textTransform: 'uppercase',
+    textTransform: 'none',
   },
   labelOnFill: {
     color: Palette.bg,
@@ -191,6 +191,6 @@ const styles = StyleSheet.create({
     color: Palette.textFaint,
     textAlign: 'center',
     marginTop: Space.sm,
-    textTransform: 'uppercase',
+    textTransform: 'none',
   },
 });

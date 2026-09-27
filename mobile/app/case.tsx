@@ -10,7 +10,7 @@ import { CourtSpeech } from '@/components/CourtSpeech';
 import { TimerRing } from '@/components/TimerRing';
 import { VerdictButton } from '@/components/VerdictButton';
 import { CourtroomScene, type DossierTab } from '@/components/scene2d/CourtroomScene';
-import { Clock, Fonts, Layout, Palette, Space, Type } from '@/constants/theme';
+import { Accents, Clock, Fonts, Layout, Palette, Space, Type } from '@/constants/theme';
 import type { ClientCase } from '@/lib/api';
 import { castFor } from '@/lib/cast';
 import { useCourtroomTalk } from '@/lib/courtroom';
@@ -33,10 +33,10 @@ import { showsText, useSettings } from '@/store/settings';
 const FACE_BELOW_HEADER = 188;
 
 const TABS: { key: DossierTab; label: string }[] = [
-  { key: 'defendant', label: 'DEFENDANT' },
-  { key: 'evidence', label: 'EVIDENCE' },
-  { key: 'witnesses', label: 'WITNESSES' },
-  { key: 'arguments', label: 'ARGUMENTS' },
+  { key: 'defendant', label: 'Accused' },
+  { key: 'evidence', label: 'Evidence' },
+  { key: 'witnesses', label: 'Witnesses' },
+  { key: 'arguments', label: 'Counsel' },
 ];
 
 /**
@@ -236,7 +236,7 @@ export default function CaseFile() {
 
   if (!activeCase || !casting) return <View style={styles.root} />;
 
-  const accent = activeCase.accent;
+  const accent = Accents[activeCase.mood as keyof typeof Accents] ?? Accents.systemic;
   const urgent = remaining <= Clock.tensionAt;
 
   return (
@@ -292,7 +292,7 @@ export default function CaseFile() {
         >
           <View style={styles.headerText}>
             <Text style={styles.title} numberOfLines={2}>
-              {activeCase.title.toUpperCase()}
+              {activeCase.title}
             </Text>
             <Text style={styles.charge}>Charge: {activeCase.charge}</Text>
             {/* The real court this sits in. The place is real; everyone in the
@@ -338,7 +338,7 @@ export default function CaseFile() {
                   haptic.tapLight();
                   setTab(t.key);
                 }}
-                style={[styles.tab, tab === t.key && { borderBottomColor: accent }]}
+                style={[styles.tab, tab === t.key && { borderBottomColor: accent, backgroundColor: Palette.surfaceHigh, borderRadius: 12 }]}
                 accessibilityRole="tab"
                 accessibilityLabel={`${t.label} section of the case file`}
                 accessibilityState={{ selected: tab === t.key }}
@@ -619,7 +619,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingHorizontal: 18,
-    paddingTop: 6,
+    paddingTop: 10,
+    paddingBottom: 12,
+    backgroundColor: Palette.bg,
     gap: 12,
   },
   headerText: { flex: 1 },
@@ -666,6 +668,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: Palette.hairline,
+    backgroundColor: Palette.bg,
+    borderRadius: 14,
   },
   tab: {
     flex: 1,
@@ -679,9 +683,9 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabLabel: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.uiBold,
     fontSize: Type.micro,
-    letterSpacing: 1.1,
+    letterSpacing: 0,
     color: Palette.textFaint,
   },
   panel: { flex: 1 },
@@ -701,10 +705,10 @@ const styles = StyleSheet.create({
   /** The same idea for the witness at the stand — see FRAMES.witnesses. */
   panelBelowTheWitness: { paddingTop: 150 },
   card: {
-    backgroundColor: 'rgba(21,21,19,0.93)',
+    backgroundColor: 'rgba(20,37,53,0.97)',
     borderWidth: 1,
     borderColor: Palette.hairline,
-    borderRadius: 2,
+    borderRadius: 20,
     padding: 14,
     gap: 5,
   },
@@ -724,14 +728,14 @@ const styles = StyleSheet.create({
     color: Palette.textMuted,
   },
   body: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.ui,
     fontSize: Type.small,
     lineHeight: 21,
     color: Palette.text,
     marginTop: 4,
   },
   testimony: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.ui,
     fontSize: Type.small,
     lineHeight: 22,
     color: Palette.text,
@@ -760,7 +764,7 @@ const styles = StyleSheet.create({
     color: Palette.textMuted,
   },
   readingText: {
-    fontFamily: Fonts.mono,
+    fontFamily: Fonts.ui,
     fontSize: Type.small,
     lineHeight: 20,
     color: Palette.text,
