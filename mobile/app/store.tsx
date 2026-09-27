@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
+import { Button } from '@/components/Button';
 import { Seal, type SealKind } from '@/components/Seal';
 import { THEMES } from '@/components/scene2d/themes';
 import { Accents, Fonts, Palette, Radius, Type } from '@/constants/theme';
@@ -412,9 +413,10 @@ export default function Store() {
         )}
 
         <View style={styles.footer}>
-          <Pressable onPress={() => router.back()} style={styles.close} accessibilityRole="button" hitSlop={8}>
-            <Text style={styles.closeText}>CLOSE</Text>
-          </Pressable>
+          {/* The shared Button, like every other modal's Close. This was a
+              hand-rolled Pressable reading "CLOSE" in a hairline box, so the
+              one way out of the store looked like nothing else in the app. */}
+          <Button label="Close" onPress={() => router.back()} variant="primary" />
         </View>
       </SafeAreaView>
 
@@ -591,7 +593,17 @@ function Swatch({
   );
 }
 
-const GOLD = '#D4A017';
+/**
+ * The Clerk's Office was the one room the redesign did not reach.
+ *
+ * It was still wearing the old palette — a `#D4A017` gold pass, a `#8A6BE0`
+ * purple advert panel and `#D4860A` orange Merit — on the new teal ground,
+ * which made the only screen that asks for money look like it belonged to a
+ * different app. Everything below comes from the palette now. Seal is the one
+ * deliberate warm note, because the Juror Pass is meant to read as the
+ * valuable thing on the shelf.
+ */
+const SEAL = Accents.financial;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Palette.bg },
@@ -606,7 +618,7 @@ const styles = StyleSheet.create({
   },
   title: { fontFamily: Fonts.display, fontSize: 24, color: Palette.text, flex: 1 },
   wallet: { alignItems: 'flex-end', gap: 2 },
-  merit: { fontFamily: Fonts.monoBold, fontSize: 13, color: '#D4860A' },
+  merit: { fontFamily: Fonts.monoBold, fontSize: 13, color: Accents.financial },
   shields: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Accents.systemic },
   creed: {
     fontFamily: Fonts.mono,
@@ -620,8 +632,8 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: 12,
     lineHeight: 17,
-    color: '#D4860A',
-    backgroundColor: 'rgba(212,134,10,0.08)',
+    color: Accents.financial,
+    backgroundColor: 'rgba(188,232,213,0.10)',
     padding: 10,
     marginHorizontal: 20,
     marginTop: 12,
@@ -643,30 +655,30 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 8,
   },
-  ownedCard: { borderColor: '#1D7E6A' },
-  hero: { borderColor: GOLD, backgroundColor: '#1A160C' },
-  heroEyebrow: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.6, color: GOLD },
+  ownedCard: { borderColor: Accents.systemic },
+  hero: { borderColor: SEAL, backgroundColor: Palette.surfaceRaised },
+  heroEyebrow: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.6, color: SEAL },
   heroTitle: { fontFamily: Fonts.display, fontSize: 22, color: Palette.text },
-  pass: { borderColor: GOLD },
-  passTitle: { fontFamily: Fonts.impact, fontSize: 24, letterSpacing: 2, color: GOLD },
-  free: { borderStyle: 'dashed', borderColor: '#6B4FBB' },
+  pass: { borderColor: SEAL },
+  passTitle: { fontFamily: Fonts.impact, fontSize: 24, letterSpacing: 2, color: SEAL },
+  free: { borderStyle: 'dashed', borderColor: Accents.passion },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   itemTitle: { fontFamily: Fonts.display, fontSize: 16, color: Palette.text, flexShrink: 1 },
-  ownedTag: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.4, color: '#1D7E6A' },
-  badgeInline: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.2, color: GOLD },
+  ownedTag: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.4, color: Accents.systemic },
+  badgeInline: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.2, color: SEAL },
   blurb: { fontFamily: Fonts.ui, fontSize: 13, lineHeight: 19, color: Palette.textMuted },
   bullet: { fontFamily: Fonts.ui, fontSize: 14, lineHeight: 20, color: Palette.text },
   prices: { flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' },
   earnBtn: {
     flexGrow: 1,
     borderWidth: 1,
-    borderColor: '#D4860A',
+    borderColor: Accents.financial,
     paddingVertical: 11,
     paddingHorizontal: 12,
     alignItems: 'center',
     borderRadius: Radius.sm,
   },
-  earnText: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.2, color: '#D4860A' },
+  earnText: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.2, color: Accents.financial },
   cantAfford: { borderColor: Palette.hairline },
   cantAffordText: { color: Palette.textFaint },
   buyBtn: {
@@ -678,23 +690,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: Radius.sm,
   },
-  buyStrong: { backgroundColor: GOLD },
+  buyStrong: { backgroundColor: SEAL },
   buyText: { fontFamily: Fonts.uiBold, fontSize: 13, color: Palette.text },
-  buyStrongText: { color: '#1A1203' },
+  buyStrongText: { color: Palette.bg },
   compact: { flexGrow: 0, paddingVertical: 8, minWidth: 0 },
-  badge: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.2, color: '#1A1203', marginBottom: 2 },
+  badge: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.2, color: Palette.bg, marginBottom: 2 },
   terms: { fontFamily: Fonts.ui, fontSize: 11, lineHeight: 16, color: Palette.textFaint },
   termsLink: { color: Palette.textMuted, textDecorationLine: 'underline' },
   linkBtn: { alignSelf: 'flex-start', paddingVertical: 8 },
   linkText: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.6, color: Palette.textMuted },
   watchBtn: {
     borderWidth: 1,
-    borderColor: '#8A6BE0',
+    borderColor: Accents.passion,
     paddingVertical: 9,
     paddingHorizontal: 16,
     borderRadius: Radius.sm,
   },
-  watchText: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.4, color: '#8A6BE0' },
+  watchText: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.4, color: Accents.passion },
   lockedRow: { gap: 6 },
   swatchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6, borderRadius: Radius.sm },
   swatchOn: { backgroundColor: Palette.surfaceRaised },

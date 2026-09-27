@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
-import { Fonts, Palette, Radius, Space, Type } from '@/constants/theme';
+import { Elevation, Fonts, Palette, Radius, Space, Type } from '@/constants/theme';
 import type { ClientCase, Speaker } from '@/lib/api';
 import type { Utterance } from '@/lib/courtroom';
 
@@ -116,8 +116,16 @@ const styles = StyleSheet.create({
   bubble: {
     maxWidth: 360,
     alignSelf: 'stretch',
-    backgroundColor: 'rgba(18,18,20,0.9)',
+    // Opaque, and from the palette.
+    //
+    // This was a hardcoded `rgba(18,18,20,0.9)` — a near-black from the palette
+    // this app no longer uses, at 90%. The bubble floats over the dossier, so
+    // on the Evidence tab the exhibit card behind it read straight through the
+    // speech and neither could be read. A subtitle the player is meant to
+    // follow under a 120-second clock does not get to be translucent.
+    backgroundColor: Palette.surfaceRaised,
     borderWidth: 1,
+    ...Elevation.card,
     borderRadius: Radius.lg,
     paddingHorizontal: Space.lg,
     paddingVertical: Space.sm + 2,
