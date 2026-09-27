@@ -69,7 +69,11 @@ function connect(): Promise<boolean> {
       // available from this device. Reporting it would fill the error channel
       // with a condition nobody can act on, and drown the purchase failures
       // that actually cost someone money, which are still reported below.
-      if (__DEV__) console.warn('[iap] billing unavailable on this device:', err);
+      // console.log, not console.warn: LogBox raises a yellow toast for a
+      // warning, and a device that cannot reach billing is a fact about the
+      // device, not something wrong with the app. Left as a breadcrumb so the
+      // silent path is still traceable in development.
+      if (__DEV__) console.log('[iap] billing unavailable on this device:', String(err));
       return false;
     },
   );

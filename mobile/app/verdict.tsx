@@ -188,7 +188,7 @@ export default function VerdictDelivered() {
           <Animated.View entering={FadeIn.duration(600).delay(500)} style={styles.footer}>
             <Pressable onPress={onNext} style={styles.next} accessibilityRole="button">
               <Text style={styles.nextText}>
-                {result.triggerReview ? 'WHAT HAPPENED NEXT' : result.daily ? 'BACK TO THE COURT' : 'NEXT CASE'}
+                {result.triggerReview ? 'What happened next' : result.daily ? 'Back to the court' : 'Next case'}
               </Text>
             </Pressable>
           </Animated.View>
@@ -234,7 +234,7 @@ function WorldSplit({ result }: { result: VerdictResult }) {
         {' '}Nobody is told who was right.
       </Text>
       <Pressable onPress={share} style={styles.shareBtn} accessibilityRole="button">
-        <Text style={styles.shareText}>SHARE YOUR VERDICT</Text>
+        <Text style={styles.shareText}>Share your verdict</Text>
       </Pressable>
     </View>
   );
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
   barLabels: { flexDirection: 'row', justifyContent: 'space-between', alignSelf: 'stretch' },
   barLabel: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Palette.textMuted },
   shareBtn: { borderWidth: 1, borderColor: Palette.hairline, paddingVertical: 9, paddingHorizontal: 18, borderRadius: 24 },
-  shareText: { fontFamily: Fonts.uiBold, fontSize: 11, letterSpacing: 2, color: Palette.text },
+  shareText: { fontFamily: Fonts.uiBold, fontSize: 15, letterSpacing: 0.2, color: Palette.text },
   opened: {
     fontFamily: Fonts.monoBold,
     fontSize: Type.micro,
@@ -329,8 +329,8 @@ const styles = StyleSheet.create({
   },
   nextText: {
     fontFamily: Fonts.uiBold,
-    fontSize: 12,
-    letterSpacing: 2.4,
+    fontSize: 15,
+    letterSpacing: 0.2,
     color: Palette.text,
   },
 });

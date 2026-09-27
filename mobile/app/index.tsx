@@ -183,7 +183,7 @@ export default function ColdOpen() {
               style={[styles.provider, styles.providerGhost]}
               accessibilityRole="button"
             >
-              <Text style={styles.providerGhostText}>TRY AGAIN</Text>
+              <Text style={styles.providerGhostText}>Try again</Text>
             </Pressable>
           </View>
         )}
@@ -209,7 +209,7 @@ export default function ColdOpen() {
                 style={[styles.provider, busy && styles.acceptDisabled]}
                 accessibilityRole="button"
               >
-                <Text style={styles.providerText}>CONTINUE WITH GOOGLE</Text>
+                <Text style={styles.providerText}>Continue with Google</Text>
               </Pressable>
             )}
 
@@ -229,7 +229,7 @@ export default function ColdOpen() {
               accessibilityRole="button"
               accessibilityLabel="Play as guest"
             >
-              <Text style={styles.providerGhostText}>PLAY AS GUEST</Text>
+              <Text style={styles.providerGhostText}>Play as guest</Text>
             </Pressable>
 
             {/* Said BEFORE any button does anything, and the sign-in request
@@ -296,7 +296,7 @@ export default function ColdOpen() {
               {busy ? (
                 <ActivityIndicator color={Palette.text} />
               ) : (
-                <Text style={styles.acceptText}>ACCEPT ASSIGNMENT</Text>
+                <Text style={styles.acceptText}>Accept assignment</Text>
               )}
             </Pressable>
 
@@ -371,8 +371,8 @@ const styles = StyleSheet.create({
   acceptDisabled: { opacity: 0.3 },
   acceptText: {
     fontFamily: Fonts.uiBold,
-    fontSize: 12,
-    letterSpacing: 2.4,
+    fontSize: 15,
+    letterSpacing: 0.2,
     color: Palette.text,
   },
   appleButton: { width: 250, height: 46, marginTop: 4 },
@@ -392,14 +392,14 @@ const styles = StyleSheet.create({
   },
   providerText: {
     fontFamily: Fonts.uiBold,
-    fontSize: 11,
-    letterSpacing: 2,
+    fontSize: 15,
+    letterSpacing: 0.2,
     color: Palette.text,
   },
   providerGhostText: {
-    fontFamily: Fonts.mono,
-    fontSize: Type.micro,
-    letterSpacing: 1.6,
+    fontFamily: Fonts.ui,
+    fontSize: 15,
+    letterSpacing: 0.2,
     color: Palette.textMuted,
   },
   busy: { marginTop: 16 },

@@ -73,10 +73,15 @@ function adCovering(on: boolean): void {
   // iOS 27 retired the app-wide status bar API: `setStatusBarHidden` is now a
   // documented no-op and only logs a deprecation line each time an advert
   // opens. Calling it there would be code that pretends to do something, so
-  // it is skipped — but that means the close-button problem this exists to
-  // solve is UNMITIGATED on iOS 27 and has to be re-checked on a device.
-  // Under the scene life cycle the status bar belongs to whichever view
-  // controller is on screen, which during an advert is Google's, not ours.
+  // it is skipped. Under the scene life cycle the status bar belongs to
+  // whichever view controller is on screen, which during an advert is
+  // Google's, not ours.
+  //
+  // Checked on an iOS 27 simulator on 27 Sep 2026: a rewarded advert's close
+  // button renders at the top right, fully inside the safe area and clear of
+  // the status bar, and dismisses the advert on the first tap. So skipping
+  // this on 27 costs nothing — the problem it was written for does not occur
+  // there. Worth re-checking on real hardware with a notch before release.
   if (Number.parseInt(String(Platform.Version), 10) >= 27) return;
   StatusBar.setHidden(on, 'none');
 }
