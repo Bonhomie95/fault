@@ -238,7 +238,7 @@ ARCHETYPES = [
     # `wears` tints the garment (a multiply, so it can only deepen).
     #   name            gender age   race         hair_asset   clothes                 gray
     {"name": "f_young_af",   "gender": 0.05, "age": 0.28, "race": "african",   "hair_asset": "long01",     "clothes": "female_elegantsuit01",  "hair": (0.09, 0.06, 0.05), "wears": (0.66, 0.74, 0.86)},
-    {"name": "f_young_af_b", "gender": 0.04, "age": 0.33, "race": "african",   "hair_asset": "long01",    "clothes": "female_elegantsuit01", "hair": (0.07, 0.05, 0.05), "wears": (0.80, 0.70, 0.66)},
+    {"name": "f_young_af_b", "gender": 0.04, "age": 0.33, "race": "african",   "hair_asset": "long01",    "clothes": "male_casualsuit01", "hair": (0.07, 0.05, 0.05), "wears": (0.80, 0.70, 0.66)},
     {"name": "f_mid_af",     "gender": 0.05, "age": 0.58, "race": "african",   "hair_asset": "long01",      "clothes": "female_elegantsuit01",  "hair": (0.06, 0.05, 0.05), "wears": (0.86, 0.80, 0.62)},
     {"name": "f_old_af",     "gender": 0.05, "age": 0.84, "race": "african",   "hair_asset": "short02",      "clothes": "female_elegantsuit01", "hair": (0.40, 0.39, 0.38), "wears": (0.78, 0.68, 0.66), "gray": True},
     {"name": "f_young_as",   "gender": 0.04, "age": 0.30, "race": "asian",     "hair_asset": "long01", "clothes": "female_elegantsuit01",  "hair": (0.07, 0.05, 0.05), "wears": (0.70, 0.86, 0.78)},
@@ -299,12 +299,12 @@ ARCHETYPES = [
     # and unsuitable sets are excluded here as well as there, because a
     # pinned garment that is not permitted is now a hard error.
     {"name": "f_mid_af_b", "gender": 0.06, "age": 0.53, "race": "african", "hair_asset": "short02", "clothes": "male_casualsuit01", "hair": (0.12, 0.11, 0.11), "wears": (0.92, 0.86, 0.68)},
-    {"name": "f_old_af_b", "gender": 0.06, "age": 0.89, "race": "african", "hair_asset": "short04", "clothes": "male_casualsuit03", "hair": (0.38, 0.37, 0.36), "wears": (0.7, 0.6, 0.58), "gray": True},
+    {"name": "f_old_af_b", "gender": 0.06, "age": 0.89, "race": "african", "hair_asset": "short04", "clothes": "male_elegantsuit01", "hair": (0.38, 0.37, 0.36), "wears": (0.7, 0.6, 0.58), "gray": True},
     {"name": "f_young_as_b", "gender": 0.05, "age": 0.25, "race": "asian", "hair_asset": "short01", "clothes": "male_casualsuit05", "hair": (0.05, 0.03, 0.03), "wears": (0.76, 0.92, 0.84)},
     {"name": "f_mid_as_b", "gender": 0.06, "age": 0.61, "race": "asian", "hair_asset": "short02", "clothes": "male_elegantsuit01", "hair": (0.12, 0.11, 0.11), "wears": (0.68, 0.64, 0.72)},
     {"name": "f_old_as_b", "gender": 0.06, "age": 0.81, "race": "asian", "hair_asset": "short02", "clothes": "male_worksuit01", "hair": (0.4, 0.39, 0.38), "wears": (0.78, 0.76, 0.72), "gray": True},
     {"name": "f_young_ca_b", "gender": 0.06, "age": 0.35, "race": "caucasian", "hair_asset": "short01", "clothes": "female_elegantsuit01", "hair": (0.18, 0.11, 0.06), "wears": (0.68, 0.64, 0.72)},
-    {"name": "f_mid_ca_b", "gender": 0.07, "age": 0.53, "race": "caucasian", "hair_asset": "short02", "clothes": "male_casualsuit03", "hair": (0.36, 0.25, 0.17), "wears": (0.86, 0.8, 0.76)},
+    {"name": "f_mid_ca_b", "gender": 0.07, "age": 0.53, "race": "caucasian", "hair_asset": "short02", "clothes": "male_casualsuit01", "hair": (0.36, 0.25, 0.17), "wears": (0.86, 0.8, 0.76)},
     {"name": "f_old_ca_b", "gender": 0.07, "age": 0.91, "race": "caucasian", "hair_asset": "short04", "clothes": "male_casualsuit05", "hair": (0.6, 0.58, 0.56), "wears": (0.62, 0.58, 0.66), "gray": True},
     {"name": "m_mid_af_b", "gender": 0.94, "age": 0.5, "race": "african", "hair_asset": "short01", "clothes": "male_casualsuit01", "hair": (0.03, 0.03, 0.03), "wears": (0.86, 0.86, 0.9)},
     {"name": "m_old_af_b", "gender": 0.93, "age": 0.91, "race": "african", "hair_asset": "short04", "clothes": "male_casualsuit05", "hair": (0.46, 0.46, 0.45), "wears": (0.64, 0.62, 0.58), "gray": True},
@@ -314,7 +314,7 @@ ARCHETYPES = [
     {"name": "m_young_ca_b", "gender": 0.94, "age": 0.32, "race": "caucasian", "hair_asset": "short02", "clothes": "male_casualsuit05", "hair": (0.33, 0.22, 0.12), "wears": (0.62, 0.66, 0.62)},
     {"name": "m_mid_ca_b", "gender": 0.95, "age": 0.57, "race": "caucasian", "hair_asset": "short02", "clothes": "male_casualsuit05", "hair": (0.12, 0.08, 0.05), "wears": (0.92, 0.92, 0.92)},
     {"name": "m_old_ca_b", "gender": 0.94, "age": 0.91, "race": "caucasian", "hair_asset": "short04", "clothes": "male_worksuit01", "hair": (0.61, 0.6, 0.58), "wears": (0.66, 0.64, 0.62), "gray": True},
-    {"name": "f_young_sa_b", "gender": 0.05, "age": 0.25, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.22, "asian": 0.18}, "skin": "caucasian", "tone": (0.291, 0.213, 0.157), "hair_asset": "short04", "clothes": "male_casualsuit03", "hair": (0.03, 0.03, 0.03), "wears": (0.92, 0.76, 0.78)},
+    {"name": "f_young_sa_b", "gender": 0.05, "age": 0.25, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.22, "asian": 0.18}, "skin": "caucasian", "tone": (0.291, 0.213, 0.157), "hair_asset": "short04", "clothes": "male_casualsuit05", "hair": (0.03, 0.03, 0.03), "wears": (0.92, 0.76, 0.78)},
     {"name": "f_mid_sa_b", "gender": 0.06, "age": 0.61, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.24, "asian": 0.16}, "skin": "caucasian", "tone": (0.225, 0.162, 0.117), "hair_asset": "short01", "clothes": "male_casualsuit05", "hair": (0.03, 0.03, 0.03), "wears": (0.62, 0.72, 0.68)},
     {"name": "f_old_sa_b", "gender": 0.06, "age": 0.8, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.24, "asian": 0.16}, "skin": "caucasian", "tone": (0.28, 0.202, 0.157), "hair_asset": "long01", "clothes": "male_elegantsuit01", "hair": (0.5, 0.49, 0.48), "wears": (0.86, 0.78, 0.68), "gray": True},
     {"name": "m_young_sa_b", "gender": 0.94, "age": 0.34, "race": "southasian", "mix": {"caucasian": 0.6, "african": 0.22, "asian": 0.18}, "skin": "caucasian", "tone": (0.225, 0.171, 0.126), "hair_asset": "short04", "clothes": "male_worksuit01", "hair": (0.03, 0.03, 0.03), "wears": (0.68, 0.68, 0.76)},
@@ -1611,6 +1611,28 @@ BRANDED_CLOTHES = {
 # for a courtroom or the clothes are telling the player something the case is
 # not.
 UNSUITABLE_CLOTHES = {"female_sportsuit01"}
+
+# Garments that render as the SAME clothes, for the purpose of telling two
+# people apart.
+#
+# MakeHuman shares texture atlases between outfits: female_elegantsuit01 and
+# male_casualsuit03 are both the red-and-black striped shirt, so pairing one
+# with the other gives a variant its base's silhouette back and the two read as
+# one person in two haircuts. Four archetypes did exactly that, one of them
+# from the original cast. Anything added here must differ from its base by
+# GROUP, not merely by filename.
+#
+# (The `www.makehuman.org` text in these atlases sits in unmapped dead space,
+# not on a UV island, so it never reaches a garment. That is a different thing
+# from BRANDED_CLOTHES, where the logo is printed on the chest.)
+GARMENT_LOOK = {
+    "female_elegantsuit01": "striped",
+    "male_casualsuit03": "striped",
+    "male_casualsuit01": "plain",
+    "male_casualsuit05": "jacket",
+    "male_elegantsuit01": "suit",
+    "male_worksuit01": "overalls",
+}
 
 
 # Eye colour, weighted rather than uniform.
