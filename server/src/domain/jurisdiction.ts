@@ -31,7 +31,44 @@ export const TIER_ORDER: Tier[] = [
  * to be a slot that this fills. Without these, the offline docket hands a
  * juror in Bergen a case about a danfo driver priced in naira.
  */
+/**
+ * One naming tradition inside a country.
+ *
+ * A flat list of given names crossed with a flat list of surnames produces
+ * people who do not exist. Nigeria's pool was ten of each, mixed freely, so it
+ * handed out "Folake Chukwu" — a Yoruba given name on an Igbo surname — which
+ * reads to a Nigerian the way "Siobhán Kowalski" reads to a Dubliner. Worse,
+ * half the surnames in it were Igbo, so a country where the Hausa-Fulani are
+ * the largest single group produced almost no northern names at all.
+ *
+ * A register keeps a tradition's given names and surnames together, so a name
+ * is drawn from ONE of them and comes out coherent.
+ *
+ * `weight` is roughly how much of the population the tradition is, so the
+ * docket sounds like the country rather than like whichever names are most
+ * famous abroad. It carries no implication about who offends: defendants,
+ * witnesses and counsel are all drawn from the same pool, so weighting it
+ * changes who appears in the room, never who is accused.
+ */
+export interface NameRegister {
+  /** The tradition, named plainly. Shown to the model, never to the player. */
+  label: string;
+  /** Relative share of the population. Need not sum to anything. */
+  weight: number;
+  given: string[];
+  surnames: string[];
+}
+
 export interface CountryTexture {
+  /**
+   * Naming traditions, where a country has more than one that matters.
+   *
+   * Optional: most countries here are served perfectly well by one flat pool,
+   * and inventing registers for a country I cannot get right would be worse
+   * than not having them. Where it is absent, `givenNames` and `surnames` are
+   * used exactly as before.
+   */
+  registers?: NameRegister[];
   givenNames: string[];
   surnames: string[];
   /** A big public market, by its real name where there is an obvious one. */
@@ -199,6 +236,61 @@ export const COUNTRIES: Record<string, CountryProfile> = {
     localeTag: 'en-NG',
     currency: 'NGN',
     texture: {
+      // Nigeria has hundreds of naming traditions. These are the eight that a
+      // docket across Lagos, Abuja, Kano, Port Harcourt and Ibadan would
+      // actually turn up, weighted roughly by population — which means the
+      // north is now properly represented, where the old flat pool gave the
+      // Hausa-Fulani two surnames out of ten and the Igbo five.
+      registers: [
+        {
+          label: 'Hausa-Fulani (northern Nigeria)',
+          weight: 30,
+          given: ['Aminu', 'Hauwa', 'Bashir', 'Zainab', 'Ibrahim', 'Fatima', 'Sani', 'Maryam', 'Usman', 'Aisha', 'Nasir', 'Hadiza', 'Abubakar', 'Rukayya'],
+          surnames: ['Danjuma', 'Sule', 'Abubakar', 'Yakubu', 'Bello', 'Garba', 'Musa', 'Shehu', 'Aliyu', 'Umar', 'Lawan', 'Tijjani'],
+        },
+        {
+          label: 'Yoruba (south-western Nigeria)',
+          weight: 21,
+          given: ['Folake', 'Tunde', 'Yemi', 'Bukola', 'Segun', 'Adunni', 'Kayode', 'Morenike', 'Femi', 'Ronke', 'Bisi', 'Olamide', 'Wale', 'Toyin'],
+          surnames: ['Adebayo', 'Balogun', 'Lawal', 'Ogunleye', 'Adeyemi', 'Bamidele', 'Ogundipe', 'Salako', 'Oyelaran', 'Fadairo', 'Akinwale', 'Sowande'],
+        },
+        {
+          label: 'Igbo (south-eastern Nigeria)',
+          weight: 18,
+          given: ['Adaeze', 'Emeka', 'Chinelo', 'Ngozi', 'Obinna', 'Chidi', 'Amaka', 'Ifeanyi', 'Nneka', 'Uche', 'Chiamaka', 'Kelechi', 'Ebere', 'Nnamdi'],
+          surnames: ['Nwosu', 'Obi', 'Eze', 'Chukwu', 'Okafor', 'Okonkwo', 'Nwachukwu', 'Anyanwu', 'Madu', 'Okoye', 'Ezeani', 'Onyeka'],
+        },
+        {
+          label: 'Ibibio and Efik (Akwa Ibom and Cross River)',
+          weight: 5,
+          given: ['Ini', 'Emem', 'Eno', 'Aniefiok', 'Mfon', 'Idara', 'Ubong', 'Nsikak'],
+          surnames: ['Etim', 'Essien', 'Bassey', 'Udo', 'Akpan', 'Ekanem', 'Umoh', 'Effiong'],
+        },
+        {
+          label: 'Ijaw and the Niger Delta',
+          weight: 4,
+          given: ['Ebiere', 'Preye', 'Tamuno', 'Boma', 'Perebi', 'Ayebatonye', 'Doubra'],
+          surnames: ['Sekibo', 'Dickson', 'Diri', 'Alaibe', 'Opuene', 'Clark', 'Briggs'],
+        },
+        {
+          label: 'Kanuri (Borno and the north-east)',
+          weight: 3,
+          given: ['Kaka', 'Modu', 'Falmata', 'Bukar', 'Yagana', 'Kolo'],
+          surnames: ['Kachalla', 'Zanna', 'Mustapha', 'Ngala', 'Kyari', 'Gubio', 'Monguno'],
+        },
+        {
+          label: 'Tiv and the Middle Belt',
+          weight: 3,
+          given: ['Terkura', 'Doosuur', 'Aondoaseer', 'Sesugh', 'Mfe', 'Wuese'],
+          surnames: ['Iorliam', 'Akume', 'Gbor', 'Tarkaa', 'Ayatse', 'Ityavyar'],
+        },
+        {
+          label: 'Edo and Bini (Edo State)',
+          weight: 2,
+          given: ['Osaze', 'Efosa', 'Ivie', 'Osagie', 'Eghosa', 'Itohan'],
+          surnames: ['Igbinedion', 'Oboh', 'Omoregie', 'Ogbemudia', 'Idahosa', 'Aigbe'],
+        },
+      ],
       givenNames: ['Adaeze', 'Emeka', 'Folake', 'Ibrahim', 'Chinelo', 'Yemi', 'Hauwa', 'Tunde', 'Ngozi', 'Bashir'],
       surnames: ['Nwosu', 'Obi', 'Adebayo', 'Sule', 'Eze', 'Balogun', 'Chukwu', 'Lawal', 'Okafor', 'Danjuma'],
       market: 'Balogun Market',
@@ -217,7 +309,7 @@ export const COUNTRIES: Record<string, CountryProfile> = {
       if (tier === 'national') return 'the Supreme Court of Nigeria';
       return 'the African Court on Human and Peoples’ Rights';
     },
-    nameRegister: 'Nigerian given names and surnames (Yoruba, Igbo, Hausa)',
+    nameRegister: 'Nigerian names, across the whole country — Hausa-Fulani and Kanuri in the north, Yoruba in the west, Igbo in the east, and Ibibio, Efik, Ijaw, Tiv, Edo and Urhobo besides',
   },
   KE: {
     code: 'KE',

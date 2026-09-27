@@ -5,7 +5,7 @@ import { aiEnabled, availableCount, classifyError, GROQ_MODEL, leaseKey } from '
 import { log } from '../lib/log.js';
 import { prisma } from '../lib/prisma.js';
 import { caseQueueKey, redis } from '../lib/redis.js';
-import { districtFor, profileFor, tierLabel } from '../domain/jurisdiction.js';
+import { districtFor, profileFor, tierLabel, type CountryProfile } from '../domain/jurisdiction.js';
 import { stripPresentation } from '../domain/presentation.js';
 import { ambiguityBumpFor, currentDistrictFor, districtLadder } from '../domain/districts.js';
 import { rankFor } from '../domain/progression.js';
@@ -112,6 +112,17 @@ export interface PlaceContext {
   policeService: string;
   currency: string;
   nameRegister: string;
+  /**
+   * A handful of real names from this country's own pool, rotated per case.
+   *
+   * Naming the traditions is not enough on its own. Asked for "a Nigerian
+   * name" the model returns its most internationally famous ones every time,
+   * which is how six consecutive cases arrived as Okafor, Chukwu, Eze and
+   * Balogun — all south-eastern or south-western, in a country whose largest
+   * group is northern. A concrete sample that CHANGES per case is the thing
+   * that actually moves it off that mode.
+   */
+  nameSeed: string;
   tier: Tier;
   tierLabel: string;
   /** 1 home court .. 5 notorious. See domain/districts. */
@@ -308,7 +319,15 @@ fictional individuals who happen to work for a real service.
 
 Names should read as ${place.nameRegister}, and reflect who actually lives in
 ${place.district} — including immigrant and minority communities where that is
-true to the city.
+true to the city.${place.nameSeed ? `
+
+Do NOT reach for the handful of names from this country that are best known
+abroad. Spread this case's people across different communities, regions and
+religions within ${place.countryName}, the way a real day's docket does, and
+let the defendant, the witnesses and the two counsel come from different
+backgrounds rather than all from one. Names in the spirit of these — invent
+your own, do not copy these:
+${place.nameSeed}` : ''}
 
 Generate morally ambiguous, never clear-cut cases. Every piece of evidence must
 have two valid readings — the prosecution reading and the defence reading must
@@ -740,6 +759,52 @@ async function buildContext(
 }
 
 /**
+ * A rotating sample of real names from the country's own pool, for the prompt.
+ *
+ * The register description tells the model WHICH traditions belong here. This
+ * tells it what they look like, with different examples every case, because a
+ * description alone does not move a model off its favourite answer: asked for
+ * Nigerian names it returns Okafor and Chukwu however many traditions you
+ * list. Handing it six concrete names, rotated per case, does.
+ *
+ * Deliberately a SAMPLE and not a menu — the prompt asks for names in this
+ * spirit rather than names from this list, so the model still invents rather
+ * than picking from thirty fixed people.
+ */
+function nameSeedFor(profile: CountryProfile, seed: string): string {
+  const t = profile.texture;
+  let h = hashSeed(seed);
+  const roll = () => {
+    h = (h * 1103515245 + 12345) & 0x7fffffff;
+    return h;
+  };
+
+  // With registers, take one name from each of several traditions, so the
+  // sample itself is spread instead of six names from one corner of the
+  // country.
+  if (t.registers && t.registers.length > 0) {
+    const regs = [...t.registers];
+    const out: string[] = [];
+    const wanted = Math.min(6, regs.length);
+    for (let i = 0; i < wanted; i++) {
+      const reg = regs.splice(roll() % regs.length, 1)[0]!;
+      const r = roll();
+      out.push(
+        `${reg.given[r % reg.given.length]} ${reg.surnames[(r >> 7) % reg.surnames.length]} (${reg.label})`,
+      );
+    }
+    return out.join('; ');
+  }
+
+  const out: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const r = roll();
+    out.push(`${t.givenNames[r % t.givenNames.length]} ${t.surnames[(r >> 7) % t.surnames.length]}`);
+  }
+  return out.join('; ');
+}
+
+/**
  * Three names this juror has never seen, from their own country's register.
  *
  * Deterministic per case, so a retry does not reshuffle the cast — and drawn
@@ -765,13 +830,43 @@ function pickCast(
     return h;
   };
 
+  /**
+   * Draw a given name and a surname from ONE naming tradition.
+   *
+   * Where a country has registers, the pair has to come from the same one or
+   * the result is a person who does not exist — Nigeria's flat pool crossed
+   * ten given names with ten surnames and produced "Folake Chukwu", a Yoruba
+   * given name on an Igbo surname. The register is chosen by weight, so the
+   * docket sounds like the country instead of like whichever tradition
+   * happened to supply the most surnames.
+   */
+  const fromRegister = (r: number): string | null => {
+    const regs = t.registers;
+    if (!regs || regs.length === 0) return null;
+    const total = regs.reduce((n, reg) => n + reg.weight, 0);
+    let pick = r % total;
+    let reg = regs[regs.length - 1]!;
+    for (const candidate of regs) {
+      if (pick < candidate.weight) {
+        reg = candidate;
+        break;
+      }
+      pick -= candidate.weight;
+    }
+    return `${reg.given[(r >> 7) % reg.given.length]} ${reg.surnames[(r >> 13) % reg.surnames.length]}`;
+  };
+
   const next = (): string => {
     // Pass 1: an ordinary name. 10 given x 10 surnames is 100 people per
     // country, which sounds like plenty and is not: three names a case means a
-    // career runs out of strangers in 33 cases.
+    // career runs out of strangers in 33 cases. A country with registers has
+    // considerably more — Nigeria's eight traditions come to roughly 700 —
+    // and, more to the point, they are all names somebody could have.
     for (let i = 0; i < 250; i++) {
       const r = roll();
-      const name = `${t.givenNames[r % t.givenNames.length]} ${t.surnames[(r >> 7) % t.surnames.length]}`;
+      const name =
+        fromRegister(r) ??
+        `${t.givenNames[r % t.givenNames.length]} ${t.surnames[(r >> 7) % t.surnames.length]}`;
       if (!taken.has(name) && !chosen.includes(name)) return name;
     }
 
@@ -784,9 +879,21 @@ function pickCast(
     // outlasts any real career.
     for (let i = 0; i < 250; i++) {
       const r = roll();
-      const first = t.givenNames[r % t.givenNames.length]!;
-      const a = t.surnames[(r >> 7) % t.surnames.length]!;
-      const b = t.surnames[(r >> 13) % t.surnames.length]!;
+      // Within one register again, for the same reason as pass 1: a
+      // double-barrelled surname joins two families, and in most countries
+      // those two families are from the same tradition.
+      const regs = t.registers;
+      let first: string, a: string, b: string;
+      if (regs && regs.length > 0) {
+        const reg = regs[(r >> 3) % regs.length]!;
+        first = reg.given[r % reg.given.length]!;
+        a = reg.surnames[(r >> 7) % reg.surnames.length]!;
+        b = reg.surnames[(r >> 13) % reg.surnames.length]!;
+      } else {
+        first = t.givenNames[r % t.givenNames.length]!;
+        a = t.surnames[(r >> 7) % t.surnames.length]!;
+        b = t.surnames[(r >> 13) % t.surnames.length]!;
+      }
       if (a === b) continue;
       const name = `${first} ${a}-${b}`;
       if (!taken.has(name) && !chosen.includes(name)) return name;
@@ -1112,6 +1219,7 @@ export function placeForUser(user: {
     policeService: profile.policeService(district),
     currency: profile.currency,
     nameRegister: profile.nameRegister,
+    nameSeed: nameSeedFor(profile, `${user.id}:${district}:${user.xp ?? 0}`),
     tier: user.currentTier,
     tierLabel: tierLabel(user.currentTier, country),
     difficulty,

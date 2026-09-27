@@ -171,3 +171,58 @@ describe('the name register outlasts a career', () => {
     }
   });
 });
+
+describe('naming registers', () => {
+  it('keep a given name and a surname in the same tradition', () => {
+    // The bug this exists for: Nigeria's pool was ten given names crossed with
+    // ten surnames, mixed freely, so it produced "Folake Chukwu" — a Yoruba
+    // given name on an Igbo surname. Every name a register can produce must be
+    // a pair that one tradition could actually have made.
+    for (const code of Object.keys(COUNTRIES)) {
+      const regs = profileFor(code).texture.registers;
+      if (!regs) continue;
+      for (const reg of regs) {
+        assert.ok(reg.given.length > 0, `${code} ${reg.label} has no given names`);
+        assert.ok(reg.surnames.length > 0, `${code} ${reg.label} has no surnames`);
+        assert.ok(reg.weight > 0, `${code} ${reg.label} has no weight`);
+      }
+      // No surname may sit in two traditions, or a "coherent" pair stops
+      // meaning anything.
+      const seen = new Map<string, string>();
+      for (const reg of regs) {
+        for (const sn of reg.surnames) {
+          const other = seen.get(sn);
+          assert.ok(
+            other === undefined,
+            `${code}: surname ${sn} is in both ${other} and ${reg.label}`,
+          );
+          seen.set(sn, reg.label);
+        }
+      }
+    }
+  });
+
+  it('spread Nigeria across the country rather than one corner of it', () => {
+    const regs = profileFor('NG').texture.registers;
+    assert.ok(regs && regs.length >= 6, 'Nigeria needs more than the big three');
+
+    const labels = regs!.map((r) => r.label).join(' ');
+    for (const must of ['Hausa', 'Yoruba', 'Igbo']) {
+      assert.ok(labels.includes(must), `Nigeria is missing ${must}`);
+    }
+
+    // The north is the largest group in Nigeria and had two surnames out of
+    // ten in the flat pool. It must not be a rounding error again.
+    const north = regs!.find((r) => r.label.includes('Hausa'))!;
+    const total = regs!.reduce((n, r) => n + r.weight, 0);
+    assert.ok(
+      north.weight / total > 0.2,
+      `Hausa-Fulani is ${Math.round((north.weight / total) * 100)}% of the pool`,
+    );
+
+    // And the pool has to be big enough that a career does not run out of
+    // strangers: three people a case, and the old 100 lasted 33 cases.
+    const pool = regs!.reduce((n, r) => n + r.given.length * r.surnames.length, 0);
+    assert.ok(pool > 500, `coherent pool is only ${pool} people`);
+  });
+});

@@ -55,6 +55,9 @@ function placelessPlace(): PlaceContext {
     policeService: p.policeService(district),
     currency: p.currency,
     nameRegister: p.nameRegister,
+    // The Daily Trial is the one case with no country: everybody on Earth
+    // hears it, and it is localised per juror afterwards. No seed to give.
+    nameSeed: '',
     tier,
     tierLabel: 'District',
     difficulty: 3,
