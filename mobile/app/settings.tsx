@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
-import { Clock, Fonts, Layout, Palette, Space, Type } from '@/constants/theme';
+import { Accents, Clock, Fonts, Layout, Palette, Space, Type, Verdict } from '@/constants/theme';
 import { api, ApiError, type Session } from '@/lib/api';
 import { restore as restorePurchases } from '@/lib/purchases';
 import { adPrivacyOptionsRequired, showAdPrivacyOptions } from '@/lib/admob';
@@ -232,7 +232,7 @@ export default function Settings() {
                   refreshBedVolume();
                   if (!v) play('paper');
                 }}
-                trackColor={{ false: Palette.hairline, true: '#C23B22' }}
+                trackColor={{ false: Palette.hairline, true: Verdict.guilty }}
                 thumbColor={Palette.text}
               />
             </View>
@@ -245,7 +245,7 @@ export default function Settings() {
                 maximumValue={1}
                 value={volume}
                 disabled={muted}
-                minimumTrackTintColor={muted ? Palette.hairline : '#1D7E6A'}
+                minimumTrackTintColor={muted ? Palette.hairline : Verdict.notGuilty}
                 maximumTrackTintColor={Palette.hairline}
                 thumbTintColor={muted ? Palette.textFaint : Palette.text}
                 // While dragging: apply live so the beds follow the thumb.
@@ -340,7 +340,7 @@ export default function Settings() {
                   void setSetting({ haptics: v });
                   if (v) haptic.tick();
                 }}
-                trackColor={{ false: Palette.hairline, true: '#1D7E6A' }}
+                trackColor={{ false: Palette.hairline, true: Verdict.notGuilty }}
                 thumbColor={Palette.text}
               />
             </View>
@@ -363,7 +363,7 @@ export default function Settings() {
                   if (v) void askForReminders();
                   else void clearReminders();
                 }}
-                trackColor={{ false: Palette.hairline, true: '#1D7E6A' }}
+                trackColor={{ false: Palette.hairline, true: Verdict.notGuilty }}
                 thumbColor={Palette.text}
               />
             </View>
@@ -628,7 +628,7 @@ const styles = StyleSheet.create({
   notice: {
     fontFamily: Fonts.mono,
     fontSize: 11,
-    color: '#D4860A',
+    color: Accents.financial,
     backgroundColor: 'rgba(212,134,10,0.08)',
     padding: 10,
     borderRadius: 2,
@@ -686,12 +686,12 @@ const styles = StyleSheet.create({
   danger: {
     marginTop: 6,
     borderWidth: 1,
-    borderColor: '#C23B22',
+    borderColor: Verdict.guilty,
     paddingVertical: 13,
     alignItems: 'center',
     borderRadius: 2,
   },
-  dangerText: { fontFamily: Fonts.uiBold, fontSize: 11, letterSpacing: 2, color: '#C23B22' },
+  dangerText: { fontFamily: Fonts.uiBold, fontSize: 11, letterSpacing: 2, color: Verdict.guilty },
   footer: { paddingHorizontal: 22, paddingBottom: 12 },
   close: {
     borderWidth: 1,

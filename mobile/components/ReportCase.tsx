@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import { Fonts, Layout, Palette, Space, Type } from '@/constants/theme';
+import { Fonts, Layout, Palette, Space, Type, Verdict } from '@/constants/theme';
 import { api, ApiError } from '@/lib/api';
 
 /**
@@ -195,6 +195,6 @@ const styles = StyleSheet.create({
   error: {
     fontFamily: Fonts.mono,
     fontSize: Type.micro,
-    color: '#E04E2E',
+    color: Verdict.guilty,
   },
 });

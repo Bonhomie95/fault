@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } fr
 import { Actor, TRIAL_EXPRESSIONS } from '@/components/cast/Actor';
 import { EYES_PX, HEAD_PX, SPRITE_H, SPRITE_W, SPRITES } from '@/components/cast/sprites';
 import { REACTION_NAMES, type Expression } from '@/components/scene2d/expression';
-import { Fonts, Palette, Space, Type } from '@/constants/theme';
+import { Accents, Fonts, Palette, Space, Type } from '@/constants/theme';
 
 const PEOPLE = Object.keys(SPRITES);
 const FACES: Expression[] = [...TRIAL_EXPRESSIONS, ...REACTION_NAMES];
@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
   label: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 2, color: Palette.textMuted },
   row: { flexDirection: 'row', gap: Space.sm, paddingBottom: Space.xs },
   chip: { paddingHorizontal: Space.md, paddingVertical: Space.sm, borderWidth: 1, borderColor: Palette.hairline, borderRadius: 2 },
-  chipOn: { backgroundColor: '#D4860A', borderColor: '#D4860A' },
+  chipOn: { backgroundColor: Accents.financial, borderColor: Accents.financial },
   chipText: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Palette.text },
   chipTextOn: { color: Palette.bg },
 });

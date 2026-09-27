@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
-import { Fonts, Palette, Type } from '@/constants/theme';
+import { Accents, Fonts, Palette, Type, Verdict } from '@/constants/theme';
 import { ApiError, api, type District, type JurisdictionsView, type Mission, type Tier } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
@@ -241,7 +241,7 @@ export default function Career() {
                     {d.reward > 1 ? `  ·  ×${d.reward.toFixed(2)} REWARDS` : ''}
                   </Text>
                 </View>
-                <Text style={[styles.districtAction, d.current && { color: '#1FA184' }]}>
+                <Text style={[styles.districtAction, d.current && { color: Verdict.notGuilty }]}>
                   {d.current ? 'SITTING' : d.unlocked ? 'SIT HERE' : `RANK ${d.unlockRank}`}
                 </Text>
               </Pressable>
@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: 11,
     lineHeight: 18,
-    color: '#D4860A',
+    color: Accents.financial,
     backgroundColor: 'rgba(212,134,10,0.08)',
     padding: 10,
     borderRadius: 2,
@@ -405,12 +405,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: Palette.surface,
   },
-  districtCurrent: { borderColor: '#1FA184' },
+  districtCurrent: { borderColor: Verdict.notGuilty },
   districtLocked: { opacity: 0.5 },
   districtName: { fontFamily: Fonts.uiBold, fontSize: Type.body, color: Palette.text },
   districtMeta: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1, color: Palette.textMuted },
   districtAction: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.4, color: Palette.text },
-  missionReward: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.2, color: '#F0A020' },
+  missionReward: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1.2, color: Accents.financial },
   sectionTitle: {
     fontFamily: Fonts.mono,
     fontSize: Type.micro,
@@ -420,18 +420,18 @@ const styles = StyleSheet.create({
   },
   rung: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 3 },
   rungMark: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Palette.textFaint },
-  rungMarkOn: { color: '#1D7E6A' },
+  rungMarkOn: { color: Verdict.notGuilty },
   rungLabel: { fontFamily: Fonts.mono, fontSize: 12, color: Palette.textFaint },
   rungLabelOn: { color: Palette.text },
   promotion: { marginTop: 10, gap: 4 },
   promoteButton: {
     borderWidth: 1,
-    borderColor: '#1D7E6A',
+    borderColor: Verdict.notGuilty,
     paddingVertical: 13,
     alignItems: 'center',
     borderRadius: 2,
   },
-  promoteText: { fontFamily: Fonts.uiBold, fontSize: 11, letterSpacing: 1.8, color: '#1D7E6A' },
+  promoteText: { fontFamily: Fonts.uiBold, fontSize: 11, letterSpacing: 1.8, color: Verdict.notGuilty },
   blockedTitle: { fontFamily: Fonts.mono, fontSize: 11, color: Palette.textMuted },
   blocked: { fontFamily: Fonts.mono, fontSize: Type.micro, lineHeight: 17, color: Palette.textFaint },
   mission: {
@@ -448,16 +448,16 @@ const styles = StyleSheet.create({
   missionDesc: { fontFamily: Fonts.mono, fontSize: Type.micro, lineHeight: 16, color: Palette.textMuted },
   missionFoot: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   missionTrack: { flex: 1, height: 2, backgroundColor: Palette.hairline },
-  missionFill: { height: 2, backgroundColor: '#1D7E6A' },
+  missionFill: { height: 2, backgroundColor: Verdict.notGuilty },
   missionCount: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Palette.textMuted },
   claim: {
     borderWidth: 1,
-    borderColor: '#D4860A',
+    borderColor: Accents.financial,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 2,
   },
-  claimText: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1, color: '#D4860A' },
+  claimText: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1, color: Accents.financial },
   claimed: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 1, color: Palette.textFaint },
   locked: { fontFamily: Fonts.mono, fontSize: 11, lineHeight: 18, color: Palette.textFaint },
   application: {
@@ -468,8 +468,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   applicationStatus: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1 },
-  accepted: { color: '#1D7E6A' },
-  rejected: { color: '#C23B22' },
+  accepted: { color: Verdict.notGuilty },
+  rejected: { color: Verdict.guilty },
   decision: { fontFamily: Fonts.mono, fontSize: Type.micro, lineHeight: 17, color: Palette.textMuted },
   country: {
     flexDirection: 'row',

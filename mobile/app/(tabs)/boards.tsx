@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Fonts, Palette, Type } from '@/constants/theme';
+import { Accents, Fonts, Palette, Type, Verdict } from '@/constants/theme';
 import { Seal, sealFrom } from '@/components/Seal';
 import { api, ApiError, type Board, type BoardEntry, type BoardView } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
@@ -183,13 +183,13 @@ export default function Boards() {
           <BoardTab
             label="MOST PEACEFUL"
             active={board === 'peaceful'}
-            colour="#1D7E6A"
+            colour={Verdict.notGuilty}
             onPress={() => setBoard('peaceful')}
           />
           <BoardTab
             label="MOST LAWLESS"
             active={board === 'lawless'}
-            colour="#C23B22"
+            colour={Verdict.guilty}
             onPress={() => setBoard('lawless')}
           />
         </View>
@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
   name: { fontFamily: Fonts.monoBold, fontSize: 13, color: Palette.text },
   meta: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 0.8, color: Palette.textMuted },
   index: { fontFamily: Fonts.mono, fontSize: 12, color: Palette.text, width: 40, textAlign: 'right' },
-  youText: { color: '#D4860A' },
+  youText: { color: Accents.financial },
   youBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -395,13 +395,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: Palette.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#D4860A',
+    borderColor: Accents.financial,
     borderRadius: 2,
   },
-  youRank: { fontFamily: Fonts.monoBold, fontSize: 13, color: '#D4860A' },
+  youRank: { fontFamily: Fonts.monoBold, fontSize: 13, color: Accents.financial },
   youName: { fontFamily: Fonts.monoBold, fontSize: 13, color: Palette.text },
   youNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  youIndex: { fontFamily: Fonts.monoBold, fontSize: 13, color: '#D4860A' },
+  youIndex: { fontFamily: Fonts.monoBold, fontSize: 13, color: Accents.financial },
   unranked: {
     flex: 1,
     fontFamily: Fonts.mono,

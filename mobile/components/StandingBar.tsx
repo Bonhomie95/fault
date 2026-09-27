@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Fonts, Palette, Type } from '@/constants/theme';
+import { Accents, Fonts, Palette, Type, Verdict } from '@/constants/theme';
 import type { Standing } from '@/lib/api';
 import { Seal, sealFrom } from '@/components/Seal';
 import { useGame } from '@/store/game';
@@ -72,8 +72,8 @@ export function StandingBar({ standing }: { standing: Standing }) {
 function trustColour(trust: number) {
   if (trust >= 70) return { color: '#85D4C2' };
   if (trust >= 50) return { color: Palette.text };
-  if (trust >= 35) return { color: '#D4860A' };
-  return { color: '#C23B22' };
+  if (trust >= 35) return { color: Accents.financial };
+  return { color: Verdict.guilty };
 }
 
 const styles = StyleSheet.create({
@@ -124,6 +124,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.mono,
     fontSize: Type.micro,
     letterSpacing: 1.2,
-    color: '#D4860A',
+    color: Accents.financial,
   },
 });

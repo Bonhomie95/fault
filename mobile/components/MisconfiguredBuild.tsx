@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Fonts, Palette, Space, Type } from '@/constants/theme';
+import { Fonts, Palette, Space, Type, Verdict } from '@/constants/theme';
 
 /**
  * Shown instead of the app when a release build has no usable API host.
@@ -32,7 +32,7 @@ const styles = StyleSheet.create({
     padding: Space.xxl,
     gap: Space.md,
   },
-  kicker: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 2, color: '#E04E2E' },
+  kicker: { fontFamily: Fonts.mono, fontSize: Type.micro, letterSpacing: 2, color: Verdict.guilty },
   title: { fontFamily: Fonts.display, fontSize: Type.heading, color: Palette.text },
   body: { fontFamily: Fonts.mono, fontSize: Type.label, lineHeight: 19, color: Palette.textMuted },
 });

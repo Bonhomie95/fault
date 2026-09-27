@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Interstitial } from '@/components/Interstitial';
 import { AccusedReaction } from '@/components/scene2d/AccusedReaction';
 import { askForReminders } from '@/lib/reminders';
-import { Accents, Fonts, Palette, Type } from '@/constants/theme';
+import { Accents, Fonts, Palette, Type, Verdict } from '@/constants/theme';
 import * as haptic from '@/lib/haptics';
 import { useReducedMotion } from '@/lib/motion';
 import { play } from '@/lib/sound';
@@ -51,7 +51,7 @@ export default function VerdictDelivered() {
 
   if (!result) return <View style={styles.root} />;
 
-  const accent = lastAccent ?? '#C23B22';
+  const accent = lastAccent ?? Verdict.guilty;
   const label = result.verdict === 'guilty' ? 'GUILTY' : 'NOT GUILTY';
 
   const leave = () => {
@@ -245,8 +245,8 @@ const styles = StyleSheet.create({
   world: { alignSelf: 'stretch', gap: 8, alignItems: 'center' },
   worldEyebrow: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.6, color: Palette.textMuted },
   bar: { flexDirection: 'row', height: 8, alignSelf: 'stretch', borderRadius: 4, overflow: 'hidden' },
-  barGuilty: { backgroundColor: '#C23B22' },
-  barNot: { backgroundColor: '#1FA184' },
+  barGuilty: { backgroundColor: Verdict.guilty },
+  barNot: { backgroundColor: Verdict.notGuilty },
   barLabels: { flexDirection: 'row', justifyContent: 'space-between', alignSelf: 'stretch' },
   barLabel: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Palette.textMuted },
   shareBtn: { borderWidth: 1, borderColor: Palette.hairline, paddingVertical: 9, paddingHorizontal: 18, borderRadius: 24 },
@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.monoBold,
     fontSize: Type.micro,
     letterSpacing: 1.6,
-    color: '#1FA184',
+    color: Verdict.notGuilty,
     marginTop: 6,
     textAlign: 'center',
   },

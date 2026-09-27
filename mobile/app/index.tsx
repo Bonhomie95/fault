@@ -16,7 +16,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { Courthouse } from '@/components/Courthouse';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useReducedMotion } from '@/lib/motion';
-import { Fonts, Palette, Type } from '@/constants/theme';
+import { Fonts, Palette, Type, Verdict } from '@/constants/theme';
 import { api, ApiError } from '@/lib/api';
 import {
   googleClientId,
@@ -340,7 +340,7 @@ const styles = StyleSheet.create({
     color: Palette.text,
     textAlign: 'center',
   },
-  caret: { color: '#C23B22' },
+  caret: { color: Verdict.guilty },
   entry: { marginTop: 24, alignItems: 'center' },
   label: {
     fontFamily: Fonts.mono,
@@ -425,7 +425,7 @@ const styles = StyleSheet.create({
   error: {
     fontFamily: Fonts.mono,
     fontSize: 11,
-    color: '#C23B22',
+    color: Verdict.guilty,
     marginTop: 14,
   },
 });

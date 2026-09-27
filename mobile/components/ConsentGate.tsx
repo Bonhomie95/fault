@@ -2,7 +2,7 @@ import { router, usePathname } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
 import { Button } from '@/components/Button';
-import { Fonts, Palette, Space, Type } from '@/constants/theme';
+import { Fonts, Palette, Space, Type, Verdict } from '@/constants/theme';
 import { ApiError } from '@/lib/api';
 import { useGame } from '@/store/game';
 
@@ -111,5 +111,5 @@ const styles = StyleSheet.create({
   title: { fontFamily: Fonts.display, fontSize: Type.subhead, color: Palette.text },
   body: { fontFamily: Fonts.ui, fontSize: Type.small, lineHeight: 21, color: Palette.textMuted },
   links: { gap: Space.xs },
-  error: { fontFamily: Fonts.mono, fontSize: Type.micro, color: '#E04E2E' },
+  error: { fontFamily: Fonts.mono, fontSize: Type.micro, color: Verdict.guilty },
 });
