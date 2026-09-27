@@ -59,7 +59,17 @@ function connect(): Promise<boolean> {
     (ok) => ok !== false,
     (err) => {
       connecting = null; // try again next time
-      reportError('iap.connect', err);
+      // Deliberately NOT reportError.
+      //
+      // Failing to reach the billing service is the ordinary state of a great
+      // many devices, not a fault: an emulator with no Play Store, a phone
+      // without Google services, a country the store does not serve, or an app
+      // not yet published. All of them land here, and the shelf already
+      // handles it — products stay absent and the store says the pass is not
+      // available from this device. Reporting it would fill the error channel
+      // with a condition nobody can act on, and drown the purchase failures
+      // that actually cost someone money, which are still reported below.
+      if (__DEV__) console.warn('[iap] billing unavailable on this device:', err);
       return false;
     },
   );

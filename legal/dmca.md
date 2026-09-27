@@ -2,7 +2,7 @@
   NOT LAWYER-CERTIFIED. For the DMCA safe harbour to apply in the US, the
   designated agent must ALSO be registered with the U.S. Copyright Office
   (https://dmca.copyright.gov) and the registration renewed every three years.
-  Replace [AGENT NAME / EMAIL] and [COMPANY ADDRESS] before launch.
+  Replace [AGENT NAME / EMAIL] and Dallas, Texas, United States before launch.
 -->
 # Copyright & Intellectual Property Policy
 
@@ -15,7 +15,7 @@ FAULT's case files are generated in part by artificial intelligence. If generate
 Send a written notice to our designated agent:
 
 **[AGENT NAME / EMAIL]**
-[COMPANY NAME], [COMPANY ADDRESS]
+Bonhomie LLC, Dallas, Texas, United States
 
 Your notice must include:
 

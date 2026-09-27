@@ -4,7 +4,7 @@
 -->
 # Terms of Service
 
-These Terms of Service ("Terms") govern your use of FAULT, the mobile game and its related services (together, the "Service"), provided by [COMPANY NAME] ("we", "us", "our"). By creating a juror, signing in, or playing, you agree to these Terms and to our Privacy Policy. If you do not agree, do not use the Service.
+These Terms of Service ("Terms") govern your use of FAULT, the mobile game and its related services (together, the "Service"), provided by Bonhomie LLC ("we", "us", "our"). By creating a juror, signing in, or playing, you agree to these Terms and to our Privacy Policy. If you do not agree, do not use the Service.
 
 ## 1. Eligibility
 
@@ -92,7 +92,7 @@ To the fullest extent the law allows, we will not be liable for any indirect, in
 
 ## 14. Governing law
 
-These Terms are governed by the laws of **[JURISDICTION]**, without regard to its conflict-of-law rules. Disputes will be resolved in the courts of [JURISDICTION], unless the consumer law of the country where you live gives you the right to bring a claim there.
+These Terms are governed by the laws of **the State of Texas, United States**, without regard to its conflict-of-law rules. Disputes will be resolved in the courts of the State of Texas, United States, unless the consumer law of the country where you live gives you the right to bring a claim there.
 
 ## 15. Apple and Google
 
@@ -100,4 +100,4 @@ If you downloaded the Service from Apple's App Store or Google Play, these Terms
 
 ## 16. Contact
 
-Questions about these Terms: **[SUPPORT EMAIL]**, [COMPANY NAME], [COMPANY ADDRESS].
+Questions about these Terms: **admin@bonhomieinc.dev**, Bonhomie LLC, Dallas, Texas, United States.

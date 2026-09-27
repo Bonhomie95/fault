@@ -38,4 +38,4 @@ Depending on how serious a breach is, we may rename or hide a name, remove conte
 
 Every person in a FAULT case is fictional, and the game's cases are generated rather than written by players. Real places and courts appear as setting only. If you ever think a case crosses a line, reporting it is the most useful thing you can do.
 
-Questions: **[SUPPORT EMAIL]**.
+Questions: **admin@bonhomieinc.dev**.

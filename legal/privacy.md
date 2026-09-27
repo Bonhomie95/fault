@@ -8,7 +8,7 @@
 -->
 # Privacy Policy
 
-This policy explains what FAULT (the "Service"), provided by [COMPANY NAME] ("we", "us"), collects, why, who it is shared with, and what you can do about it. We collect as little as the game needs to work.
+This policy explains what FAULT (the "Service"), provided by Bonhomie LLC ("we", "us"), collects, why, who it is shared with, and what you can do about it. We collect as little as the game needs to work.
 
 ## What we collect
 
@@ -56,7 +56,7 @@ We do not sell your personal information in exchange for money. Advertising work
 
 - **Google (AdMob).** Google provides the adverts in the app and processes the data described under "Advertising" as an independent controller under its own policies (https://policies.google.com/privacy and https://policies.google.com/technologies/partner-sites). Your juror statistics, verdicts and case history are never shared with Google or any advertiser.
 
-- **Hosting providers.** Our servers, database and cache run with a cloud hosting provider ([HOSTING PROVIDER, e.g. Render]) which processes data on our behalf.
+- **Hosting providers.** Our servers, database and cache run with a cloud hosting provider (Render) which processes data on our behalf.
 - **Groq (AI case generation).** To write each case, we send Groq a prompt describing the setting — your country, the in-game district, court and police service — the state of your in-game city, the names of fictional characters from your earlier cases, and a short summary of your juror statistics (for example, "conviction rate 62%, 14 cases heard") and which bias to probe. After a verdict, we send the fictional case details and your verdict so it can write the follow-up news line. When your written juror profile is generated, we send your juror name and your juror statistics. We do **not** send your account identifiers, email address, time zone, purchases or IP address to Groq.
 - **Apple and Google.** To verify sign-in tokens, verify and restore purchases, and revoke Sign in with Apple on account deletion.
 - **Legal and safety.** If required by law, or to protect the rights, property or safety of our players, the public, or us.
@@ -95,4 +95,4 @@ If we change this policy in a material way, we will ask you to review and accept
 
 ## Contact
 
-[COMPANY NAME], [COMPANY ADDRESS]. Email: **[SUPPORT EMAIL]**. If you are in the EEA or UK and we are required to appoint a representative there, their details are: [EU/UK REPRESENTATIVE, if required].
+Bonhomie LLC, Dallas, Texas, United States. Email: **admin@bonhomieinc.dev**. If you are in the EEA or UK and we are required to appoint a representative there, their details are: [EU/UK REPRESENTATIVE, if required].

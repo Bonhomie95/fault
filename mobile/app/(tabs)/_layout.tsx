@@ -1,6 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { Tabs } from 'expo-router';
-import { Platform, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Fonts, Palette, Type } from '@/constants/theme';
 
 /**
@@ -27,13 +28,28 @@ import { Fonts, Palette, Type } from '@/constants/theme';
 const GOLD = '#BCE8D5';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+
+  /**
+   * The bar is a bar's worth of controls PLUS whatever the system has taken
+   * from the bottom of the screen.
+   *
+   * It used to be a flat 88 on iOS and 68 on Android, which is a guess at the
+   * home indicator rather than a measurement of it. On an Android phone with
+   * gesture navigation the system's pill sits in the bottom ~24dp and landed
+   * directly on top of the word "Career". Asking for the inset works on every
+   * phone, including the ones with a three-button navigation bar and the ones
+   * with nothing at all.
+   */
+  const bar = { height: 60 + insets.bottom, paddingBottom: insets.bottom };
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: GOLD,
         tabBarInactiveTintColor: Palette.textMuted,
-        tabBarStyle: styles.bar,
+        tabBarStyle: [styles.bar, bar],
         tabBarLabelStyle: styles.label,
         tabBarItemStyle: styles.item,
         sceneStyle: { backgroundColor: Palette.bg },
@@ -90,7 +106,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     // The room has no windows, and the bar is part of the room.
     elevation: 0,
-    height: Platform.OS === 'ios' ? 88 : 68,
     paddingTop: 8,
   },
   label: {
