@@ -1,6 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
@@ -25,6 +26,16 @@ import { DailyTrialCard, DocketClosed, docketLine, OfferStrip, SpecialDockets } 
  * the bars are just the part you can quote.
  */
 export default function Lobby() {
+  /**
+   * The tab bar sits over the bottom of this screen.
+   *
+   * The padding below was a fixed number chosen before there WAS a tab bar,
+   * and the bar is 60pt plus the home-indicator inset — about 94 on a modern
+   * phone. So the last card on every tab was sliced in half by it. This is the
+   * measured height rather than another guess, so it is right on a phone with
+   * a home indicator, one with a bezel, and an iPad.
+   */
+  const tabBar = useBottomTabBarHeight();
   const city = useGame((s) => s.city);
   const merit = useGame((s) => s.merit);
   const standing = useGame((s) => s.standing);
@@ -135,7 +146,7 @@ export default function Lobby() {
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBar + 24 }]} showsVerticalScrollIndicator={false}>
           <Enter style={styles.header}>
             <View><Text style={styles.brand}>FAULT<Text style={{ color: Accents.financial }}> /</Text></Text><Text style={styles.eyebrow}>A CITY SHAPED BY YOU</Text></View>
             <View style={styles.headRight}>

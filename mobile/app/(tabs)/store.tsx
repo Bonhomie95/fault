@@ -1,6 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
 import { Seal, type SealKind } from '@/components/Seal';
@@ -32,6 +33,16 @@ import { useGame } from '@/store/game';
  * not offered for money — Apple rejects buttons that cannot buy anything.
  */
 export default function Store() {
+  /**
+   * The tab bar sits over the bottom of this screen.
+   *
+   * The padding below was a fixed number chosen before there WAS a tab bar,
+   * and the bar is 60pt plus the home-indicator inset — about 94 on a modern
+   * phone. So the last card on every tab was sliced in half by it. This is the
+   * measured height rather than another guess, so it is right on a phone with
+   * a home indicator, one with a bezel, and an iPad.
+   */
+  const tabBar = useBottomTabBarHeight();
   const refreshWallet = useGame((s) => s.refreshWallet);
   const refreshStanding = useGame((s) => s.refreshStanding);
   const loadCase = useGame((s) => s.loadCase);
@@ -204,7 +215,7 @@ export default function Store() {
         {!view && <ActivityIndicator color={Palette.text} style={{ marginTop: 40 }} />}
 
         {view && (
-          <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={[styles.list, { paddingBottom: tabBar + 24 }]} showsVerticalScrollIndicator={false}>
             {/* ---- Founding Juror: new jurors, once ---- */}
             {view.starter.available && by.get('starter_bundle') && price('starter_bundle') && (
               <View style={[styles.card, styles.hero]}>

@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
 import { Enter } from '@/components/Enter';
@@ -19,6 +20,16 @@ import { useGame } from '@/store/game';
  * that they are shut.
  */
 export default function Juror() {
+  /**
+   * The tab bar sits over the bottom of this screen.
+   *
+   * The padding below was a fixed number chosen before there WAS a tab bar,
+   * and the bar is 60pt plus the home-indicator inset — about 94 on a modern
+   * phone. So the last card on every tab was sliced in half by it. This is the
+   * measured height rather than another guess, so it is right on a phone with
+   * a home indicator, one with a bezel, and an iPad.
+   */
+  const tabBar = useBottomTabBarHeight();
   const standing = useGame((s) => s.standing);
   const city = useGame((s) => s.city);
 
@@ -28,7 +39,7 @@ export default function Juror() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabBar + 24 }]}>
         <Text style={styles.title}>CHAMBERS</Text>
 
         {standing && (

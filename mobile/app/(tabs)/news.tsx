@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Fonts, Palette, Space, Type } from '@/constants/theme';
 import { api, type NewsStory } from '@/lib/api';
@@ -16,6 +17,16 @@ import { INK, INK_MUTED, Masthead, Story } from '@/components/world/Papers';
  * in, so the unread dots are still there to find while they read.
  */
 export default function Papers() {
+  /**
+   * The tab bar sits over the bottom of this screen.
+   *
+   * The padding below was a fixed number chosen before there WAS a tab bar,
+   * and the bar is 60pt plus the home-indicator inset — about 94 on a modern
+   * phone. So the last card on every tab was sliced in half by it. This is the
+   * measured height rather than another guess, so it is right on a phone with
+   * a home indicator, one with a bezel, and an iPad.
+   */
+  const tabBar = useBottomTabBarHeight();
   const standing = useGame((s) => s.standing);
   const [items, setItems] = useState<NewsStory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,11 +57,11 @@ export default function Papers() {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <FlatList
           data={items}
           keyExtractor={(s) => s.id}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: tabBar + 24 }]}
           ListHeaderComponent={
             <View style={{ gap: Space.md, marginBottom: Space.md }}>
               <Masthead

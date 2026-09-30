@@ -10,6 +10,7 @@ import {
   View,
   type LayoutChangeEvent,
 } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Accents, Fonts, Palette, Type, Verdict } from '@/constants/theme';
@@ -54,6 +55,16 @@ async function loadHidden(): Promise<string[]> {
 }
 
 export default function Boards() {
+  /**
+   * The tab bar sits over the bottom of this screen.
+   *
+   * The padding below was a fixed number chosen before there WAS a tab bar,
+   * and the bar is 60pt plus the home-indicator inset — about 94 on a modern
+   * phone. So the last card on every tab was sliced in half by it. This is the
+   * measured height rather than another guess, so it is right on a phone with
+   * a home indicator, one with a bezel, and an iPad.
+   */
+  const tabBar = useBottomTabBarHeight();
   const jurorId = useGame((s) => s.jurorId);
   const city = useGame((s) => s.city);
   const mySeal = sealFrom(useGame((s) => s.entitlements), useGame((s) => s.equipped.seal));
@@ -163,7 +174,7 @@ export default function Boards() {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
           <Text style={styles.title}>THE CITIES</Text>
           <Text style={styles.subtitle}>
@@ -205,7 +216,7 @@ export default function Boards() {
         {view && (
           <ScrollView
             ref={scroller}
-            contentContainerStyle={styles.list}
+            contentContainerStyle={[styles.list, { paddingBottom: tabBar + 24 }]}
             showsVerticalScrollIndicator={false}
           >
             {view.top.length === 0 && (

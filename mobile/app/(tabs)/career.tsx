@@ -1,6 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
 import { StandingBar } from '@/components/StandingBar';
@@ -21,6 +22,16 @@ import { useGame } from '@/store/game';
  * which is about who you *are*; this screen is about where you can go.
  */
 export default function Career() {
+  /**
+   * The tab bar sits over the bottom of this screen.
+   *
+   * The padding below was a fixed number chosen before there WAS a tab bar,
+   * and the bar is 60pt plus the home-indicator inset — about 94 on a modern
+   * phone. So the last card on every tab was sliced in half by it. This is the
+   * measured height rather than another guess, so it is right on a phone with
+   * a home indicator, one with a bezel, and an iPad.
+   */
+  const tabBar = useBottomTabBarHeight();
   const jurorId = useGame((s) => s.jurorId);
   const standing = useGame((s) => s.standing);
   const refreshStanding = useGame((s) => s.refreshStanding);
@@ -152,8 +163,8 @@ export default function Career() {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBar + 24 }]} showsVerticalScrollIndicator={false}>
           <Text style={styles.title}>THE CAREER</Text>
 
           {standing ? <StandingBar standing={standing} /> : <ActivityIndicator color={Palette.text} />}
