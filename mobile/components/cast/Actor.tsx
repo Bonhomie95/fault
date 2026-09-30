@@ -63,6 +63,39 @@ function mouthFor(ch: string, flip: boolean): Mouth {
   return flip ? '_talkE' : '';
 }
 
+/**
+ * How long this character's mouth shape should be held.
+ *
+ * The mouth used to advance on a fixed interval — one character every 77ms,
+ * whether it was a vowel, a consonant cluster or a full stop. Speech does not
+ * work like that, and a jaw moving at a constant rate reads as chewing rather
+ * than talking, which is exactly what it looked like.
+ *
+ * So: vowels are HELD, because that is where the sound and the open jaw
+ * actually are; consonants pass quickly; a space closes the mouth briefly, the
+ * way a word boundary does; and punctuation is a real beat, because the pause
+ * at a comma is most of what makes a line sound like someone thinking rather
+ * than reciting. The multiplier is jittered so no two syllables are identical
+ * and the whole thing never falls into a metronome.
+ *
+ * Returned as a multiple of the base character time, so `speechRate` still
+ * means what it meant and a voice running fast or slow still tracks.
+ */
+function holdFor(ch: string): number {
+  const c = ch.toLowerCase();
+  const jitter = 0.85 + Math.random() * 0.3;
+  // A full stop, a question, a dash: the line lands and the mouth rests.
+  if ('.!?—'.includes(c)) return 3.6 * jitter;
+  // A comma or a colon: a breath, not a stop.
+  if (',;:'.includes(c)) return 2.2 * jitter;
+  // Between words the mouth closes, briefly.
+  if (c === ' ') return 0.9 * jitter;
+  // Vowels carry the sound, and the jaw stays open through them.
+  if ('aeiouy'.includes(c)) return 1.5 * jitter;
+  // Everything else is a consonant, and consonants are fast.
+  return 0.65 * jitter;
+}
+
 function place(p: Patch) {
   return {
     left: `${(p.x / SPRITE_W) * 100}%`,
@@ -182,14 +215,23 @@ export const Actor = memo(function Actor({
       return;
     }
     let i = 0;
+    let timer: ReturnType<typeof setTimeout>;
     const text = speaking;
-    const id = setInterval(() => {
+    // The base character time. Each character then holds for a MULTIPLE of it
+    // (see holdFor), which is what turns a constant jaw into speech.
+    const base = Math.max(38, 1000 / speechRate);
+
+    const step = () => {
       if (i >= text.length) i = 0; // the voice may outrun the estimate
-      setMouth(mouthFor(text[i]!, i % 2 === 0));
+      const ch = text[i]!;
+      setMouth(mouthFor(ch, i % 2 === 0));
       i += 1;
-    }, Math.max(45, 1000 / speechRate));
+      timer = setTimeout(step, base * holdFor(ch));
+    };
+    step();
+
     return () => {
-      clearInterval(id);
+      clearTimeout(timer);
       setMouth('');
     };
   }, [speaking, speechRate, isTrial]);
