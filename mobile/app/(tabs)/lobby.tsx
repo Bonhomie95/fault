@@ -8,7 +8,7 @@ import { Courthouse } from '@/components/Courthouse';
 import Feather from '@expo/vector-icons/Feather';
 import { Button } from '@/components/Button';
 import { Enter } from '@/components/Enter';
-import { Accents, Fonts, Palette, Space, Type } from '@/constants/theme';
+import { Accents, Fonts, Palette, Radius, Space, Type } from '@/constants/theme';
 import { ApiError, api, type NewsStory, type StoreView } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { play } from '@/lib/sound';
@@ -26,6 +26,7 @@ import { DailyTrialCard, DocketClosed, docketLine, OfferStrip, SpecialDockets } 
  */
 export default function Lobby() {
   const city = useGame((s) => s.city);
+  const merit = useGame((s) => s.merit);
   const standing = useGame((s) => s.standing);
   const refreshCity = useGame((s) => s.refreshCity);
   const refreshStanding = useGame((s) => s.refreshStanding);
@@ -137,7 +138,24 @@ export default function Lobby() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Enter style={styles.header}>
             <View><Text style={styles.brand}>FAULT<Text style={{ color: Accents.financial }}> /</Text></Text><Text style={styles.eyebrow}>A CITY SHAPED BY YOU</Text></View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Open settings" onPress={() => router.push('/settings')} style={styles.settings}><Feather name="sliders" size={19} color={Palette.text}/></Pressable>
+            <View style={styles.headRight}>
+              {/* Merit, where a player can actually see it.
+                  It lived only inside the Clerk's Office, which meant the
+                  currency the whole economy runs on was invisible until you
+                  went looking for the shop — so nobody knew what they had, and
+                  nobody knew earning it was doing anything. Tapping it opens
+                  the shelf, because that is the question it provokes. */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${merit} Merit. Open the Clerk's Office.`}
+                onPress={() => router.push('/store')}
+                style={styles.wallet}
+              >
+                <Feather name="award" size={13} color={Accents.financial} />
+                <Text style={styles.walletText}>{merit.toLocaleString()}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Open settings" onPress={() => router.push('/settings')} style={styles.settings}><Feather name="sliders" size={19} color={Palette.text}/></Pressable>
+            </View>
           </Enter>
           <Enter index={1} style={styles.welcome}>
             <Text style={styles.title}>The city is listening.</Text>
@@ -208,6 +226,19 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: Space.xl, paddingTop: Space.lg, paddingBottom: Space.xxl, gap: Space.xl, maxWidth: 620, width: '100%', alignSelf: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   brand: { fontFamily: Fonts.uiBold, fontSize: Type.heading, letterSpacing: 5, color: Palette.text },
+  headRight: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
+  wallet: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: Space.md,
+    paddingVertical: 7,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Palette.hairlineBright,
+    backgroundColor: Palette.surface,
+  },
+  walletText: { fontFamily: Fonts.monoBold, fontSize: Type.small, color: Accents.financial },
   eyebrow: { fontFamily: Fonts.ui, fontSize: Type.micro, letterSpacing: 2, color: Palette.textMuted, marginTop: 6 },
   settings: { width: 44, height: 44, borderRadius: 22, backgroundColor: Palette.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Palette.hairline },
   welcome: { gap: 8 },

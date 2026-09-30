@@ -239,7 +239,11 @@ export const SKUS: Sku[] = [
     title: 'Three More Cases',
     blurb: 'Open three more cases today, past the free docket.',
     priceMinor: null,
-    meritPrice: 450,
+    // 1,000, from 200. Three extra cases return about 126 Merit, so this is
+    // deliberately a long way from paying for itself: it buys TIME on the
+    // bench, not profit, and at roughly two days of free earning it is the
+    // sink that gives the Merit bundles something to be for.
+    meritPrice: 1000,
     grants: [],
     casesGranted: 3,
     kind: 'consumable',
