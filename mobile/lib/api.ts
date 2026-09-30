@@ -591,7 +591,7 @@ export interface StoreView {
    * whether or not adverts are available, because a player without adverts is
    * exactly who it is for.
    */
-  wait: {
+  wait?: {
     ms: number;
     merit: WaitState;
     case: WaitState;

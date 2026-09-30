@@ -188,7 +188,10 @@ export const SKUS: Sku[] = [
     id: 'no_ads',
     title: 'No Adverts. Ever.',
     blurb:
-      'Removes every interstitial, permanently. Earn it with 4,500 Merit or unlock it instantly. Optional rewarded views stay available.',
+      // No figure in the copy. It said "Earn it with 4,500 Merit" and the
+      // button beside it said 50,000 — the blurb had its own hardcoded price
+      // and went stale the moment the real one moved. The button is the price.
+      'Removes every interstitial, permanently. Earnable with Merit, or unlock it instantly. Optional rewarded views stay available.',
     priceMinor: 399,
     // A second permanent upgrade reachable through service or a purchase.
     meritPrice: 50000,

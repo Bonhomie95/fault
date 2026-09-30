@@ -129,8 +129,11 @@ export default function Store() {
    * wherever its interval got to.
    */
   const [now, setNow] = useState(() => Date.now());
+  // `view?.wait.merit` only guards `view`: a response from a server that does
+  // not send `wait` yet — an older deploy, or a cached body — then throws on
+  // `.merit`. Every read of it is optional the whole way down.
   const waiting =
-    (view?.wait.merit.readyAt ?? null) !== null || (view?.wait.case.readyAt ?? null) !== null;
+    (view?.wait?.merit?.readyAt ?? null) !== null || (view?.wait?.case?.readyAt ?? null) !== null;
   useEffect(() => {
     if (!waiting) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -224,10 +227,6 @@ export default function Store() {
               </View>
             )}
 
-            {/* ---- The Juror Pass ---- */}
-            <View style={[styles.card, styles.pass]}>
-              <View style={styles.row}>
-
             {/* ---- Merit, FIRST ----
                 A shop leads with what it sells. This sat at the very bottom, under
                 the pass, the free rewards, the docket, four courtrooms, three
@@ -249,6 +248,10 @@ export default function Store() {
                 Merit bundles are not available from this device yet.
               </Text>
             )}
+
+            {/* ---- The Juror Pass ---- */}
+            <View style={[styles.card, styles.pass]}>
+              <View style={styles.row}>
 
                 <Text style={styles.passTitle}>JUROR PASS</Text>
                 <Seal kind="seal_gold" size={22} />
@@ -317,31 +320,31 @@ export default function Store() {
                 the whole section from the players the WAIT path exists for. It
                 now follows the ALLOWANCE, and the advert button appears within
                 it only when there is an advert to show. */}
-            {(view.wait.merit.left > 0 || view.wait.case.left > 0) && (
+            {((view.wait?.merit.left ?? 0) > 0 || (view.wait?.case.left ?? 0) > 0) && (
               <View style={[styles.card, styles.free]}>
                 <Text style={styles.section}>FREE · WATCH IT, OR WAIT FOR IT</Text>
-                {view.wait.merit.left > 0 && (
+                {(view.wait?.merit.left ?? 0) > 0 && (
                   <FreeRow
                     title={`+${view.rewardedAdMerit} Merit`}
-                    sub={`${view.wait.merit.left} left today`}
+                    sub={`${view.wait?.merit.left ?? 0} left today`}
                     onPress={() => watch('merit')}
                     busy={busy === 'watch-merit'}
                     canWatch={rewarded && view.rewardedAdsLeft > 0}
-                    wait={view.wait.merit}
+                    wait={view.wait?.merit ?? null}
                     now={now}
                     onWait={() => beginWait('merit')}
                     onCollect={() => collect('merit')}
                     waitBusy={busy === 'wait-merit' || busy === 'collect-merit'}
                   />
                 )}
-                {!view.docket.unlimited && view.wait.case.left > 0 && (
+                {!view.docket.unlimited && (view.wait?.case.left ?? 0) > 0 && (
                   <FreeRow
                     title="+1 case today"
-                    sub={`${view.wait.case.left} left today`}
+                    sub={`${view.wait?.case.left ?? 0} left today`}
                     onPress={() => watch('case')}
                     busy={busy === 'watch-case'}
                     canWatch={rewarded && view.rewardedCasesLeft > 0}
-                    wait={view.wait.case}
+                    wait={view.wait?.case ?? null}
                     now={now}
                     onWait={() => beginWait('case')}
                     onCollect={() => collect('case')}
