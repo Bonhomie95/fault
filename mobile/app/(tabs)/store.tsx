@@ -3,7 +3,6 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
-import { Button } from '@/components/Button';
 import { Seal, type SealKind } from '@/components/Seal';
 import { THEMES } from '@/components/scene2d/themes';
 import { Accents, Fonts, Palette, Radius, Type } from '@/constants/theme';
@@ -151,7 +150,7 @@ export default function Store() {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
           <Text style={styles.title}>THE CLERK&apos;S OFFICE</Text>
           {view && (
@@ -412,12 +411,7 @@ export default function Store() {
           </ScrollView>
         )}
 
-        <View style={styles.footer}>
-          {/* The shared Button, like every other modal's Close. This was a
-              hand-rolled Pressable reading "CLOSE" in a hairline box, so the
-              one way out of the store looked like nothing else in the app. */}
-          <Button label="Close" onPress={() => router.back()} variant="primary" />
-        </View>
+
       </SafeAreaView>
 
       {/* A purchase in flight locks the shelf: two taps must never be two charges. */}

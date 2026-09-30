@@ -109,7 +109,6 @@ export default function RootLayout() {
         <Stack.Screen name="review" />
         <Stack.Screen name="record" />
         <Stack.Screen name="archive" />
-        <Stack.Screen name="store" options={{ presentation: 'modal', gestureEnabled: true }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal', gestureEnabled: true }} />
         {/* Reachable before sign-in: the cold open asks for agreement to these. */}
         <Stack.Screen name="legal" options={{ presentation: 'modal', gestureEnabled: true }} />

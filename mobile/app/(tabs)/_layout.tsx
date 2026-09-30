@@ -88,6 +88,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="store"
+        options={{
+          title: 'Store',
+          tabBarIcon: ({ color }) => <Feather name="shopping-bag" size={20} color={color} />,
+          tabBarAccessibilityLabel: 'The Clerk’s Office. Merit, dockets and courtrooms.',
+        }}
+      />
+      <Tabs.Screen
         name="juror"
         options={{
           title: 'You',
