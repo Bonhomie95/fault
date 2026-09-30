@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { GATES } from '../domain/progression.js';
 import { ladderFor, tierLabel } from '../domain/jurisdiction.js';
+import { log } from '../lib/log.js';
 import { prisma } from '../lib/prisma.js';
 import { requireJuror } from '../middleware/requireJuror.js';
 import { invalidateCaseCache } from '../services/caseGenerator.js';
@@ -91,16 +92,42 @@ standingRouter.post('/missions/claim', requireJuror, async (req, res) => {
   try {
     ({ rank } = await awardXp(req.juror.userId, xp));
   } catch (err) {
-    await unclaimMission(req.juror.userId, parsed.data.key).catch(() => {});
+    // If the rollback ALSO fails the player has done the work, the row says
+    // paid, nothing was paid, and tapping again will not help — which is
+    // exactly the state this block exists to avoid. It cannot be fixed from
+    // here, so it has to be visible.
+    await unclaimMission(req.juror.userId, parsed.data.key).catch((undoErr: Error) => {
+      log.error('mission claim could not be rolled back', {
+        userId: req.juror.userId,
+        mission: parsed.data.key,
+        xp,
+        awardError: (err as Error).message,
+        undoError: undoErr.message,
+      });
+    });
     throw err;
   }
 
   // Merit rides along. A failure here is logged, not rolled back: the XP —
   // the part that moves standing — has landed, and Merit is a ledger entry
   // the player can see is missing and report.
+  //
+  // It said "is logged" and then swallowed the error with `() => null`, which
+  // is the one thing that makes the sentence false. Nobody would ever have
+  // known a mission paid its XP and not its Merit.
   let merit: number | null = null;
   if (meritDue > 0) {
-    merit = await grantMerit(req.juror.userId, meritDue, 'mission', parsed.data.key).catch(() => null);
+    merit = await grantMerit(req.juror.userId, meritDue, 'mission', parsed.data.key).catch(
+      (err: Error) => {
+        log.error('mission merit not granted', {
+          userId: req.juror.userId,
+          mission: parsed.data.key,
+          meritDue,
+          error: err.message,
+        });
+        return null;
+      },
+    );
   }
 
   res.json({ xp: def(parsed.data.key)?.xp ?? xp, merit: meritDue, meritTotal: merit, rank });
