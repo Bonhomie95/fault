@@ -245,10 +245,9 @@ describe('the paid game is paid', () => {
     const res = await api().get('/api/store').set(auth(accessToken));
     const campaign = res.body.items.find((i: { id: string }) => i.id === 'campaign');
     assert.equal(campaign.priceMinor, 499);
-    // 4,800 after the 2026 rebalance. Halving the faucet doubled what every
-    // Merit price costs in play time, so the campaign came DOWN in Merit to
-    // stay inside the 30-120 case band store.test.ts enforces.
-    assert.equal(campaign.meritPrice, 4800);
+    // 50,000. An unlimited docket means the player never buys another case,
+    // so it is priced at about three months of daily play rather than a week.
+    assert.equal(campaign.meritPrice, 50000);
   });
 });
 

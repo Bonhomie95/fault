@@ -189,18 +189,54 @@ describe('everything meaningful is earnable', () => {
     }
   });
 
-  it('lets a player earn permanent ad removal through service', () => {
-    assert.equal(skuById('no_ads')?.meritPrice, 4500);
+  it('keeps permanent ad removal earnable, but not cheaply', () => {
+    // no_ads ENDS our revenue from a player: no impressions, no rewarded
+    // views, and no reason ever to buy the removal. At 4,500 it was eight
+    // days' earning, so the ad business had an eight-day lifespan per player.
+    // It stays earnable — the free path must be real — at about three months.
+    const merit = skuById('no_ads')!.meritPrice!;
+    assert.ok(merit >= 40000, `no_ads at ${merit} pays for itself in days`);
   });
 
-  it('keeps the campaign a real but long road', () => {
-    const campaign = skuById('campaign')!;
+  it('keeps the unlimited docket a long road, not a weekend', () => {
+    // The band used to be 30-120 cases. That was written when the shop was
+    // decoration; it is a business now. An unlimited docket means the player
+    // never buys another case, so earning it in a week is the single most
+    // expensive thing this catalogue can do. Still earnable, at roughly three
+    // months of daily play.
     const perCase = MERIT.perCase + MERIT.deliberationBonus;
-    const cases = Math.ceil(campaign.meritPrice! / perCase);
-    // Long enough that $4.99 is genuine convenience; short enough that the
-    // free path is not a fiction told to the app store.
-    assert.ok(cases > 30, `only ${cases} cases to earn the campaign — too cheap`);
-    assert.ok(cases < 120, `${cases} cases to earn the campaign — that is not a path, it is a wall`);
+    const cases = Math.ceil(skuById('campaign')!.meritPrice! / perCase);
+    assert.ok(cases > 800, `only ${cases} cases for an unlimited docket — too cheap`);
+  });
+
+  it('does not give the subscription away to anyone patient', () => {
+    // THE bug this file exists to prevent from returning. The Juror Pass is
+    // GBP 4.99 a month and every single thing in it was separately earnable:
+    // the unlimited docket, no adverts, four courtrooms and three packs came
+    // to 22,800 Merit, about 41 days. A free player owned the entire
+    // subscription, permanently, inside six weeks.
+    const perDay =
+      7 * (MERIT.perCase + MERIT.deliberationBonus) +
+      3 * 15 +
+      MERIT.streakCap +
+      MERIT.rewardedAdsPerDay * MERIT.rewardedAd;
+    // The CHEAPEST Merit route to each thing the pass includes, which is the
+    // one a player would actually take. `find` picked whichever SKU came
+    // first — often the starter bundle, which has no Merit price at all — and
+    // undercounted the total by more than half.
+    const cheapest = (g: string) =>
+      Math.min(
+        ...SKUS.filter((s) => s.grants.includes(g as never) && s.meritPrice !== null).map(
+          (s) => s.meritPrice!,
+        ),
+        Infinity,
+      );
+    const earnable = PASS_INCLUDES
+      .map(cheapest)
+      .filter((n) => Number.isFinite(n))
+      .reduce((a, b) => a + b, 0);
+    const days = earnable / perDay;
+    assert.ok(days > 180, `the whole pass is earnable in ${days.toFixed(0)} days`);
   });
 });
 
