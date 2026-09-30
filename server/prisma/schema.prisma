@@ -53,9 +53,9 @@ enum AuthProvider {
 /// The ladder. You start where you live and climb outward; nobody hears a
 /// war-crimes case in their first week.
 enum Tier {
-  district      // where you live
-  state         // region / fylke / province / state
-  national      // federal
+  district // where you live
+  state // region / fylke / province / state
+  national // federal
   supranational // EU, African Union, ASEAN, Mercosur...
   international // treaty courts
   world
@@ -79,40 +79,40 @@ enum MissionKind {
 /// touch rank, trust, verdicts or the clock — see domain/store.ts.
 enum Entitlement {
   // ---- content: more game ----
-  campaign      // the full docket, past the 10-case trial
+  campaign // the full docket, past the 10-case trial
   pack_corporate
   pack_cold_case
   pack_political
 
   // ---- convenience: less friction ----
-  no_ads        // forever
+  no_ads // forever
 
   // ---- cosmetic: nothing but how it looks ----
   // These exist because they are the only honest way to take more money from
   // a game about integrity. They change the room, never the verdict.
-  seal_brass    // the juror's seal on the record and the boards
+  seal_brass // the juror's seal on the record and the boards
   seal_obsidian
   seal_ivory
-  room_oak      // the courtroom's wood and light
+  room_oak // the courtroom's wood and light
   room_concrete
   stock_onionskin // the dossier's paper
   stock_vellum
 
   room_marble
   room_night
-  seal_gold     // the Juror Pass seal; only while the pass is live
+  seal_gold // the Juror Pass seal; only while the pass is live
 
   // ---- subscription ----
-  pass          // the Juror Pass: expires (UserEntitlement.expiresAt)
+  pass // the Juror Pass: expires (UserEntitlement.expiresAt)
 
   // ---- support ----
-  patron        // named in the credits; a seal and a line, nothing more
+  patron // named in the credits; a seal and a line, nothing more
 }
 
 enum PurchaseSource {
-  store   // real money, via a validated receipt
-  merit   // earned by playing
-  grant   // support, promo, restore
+  store // real money, via a validated receipt
+  merit // earned by playing
+  grant // support, promo, restore
 }
 
 /// Where Merit came from. Every one of these is service or attention —
@@ -129,29 +129,43 @@ enum MeritReason {
 }
 
 model User {
-  id           String   @id @default(cuid())
+  id String @id @default(cuid())
+
+  /// A house juror, not a person.
+  ///
+  /// The boards rank cities, and a board with four cities on it tells a new
+  /// player the game is empty — which is the moment they leave. These are
+  /// seeded jurors with plausible names, countries and cities, so the world
+  /// has a population from the first day.
+  ///
+  /// Flagged rather than inferred, because the rest of the system has to be
+  /// able to tell: they hold no credentials and cannot be signed into, they
+  /// must never be counted as players in a metric, and if this game ever pays
+  /// out they must be excluded from the ranking that pays. Indexed because
+  /// that exclusion is a WHERE clause on the hottest query in the app.
+  isSynthetic   Boolean   @default(false)
   /// Chosen by the player, always. The OAuth provider's display name is never
   /// adopted — you pick who you are in the jury room.
   ///
   /// Filtered and normalised on the way in (domain/jurorName): this string is
   /// published on the public leaderboard, so it is user-generated content and
   /// is treated as such.
-  jurorName    String
+  jurorName     String
   /// When the name last changed, for the rename cooldown. Null means never.
   /// A name that can change every few seconds cannot be reported by anyone,
   /// because it will not be the same name by the time a human looks.
   nameChangedAt DateTime?
-  createdAt    DateTime @default(now())
-  lastSeenAt   DateTime @default(now())
+  createdAt     DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
 
   /// The player's own timezone (IANA, e.g. "Europe/Oslo"), captured at
   /// sign-in. Streaks are a human thing: a day ends at the player's midnight,
   /// not at UTC's.
-  timezone     String   @default("UTC")
+  timezone String @default("UTC")
 
   /// Merit — earned by service, spendable in the store. Never buys standing.
   /// The ledger in MeritEntry is the truth; this is the running total.
-  merit        Int      @default(0)
+  merit Int @default(0)
 
   // NOTE: trialUnlocked is gone. Entitlements are rows now, and rows are only
   // ever written by a validated receipt or an earned purchase — never by the
@@ -163,21 +177,21 @@ model User {
   // Only the country and district are ever stored: the personalisation is
   // country-level, so keeping coordinates would be collecting what the game
   // does not use.
-  homeCountry  String?  // ISO 3166-1 alpha-2, e.g. "NO"
-  homeDistrict String?  // real district within that country, e.g. "Oslo"
+  homeCountry    String? // ISO 3166-1 alpha-2, e.g. "NO"
+  homeDistrict   String? // real district within that country, e.g. "Oslo"
   /// Where the player is currently sitting. Starts at their home district and
   /// climbs; may sit in another country once an application is accepted.
-  currentTier      Tier    @default(district)
-  currentCountry   String?
-  localeTag        String? // e.g. "nb-NO" — drives naming register
+  currentTier    Tier    @default(district)
+  currentCountry String?
+  localeTag      String? // e.g. "nb-NO" — drives naming register
 
   // ---- Standing ----
   // Rank is service and only ever rises; it cannot spoil a case because it
   // does not know whether you were right. Trust is judgement, and it moves
   // only on delayed outcomes surfaced at review breaks (see progression.ts).
-  rank         Int      @default(1)
-  xp           Int      @default(0)
-  trust        Float    @default(50)
+  rank  Int   @default(1)
+  xp    Int   @default(0)
+  trust Float @default(50)
 
   currentStreak Int     @default(0)
   longestStreak Int     @default(0)
@@ -188,8 +202,8 @@ model User {
   // take (2 or 3, rolled fresh each time). Both live here rather than in the
   // client because an ad cadence the client owns is an ad cadence the client
   // skips — and because the roll must not be re-rollable by reopening the app.
-  casesSinceAd  Int     @default(0)
-  adEveryNCases Int     @default(3)
+  casesSinceAd  Int @default(0)
+  adEveryNCases Int @default(3)
 
   // ---- The daily docket ----
   /// Streak shields held. One is spent, automatically, to cover each missed
@@ -221,29 +235,30 @@ model User {
 
   // ---- Consent & accounts ----
   /// When the player accepted the Terms and Privacy Policy, and which version.
-  consentedAt     DateTime?
-  consentVersion  String?
+  consentedAt       DateTime?
+  consentVersion    String?
   /// Sign in with Apple refresh token, kept ONLY so account deletion can revoke
   /// it with Apple (App Store guideline 5.1.1(v)). Never sent to the client.
   appleRefreshToken String?
 
-  news         NewsItem[]
+  news NewsItem[]
 
-  identities   AuthIdentity[]
+  identities    AuthIdentity[]
   refreshTokens RefreshToken[]
-  entitlements UserEntitlement[]
-  purchases    Purchase[]
-  meritLedger  MeritEntry[]
-  adEvents     AdEvent[]
-  applications JurisdictionApplication[]
-  missions     MissionProgress[]
-  cases        Case[]
-  verdicts     VerdictRecord[]
-  characters   Character[]
-  reports      ContentReport[]
-  cityState    CityState?
-  jurorProfile JurorProfile?
+  entitlements  UserEntitlement[]
+  purchases     Purchase[]
+  meritLedger   MeritEntry[]
+  adEvents      AdEvent[]
+  applications  JurisdictionApplication[]
+  missions      MissionProgress[]
+  cases         Case[]
+  verdicts      VerdictRecord[]
+  characters    Character[]
+  reports       ContentReport[]
+  cityState     CityState?
+  jurorProfile  JurorProfile?
 
+  @@index([isSynthetic])
   @@map("users")
 }
 
@@ -260,23 +275,23 @@ model User {
 /// nulled rather than cascaded — because a report about a case is evidence
 /// about the generator, and it outlives the person who filed it.
 model ContentReport {
-  id         String    @id @default(cuid())
+  id String @id @default(cuid())
 
   reporterId String?
-  reporter   User?     @relation(fields: [reporterId], references: [id], onDelete: SetNull)
+  reporter   User?   @relation(fields: [reporterId], references: [id], onDelete: SetNull)
 
   /// "case" | "juror_name"
-  kind       String
+  kind      String
   /// The case id, or the user id whose name is being reported.
-  subjectId  String
-  reason     String
-  detail     String?   @db.Text
+  subjectId String
+  reason    String
+  detail    String? @db.Text
 
   reviewedAt DateTime?
   /// What was done about it, in a human's words.
   resolution String?   @db.Text
 
-  createdAt  DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([reviewedAt, createdAt])
   @@index([kind, subjectId])
@@ -286,9 +301,9 @@ model ContentReport {
 /// Refresh tokens, stored hashed — a database dump should not be a pile of
 /// working credentials. Rotated on every use so a stolen one surfaces loudly.
 model RefreshToken {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   tokenHash String    @unique
   expiresAt DateTime
@@ -301,13 +316,13 @@ model RefreshToken {
 
 /// What a juror owns. One row per thing; the row IS the entitlement.
 model UserEntitlement {
-  id          String      @id @default(cuid())
-  userId      String
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   entitlement Entitlement
   source      PurchaseSource
-  grantedAt   DateTime    @default(now())
+  grantedAt   DateTime       @default(now())
   /// Null = forever. Set for subscriptions; the store's own expiry, re-read
   /// from Apple or Google on every renewal/restore.
   expiresAt   DateTime?
@@ -319,9 +334,9 @@ model UserEntitlement {
 
 /// Every purchase, money or Merit, for support and for restore.
 model Purchase {
-  id          String         @id @default(cuid())
-  userId      String
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   sku         String
   source      PurchaseSource
@@ -332,9 +347,9 @@ model Purchase {
 
   /// The store's own transaction id. Unique so a replayed receipt cannot be
   /// redeemed twice — the single most attacked path in any IAP flow.
-  transactionId String?      @unique
-  platform    String?        // "ios" | "android"
-  createdAt   DateTime       @default(now())
+  transactionId String?  @unique
+  platform      String? // "ios" | "android"
+  createdAt     DateTime @default(now())
 
   @@index([userId])
   @@map("purchases")
@@ -343,16 +358,16 @@ model Purchase {
 /// The Merit ledger. Append-only: the balance is derived from this, so a bug
 /// in a grant is auditable rather than invisible.
 model MeritEntry {
-  id        String      @id @default(cuid())
-  userId    String
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// Positive earns, negative spends.
   delta     Int
   reason    MeritReason
   /// What caused it — a case id, a mission key, a sku.
   reference String?
-  balance   Int         // running balance after this entry, for cheap audit
+  balance   Int // running balance after this entry, for cheap audit
   createdAt DateTime    @default(now())
 
   @@index([userId, createdAt])
@@ -362,11 +377,11 @@ model MeritEntry {
 /// Rewarded-ad views. Rate-limited server-side: a rewarded ad pays Merit, so
 /// without a cap it is a faucet anyone can hold open.
 model AdEvent {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  kind      String   // "rewarded" | "interstitial"
+  kind      String // "rewarded" | "interstitial"
   /// What a rewarded view paid: "merit" or "case".
   reward    String?
   /// The ad network's own view id, so one view cannot be claimed twice.
@@ -381,18 +396,18 @@ model AdEvent {
 /// One row per provider per user, so a juror can attach both Apple and Google
 /// to the same record and keep one career.
 model AuthIdentity {
-  id         String       @id @default(cuid())
-  userId     String
-  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  provider   AuthProvider
+  provider  AuthProvider
   /// The provider's stable subject id. Never an email: Apple's private relay
   /// address can change, the subject cannot.
-  subject    String
+  subject   String
   /// Only stored when the provider shares it and the player consents. Apple
   /// gives this exactly once, at first authorisation.
-  email      String?
-  createdAt  DateTime     @default(now())
+  email     String?
+  createdAt DateTime     @default(now())
 
   @@unique([provider, subject])
   @@index([userId])
@@ -402,21 +417,21 @@ model AuthIdentity {
 /// An application to sit as a juror somewhere you are not from (GDD extension).
 /// Decided on the record: rank, trust, consistency, evidence alignment.
 model JurisdictionApplication {
-  id          String            @id @default(cuid())
-  userId      String
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  country     String            // ISO alpha-2 being applied to
-  tier        Tier
-  status      ApplicationStatus @default(pending)
+  country         String // ISO alpha-2 being applied to
+  tier            Tier
+  status          ApplicationStatus @default(pending)
   /// The bench's written reasoning — the player reads a decision, not a score.
-  decisionText String?          @db.Text
+  decisionText    String?           @db.Text
   /// Snapshot of what the record looked like when judged, so a later decision
   /// can be explained honestly.
   trustAtDecision Float?
   rankAtDecision  Int?
-  decidedAt   DateTime?
-  createdAt   DateTime          @default(now())
+  decidedAt       DateTime?
+  createdAt       DateTime          @default(now())
 
   @@index([userId, status])
   @@map("jurisdiction_applications")
@@ -425,18 +440,18 @@ model JurisdictionApplication {
 /// Missions are the reason to come back. Progress is per-period so a daily
 /// resets without destroying career-long objectives.
 model MissionProgress {
-  id         String      @id @default(cuid())
-  userId     String
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  key        String      // stable mission id, e.g. "hear_three"
-  kind       MissionKind
+  key         String // stable mission id, e.g. "hear_three"
+  kind        MissionKind
   /// The period this instance belongs to: "2026-07-16" daily, "2026-W29"
   /// weekly, "career" for career missions.
-  period     String
-  progress   Int         @default(0)
-  target     Int
-  claimed    Boolean     @default(false)
+  period      String
+  progress    Int         @default(0)
+  target      Int
+  claimed     Boolean     @default(false)
   completedAt DateTime?
 
   @@unique([userId, key, period])
@@ -445,18 +460,18 @@ model MissionProgress {
 }
 
 model CityState {
-  id                   String   @id @default(cuid())
-  userId               String   @unique
-  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  crimeRate            Float    @default(50)
-  judicialTrust        Float    @default(50)
-  wealthDisparity      Float    @default(50)
-  organizedCrimePower  Float    @default(50)
-  policeIntegrity      Float    @default(50)
-  mediaPressure        Float    @default(50)
+  crimeRate           Float @default(50)
+  judicialTrust       Float @default(50)
+  wealthDisparity     Float @default(50)
+  organizedCrimePower Float @default(50)
+  policeIntegrity     Float @default(50)
+  mediaPressure       Float @default(50)
 
-  activeFactions       String[] @default([])
+  activeFactions String[] @default([])
 
   /// The six dials collapsed to the one scalar both boards sort on
   /// (domain/peace.peaceIndex), stored rather than computed per query.
@@ -472,74 +487,74 @@ model CityState {
   /// Default 50 is not arbitrary — it is what peaceIndex() returns for the
   /// all-50 starting city, so a freshly created row is already correct.
   /// services/cityState is the only writer, and it recomputes on every write.
-  peaceIndex           Float    @default(50)
+  peaceIndex Float @default(50)
 
-  updatedAt            DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 
   @@index([peaceIndex])
   @@map("city_state")
 }
 
 model Case {
-  id                  String         @id @default(cuid())
-  userId              String
-  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// 1-indexed position in this player's docket. Drives chapter + echo windows.
-  caseNumber          Int
-  title               String
-  charge              String
-  accent              String         // case mood colour (GDD 5.1)
-  mood                String         // derived from city state at generation time
+  caseNumber Int
+  title      String
+  charge     String
+  accent     String // case mood colour (GDD 5.1)
+  mood       String // derived from city state at generation time
 
   // ---- Where this case was heard ----
-  country             String         @default("NO") // ISO alpha-2
+  country      String @default("NO") // ISO alpha-2
   /// Real jurisdiction this sits in, e.g. "Oslo tingrett" / "Oslo politidistrikt".
   /// The institution is real; every person in the case is not.
-  jurisdiction        String         @default("")
-  tier                Tier           @default(district)
+  jurisdiction String @default("")
+  tier         Tier   @default(district)
 
   defendantName       String
   defendantAge        Int
   defendantOccupation String
-  defendantBackground String         @db.Text
+  defendantBackground String @db.Text
   /// Wealth band 0-100. Never shown to the player; used to score
   /// socioeconomic_bias and to pick the city effect.
-  defendantWealth     Float          @default(50)
+  defendantWealth     Float  @default(50)
   /// How sympathetic this defendant *looks* — 0 unsettling, 100 disarming.
   /// Drives the face and nothing else the player can read. Paired with the
   /// verdict it measures appearance_bias: whether a face changed your mind.
   /// Rolled server-side, blind to the verdict (domain/presentation).
-  defendantAppearance Float          @default(50)
+  defendantAppearance Float  @default(50)
   /// BODY LANGUAGE — 0 closed and defensive, 100 open and still.
   /// The second thing a juror reads off a person and the second thing that
   /// means nothing. Measures demeanour_bias.
-  defendantDemeanour  Float          @default(50)
+  defendantDemeanour  Float  @default(50)
   /// ODDITY — 0 unremarkable, 100 openly strange.
   /// The uncanny axis: a gaze that does not quite land, a face fractionally
   /// out of true. Measures oddity_bias — the bias people are least willing to
   /// admit to and least able to justify to a defendant.
-  defendantOddity     Float          @default(50)
+  defendantOddity     Float  @default(50)
 
-  evidence            Json           // Evidence[]
-  witnesses           Json           // Witness[]
-  prosecutionArgument String         @db.Text
-  defenceArgument     String         @db.Text
+  evidence            Json // Evidence[]
+  witnesses           Json // Witness[]
+  prosecutionArgument String @db.Text
+  defenceArgument     String @db.Text
   /// CourtroomLine[] — outbursts, witness asides, counsel jabs. Presentation.
-  lines               Json           @default("[]")
+  lines               Json   @default("[]")
 
-  correctVerdict      CorrectVerdict
+  correctVerdict   CorrectVerdict
   /// Which side the evidence actually favours, for evidence_weight scoring.
-  evidenceStrength    Float          @default(0) // -1 fully defence .. +1 fully prosecution
-  isHandAuthored      Boolean        @default(false)
+  evidenceStrength Float          @default(0) // -1 fully defence .. +1 fully prosecution
+  isHandAuthored   Boolean        @default(false)
 
   /// Structural fingerprint. Two cases sharing this are the consistency probe
   /// (GDD 2.5): identical structure, delivered ~20 cases apart.
-  structureKey        String?
+  structureKey String?
 
   /// Community consensus for the "63% of players convicted" beat (GDD 11.4).
-  consensusGuilty     Int            @default(0)
-  consensusNotGuilty  Int            @default(0)
+  consensusGuilty    Int @default(0)
+  consensusNotGuilty Int @default(0)
 
   /// When this case was first handed to the player. THE CLOCK.
   ///
@@ -552,24 +567,24 @@ model Case {
   ///
   /// Null until first served. Re-serving the same pending case does NOT reset
   /// it — that was the reload exploit.
-  servedAt            DateTime?
+  servedAt DateTime?
 
   /// Withheld from the docket pending review, set the moment a player reports
   /// it. Not a delete: the case IS the evidence about how the generator went
   /// wrong, and deleting it destroys the only record of that.
-  quarantinedAt       DateTime?
+  quarantinedAt DateTime?
 
   /// A special docket this case was heard from ("corporate", "cold_case",
   /// "political"), or null for the ordinary docket. Packs are counted by it.
-  pack                String?
+  pack     String?
   /// The Daily Trial this case is ("2026-09-22"), or null. One case, the same
   /// facts for every juror in the world that day; see DailyTrial.
-  dailyKey            String?
+  dailyKey String?
 
-  createdAt           DateTime       @default(now())
+  createdAt DateTime @default(now())
 
-  verdict             VerdictRecord?
-  characters          Character[]
+  verdict    VerdictRecord?
+  characters Character[]
 
   @@unique([userId, caseNumber])
   @@unique([userId, dailyKey])
@@ -578,22 +593,22 @@ model Case {
 }
 
 model VerdictRecord {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  caseId        String   @unique
-  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  caseId String @unique
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
   verdict       Verdict
   /// Seconds left on the clock at the moment of decision. 0 = forced.
   timeRemaining Int
   /// True when the clock ran out and the game chose for you (GDD 2.2).
-  wasHung       Boolean  @default(false)
+  wasHung       Boolean @default(false)
 
   /// Newspaper-style downstream consequence, revealed at the next Dossier
   /// Review. Written at verdict time, read 10 cases later.
-  outcomeText   String?  @db.Text
-  outcomeSeen   Boolean  @default(false)
+  outcomeText String? @db.Text
+  outcomeSeen Boolean @default(false)
 
   /// What this verdict will eventually do to your standing.
   ///
@@ -601,38 +616,38 @@ model VerdictRecord {
   /// moved the instant you tapped would tell you whether you were right, and
   /// the game does not do that (GDD 2.6). It lands at the review break,
   /// alongside the outcome that justifies it.
-  trustDelta    Float    @default(0)
-  trustApplied  Boolean  @default(false)
-  xpAwarded     Int      @default(0)
+  trustDelta   Float   @default(0)
+  trustApplied Boolean @default(false)
+  xpAwarded    Int     @default(0)
 
-  createdAt     DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
   @@map("verdicts")
 }
 
 model Character {
-  id             String        @id @default(cuid())
-  userId         String
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name           String
-  role           CharacterRole
-  fate           CharacterFate
+  name         String
+  role         CharacterRole
+  fate         CharacterFate
   /// Portrait seed — silhouettes are deterministic per character (GDD 5.2),
   /// so a returning face is the same face.
-  portraitSeed   Int
-  themes         String[]      @default([])
+  portraitSeed Int
+  themes       String[]      @default([])
 
-  originCaseId   String
-  originCase     Case          @relation(fields: [originCaseId], references: [id], onDelete: Cascade)
+  originCaseId     String
+  originCase       Case   @relation(fields: [originCaseId], references: [id], onDelete: Cascade)
   originCaseNumber Int
-  lastUsedCase   Int
-  relevanceScore Float         @default(0)
+  lastUsedCase     Int
+  relevanceScore   Float  @default(0)
   /// Times this person has come back. Caps runaway reuse.
-  echoCount      Int           @default(0)
+  echoCount        Int    @default(0)
 
-  createdAt      DateTime      @default(now())
+  createdAt DateTime @default(now())
 
   /// A name IS this person's identity, so one juror cannot hold two rows for
   /// the same name.
@@ -649,30 +664,30 @@ model Character {
 }
 
 model JurorProfile {
-  id                String   @id @default(cuid())
-  userId            String   @unique
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  convictionRate    Float    @default(0)
-  evidenceWeight    Float    @default(0)
-  socioeconomicBias Float    @default(0)
-  consistencyScore  Float    @default(0)
-  pressureAccuracy  Float    @default(0)
-  gutAccuracy       Float    @default(0)
+  convictionRate    Float @default(0)
+  evidenceWeight    Float @default(0)
+  socioeconomicBias Float @default(0)
+  consistencyScore  Float @default(0)
+  pressureAccuracy  Float @default(0)
+  gutAccuracy       Float @default(0)
   /// The seventh measurement: do you acquit the ones who look harmless?
   /// Positive = convicts unsettling-looking defendants more readily.
-  appearanceBias    Float    @default(0)
+  appearanceBias    Float @default(0)
   /// The eighth: do you convict the ones who sit closed and will not open up?
   /// Positive = convicts closed, defensive defendants more readily.
-  demeanourBias     Float    @default(0)
+  demeanourBias     Float @default(0)
   /// The ninth, and the one nobody wants to see: do you convict the strange?
   /// Positive = convicts defendants who strike you as odd more readily.
-  oddityBias        Float    @default(0)
+  oddityBias        Float @default(0)
 
-  totalCases        Int      @default(0)
+  totalCases     Int      @default(0)
   /// Groq-written prose profile (GDD 7.5). Regenerated at each review break.
-  writtenProfile    String?  @db.Text
-  updatedAt         DateTime @updatedAt
+  writtenProfile String?  @db.Text
+  updatedAt      DateTime @updatedAt
 
   /// The leaderboard filters on `totalCases >= MIN_CASES_TO_RANK` and had no
   /// index for it, so qualifying every player meant a sequential scan of this
@@ -726,15 +741,15 @@ enum NewsKind {
 /// juror's own country. The tally is how the world split — never whether it
 /// was right.
 model DailyTrial {
-  day        String   @id // YYYY-MM-DD, UTC
+  day       String   @id // YYYY-MM-DD, UTC
   /// The generated case (GeneratedCase JSON) with its placeholder cast, or
   /// null when the day fell back to the authored docket (seedIndex).
-  payload    Json?
-  seedIndex  Int?
-  guilty     Int      @default(0)
-  notGuilty  Int      @default(0)
-  hung       Int      @default(0)
-  createdAt  DateTime @default(now())
+  payload   Json?
+  seedIndex Int?
+  guilty    Int      @default(0)
+  notGuilty Int      @default(0)
+  hung      Int      @default(0)
+  createdAt DateTime @default(now())
 
   @@map("daily_trials")
 }

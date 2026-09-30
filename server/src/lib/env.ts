@@ -173,6 +173,19 @@ const schema = z.object({
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
 
+  /**
+   * Seed and maintain the house jurors that keep the boards populated.
+   *
+   * ON by default: an empty leaderboard is the thing this exists to prevent,
+   * and a flag that defaults to off would be discovered after launch. Set it
+   * to false once there are enough real players that the house is noise —
+   * `clearSyntheticPool()` removes them, and the boards keep working.
+   */
+  SYNTHETIC_JURORS: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false' && v !== '0'),
+
   /** Rate limiting off, for tests that legitimately hammer a route. */
   DISABLE_RATE_LIMITS: z
     .string()

@@ -5,6 +5,7 @@ import { log } from './lib/log.js';
 import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
 import { warmDailyTrial } from './services/dailyTrial.js';
+import { ensureSyntheticPool } from './services/syntheticJurors.js';
 
 const server = app.listen(env.PORT, () => {
   log.info('listening', { port: env.PORT });
@@ -27,6 +28,21 @@ const server = app.listen(env.PORT, () => {
    */
   // Today's Daily Trial, written before the first juror asks for it.
   if (env.NODE_ENV !== 'test') warmDailyTrial();
+
+  /**
+   * Top the house jurors up, so the boards are never empty.
+   *
+   * Idempotent and cheap when the pool is already full — one COUNT — so it is
+   * safe on every boot, and a deploy that happens to be the first one seeds
+   * the world without anybody running a script. Non-fatal: an empty board is
+   * a worse launch than a slow one, but neither is worth refusing to start
+   * over.
+   */
+  if (env.NODE_ENV !== 'test' && env.SYNTHETIC_JURORS) {
+    ensureSyntheticPool().catch((err: Error) => {
+      log.warn('synthetic pool not seeded', { error: err.message });
+    });
+  }
 
   if (aiEnabled) {
     void checkModelAvailable().then((result) => {

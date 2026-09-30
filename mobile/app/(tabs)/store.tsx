@@ -394,13 +394,23 @@ export default function Store() {
               <ItemCard key={id} item={by.get(id)!} price={price(id)} busy={busy} onEarn={earn} onPay={pay} />
             ))}
 
-            {/* ---- Merit ---- */}
-            {['merit_small', 'merit_medium', 'merit_large'].some((id) => price(id)) && (
-              <Text style={styles.section}>MERIT</Text>
-            )}
-            {['merit_small', 'merit_medium', 'merit_large', 'patron'].map((id) => by.get(id) && price(id) && (
+            {/* ---- Merit ----
+                Always shown, whether or not the store has prices yet.
+                It used to render only when `price(id)` came back non-null,
+                which meant that before the products existed in App Store
+                Connect the one part of the shelf that SELLS THE CURRENCY was
+                invisible — there was no visible way to buy Merit at all, and
+                nothing to say why. The pass has said "not available from this
+                device yet" in that situation all along; this now does too. */}
+            <Text style={styles.section}>MERIT · BUY IT OUTRIGHT</Text>
+            {['merit_small', 'merit_medium', 'merit_large', 'patron'].map((id) => by.get(id) && (
               <ItemCard key={id} item={by.get(id)!} price={price(id)} busy={busy} onEarn={earn} onPay={pay} />
             ))}
+            {!['merit_small', 'merit_medium', 'merit_large'].some((id) => price(id)) && (
+              <Text style={styles.terms}>
+                Merit bundles are not available from this device yet.
+              </Text>
+            )}
 
             <Pressable onPress={onRestore} style={styles.linkBtn} accessibilityRole="button">
               <Text style={styles.linkText}>RESTORE PURCHASES</Text>
