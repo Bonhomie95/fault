@@ -18,6 +18,7 @@ import {
   rewardedAdsToday,
 } from '../services/economy.js';
 import { verifyReceipt } from '../services/receipts.js';
+import { collectWait, startWait, waitState, WAIT_MS } from '../services/waitReward.js';
 import { verifySsv } from '../services/adSsv.js';
 
 export const storeRouter = Router();
@@ -108,6 +109,18 @@ storeRouter.get('/', requireJuror, economyLimiter, async (req, res) => {
     rewardedAdsLeft: rewarded ? Math.max(0, MERIT.rewardedAdsPerDay - meritViews) : 0,
     rewardedCasesLeft: rewarded ? docket.adCasesLeft : 0,
     rewardedAdMerit: MERIT.rewardedAd,
+    /**
+     * The slow path, per reward: whether a wait is running, when it finishes,
+     * and how much of today's allowance is left.
+     *
+     * Sent whether or not adverts are available, because a player without
+     * adverts is exactly who the wait is for.
+     */
+    wait: {
+      ms: WAIT_MS,
+      merit: await waitState(userId, 'merit'),
+      case: await waitState(userId, 'case'),
+    },
     items: SKUS.filter((s) => !s.starter || starterAvailable).map((s) => ({
       id: s.id,
       title: s.title,
@@ -295,6 +308,45 @@ storeRouter.post('/ad-reward', requireJuror, economyLimiter, async (req, res) =>
     res.json({ merit, awarded: parsed.data.reward === 'merit' ? MERIT.rewardedAd : 0 });
   } catch (err) {
     res.status(429).json({ error: (err as Error).message });
+  }
+});
+
+/**
+ * The other way to open a reward: start a wait, come back for it.
+ *
+ * Offered whether or not adverts are available, because the players who cannot
+ * or will not watch one are exactly the players this exists for. It draws on
+ * the SAME daily allowance as a rewarded view (services/waitReward), so the
+ * two routes are a choice about how to spend one allowance rather than two
+ * faucets.
+ */
+storeRouter.post('/wait/start', requireJuror, economyLimiter, async (req, res) => {
+  const parsed = z.object({ reward: z.enum(['merit', 'case']).default('merit') }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'reward required' });
+    return;
+  }
+  try {
+    res.json({ ...(await startWait(req.juror.userId, parsed.data.reward)), waitMs: WAIT_MS });
+  } catch (err) {
+    res.status(429).json({ error: (err as Error).message });
+  }
+});
+
+/**
+ * Collect a finished wait. The clock is the server's — see waitReward.
+ */
+storeRouter.post('/wait/claim', requireJuror, economyLimiter, async (req, res) => {
+  const parsed = z.object({ reward: z.enum(['merit', 'case']).default('merit') }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'reward required' });
+    return;
+  }
+  try {
+    const merit = await collectWait(req.juror.userId, parsed.data.reward);
+    res.json({ merit, awarded: parsed.data.reward === 'merit' ? MERIT.rewardedAd : 0 });
+  } catch (err) {
+    res.status(409).json({ error: (err as Error).message });
   }
 });
 

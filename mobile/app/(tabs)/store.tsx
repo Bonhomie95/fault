@@ -1,13 +1,13 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Busy } from '@/components/Busy';
 import { Seal, type SealKind } from '@/components/Seal';
 import { THEMES } from '@/components/scene2d/themes';
-import { Accents, Fonts, Palette, Radius, Type } from '@/constants/theme';
+import { Accents, Fonts, Palette, Radius, Space, Type } from '@/constants/theme';
 import { adsAvailable, earnReward } from '@/lib/ads';
-import { api, type RoomTheme, type SealStyle, type StoreItem, type StoreView } from '@/lib/api';
+import { api, type RoomTheme, type SealStyle, type StoreItem, type StoreView, type WaitState } from '@/lib/api';
 import * as haptic from '@/lib/haptics';
 import { loadProducts, manageSubscriptions, type StoreProduct } from '@/lib/iap';
 import { buy, purchasesAvailable, restore } from '@/lib/purchases';
@@ -120,6 +120,36 @@ export default function Store() {
       else setNotice('No notice was available. Nothing was lost.');
     });
 
+  /**
+   * A clock that ticks while a wait is running.
+   *
+   * The countdown is drawn from the server's readyAt minus now, so the only
+   * local state is "what time is it" — the client never counts down its own
+   * timer, and a backgrounded app that returns shows the truth rather than
+   * wherever its interval got to.
+   */
+  const [now, setNow] = useState(() => Date.now());
+  const waiting =
+    (view?.wait.merit.readyAt ?? null) !== null || (view?.wait.case.readyAt ?? null) !== null;
+  useEffect(() => {
+    if (!waiting) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [waiting]);
+
+  const beginWait = (reward: 'merit' | 'case') =>
+    run(`wait-${reward}`, async () => {
+      await api.startWait(reward);
+      await load();
+      haptic.tapLight();
+    });
+
+  const collect = (reward: 'merit' | 'case') =>
+    run(`collect-${reward}`, async () => {
+      await api.claimWait(reward);
+      await after(reward === 'merit' ? `+${view?.rewardedAdMerit ?? 0} Merit.` : 'One more case open today.');
+    });
+
   const equip = (body: { room?: RoomTheme | null; seal?: SealStyle | null }) =>
     run('equip', async () => {
       await api.equip(body);
@@ -197,6 +227,29 @@ export default function Store() {
             {/* ---- The Juror Pass ---- */}
             <View style={[styles.card, styles.pass]}>
               <View style={styles.row}>
+
+            {/* ---- Merit, FIRST ----
+                A shop leads with what it sells. This sat at the very bottom, under
+                the pass, the free rewards, the docket, four courtrooms, three
+                seals and the shields — so the one thing that takes money was
+                the last thing anybody scrolled to, if they scrolled that far.
+                Always shown, whether or not the store has prices yet.
+                It used to render only when `price(id)` came back non-null,
+                which meant that before the products existed in App Store
+                Connect the one part of the shelf that SELLS THE CURRENCY was
+                invisible — there was no visible way to buy Merit at all, and
+                nothing to say why. The pass has said "not available from this
+                device yet" in that situation all along; this now does too. */}
+            <Text style={styles.section}>MERIT · BUY IT OUTRIGHT</Text>
+            {['merit_small', 'merit_medium', 'merit_large', 'patron'].map((id) => by.get(id) && (
+              <ItemCard key={id} item={by.get(id)!} price={price(id)} busy={busy} onEarn={earn} onPay={pay} />
+            ))}
+            {!['merit_small', 'merit_medium', 'merit_large'].some((id) => price(id)) && (
+              <Text style={styles.terms}>
+                Merit bundles are not available from this device yet.
+              </Text>
+            )}
+
                 <Text style={styles.passTitle}>JUROR PASS</Text>
                 <Seal kind="seal_gold" size={22} />
               </View>
@@ -259,24 +312,40 @@ export default function Store() {
               )}
             </View>
 
-            {/* ---- Free, for a moment of attention ---- */}
-            {rewarded && (view.rewardedAdsLeft > 0 || view.rewardedCasesLeft > 0) && (
+            {/* ---- Free: watch for it, or wait for it ----
+                This used to render only when adverts were available, which hid
+                the whole section from the players the WAIT path exists for. It
+                now follows the ALLOWANCE, and the advert button appears within
+                it only when there is an advert to show. */}
+            {(view.wait.merit.left > 0 || view.wait.case.left > 0) && (
               <View style={[styles.card, styles.free]}>
-                <Text style={styles.section}>FREE · WATCH A SHORT NOTICE</Text>
-                {view.rewardedAdsLeft > 0 && (
+                <Text style={styles.section}>FREE · WATCH IT, OR WAIT FOR IT</Text>
+                {view.wait.merit.left > 0 && (
                   <FreeRow
                     title={`+${view.rewardedAdMerit} Merit`}
-                    sub={`${view.rewardedAdsLeft} left today`}
+                    sub={`${view.wait.merit.left} left today`}
                     onPress={() => watch('merit')}
                     busy={busy === 'watch-merit'}
+                    canWatch={rewarded && view.rewardedAdsLeft > 0}
+                    wait={view.wait.merit}
+                    now={now}
+                    onWait={() => beginWait('merit')}
+                    onCollect={() => collect('merit')}
+                    waitBusy={busy === 'wait-merit' || busy === 'collect-merit'}
                   />
                 )}
-                {!view.docket.unlimited && view.rewardedCasesLeft > 0 && (
+                {!view.docket.unlimited && view.wait.case.left > 0 && (
                   <FreeRow
                     title="+1 case today"
-                    sub={`${view.rewardedCasesLeft} left today`}
+                    sub={`${view.wait.case.left} left today`}
                     onPress={() => watch('case')}
                     busy={busy === 'watch-case'}
+                    canWatch={rewarded && view.rewardedCasesLeft > 0}
+                    wait={view.wait.case}
+                    now={now}
+                    onWait={() => beginWait('case')}
+                    onCollect={() => collect('case')}
+                    waitBusy={busy === 'wait-case' || busy === 'collect-case'}
                   />
                 )}
               </View>
@@ -394,23 +463,6 @@ export default function Store() {
               <ItemCard key={id} item={by.get(id)!} price={price(id)} busy={busy} onEarn={earn} onPay={pay} />
             ))}
 
-            {/* ---- Merit ----
-                Always shown, whether or not the store has prices yet.
-                It used to render only when `price(id)` came back non-null,
-                which meant that before the products existed in App Store
-                Connect the one part of the shelf that SELLS THE CURRENCY was
-                invisible — there was no visible way to buy Merit at all, and
-                nothing to say why. The pass has said "not available from this
-                device yet" in that situation all along; this now does too. */}
-            <Text style={styles.section}>MERIT · BUY IT OUTRIGHT</Text>
-            {['merit_small', 'merit_medium', 'merit_large', 'patron'].map((id) => by.get(id) && (
-              <ItemCard key={id} item={by.get(id)!} price={price(id)} busy={busy} onEarn={earn} onPay={pay} />
-            ))}
-            {!['merit_small', 'merit_medium', 'merit_large'].some((id) => price(id)) && (
-              <Text style={styles.terms}>
-                Merit bundles are not available from this device yet.
-              </Text>
-            )}
 
             <Pressable onPress={onRestore} style={styles.linkBtn} accessibilityRole="button">
               <Text style={styles.linkText}>RESTORE PURCHASES</Text>
@@ -568,16 +620,91 @@ function ItemCard({
   );
 }
 
-function FreeRow({ title, sub, onPress, busy }: { title: string; sub: string; onPress: () => void; busy: boolean }) {
+/** mm:ss, for a countdown a player is watching tick. */
+function countdownLabel(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/**
+ * One reward, and the two ways to open it.
+ *
+ * WATCH is the fast path and stays first, because it is the one that pays for
+ * the game. WAIT is for everyone who cannot or will not watch a video — a slow
+ * connection that never fills an advert, an ad-free purchase, or simply a
+ * refusal — who previously had no route to the reward at all.
+ *
+ * The countdown is drawn from the server's `readyAt` and re-rendered on a
+ * ticking clock, never counted down locally: the client showing a timer is a
+ * convenience, and the server deciding the wait is over is the rule.
+ */
+function FreeRow({
+  title,
+  sub,
+  onPress,
+  busy,
+  canWatch,
+  wait,
+  now,
+  onWait,
+  onCollect,
+  waitBusy,
+}: {
+  title: string;
+  sub: string;
+  onPress: () => void;
+  busy: boolean;
+  canWatch: boolean;
+  wait: WaitState | null;
+  now: number;
+  onWait: () => void;
+  onCollect: () => void;
+  waitBusy: boolean;
+}) {
+  const running = wait?.readyAt != null && !wait.ready && wait.readyAt > now;
+  const ready = wait != null && (wait.ready || (wait.readyAt != null && wait.readyAt <= now));
+
   return (
     <View style={styles.row}>
       <View style={{ flex: 1 }}>
         <Text style={styles.itemTitle}>{title}</Text>
         <Text style={styles.blurb}>{sub}</Text>
       </View>
-      <Pressable onPress={onPress} disabled={busy} style={styles.watchBtn} accessibilityRole="button" hitSlop={6}>
-        <Text style={styles.watchText}>WATCH</Text>
-      </Pressable>
+
+      {ready ? (
+        <Pressable
+          onPress={onCollect}
+          disabled={waitBusy}
+          style={[styles.watchBtn, styles.collectBtn]}
+          accessibilityRole="button"
+          hitSlop={6}
+        >
+          <Text style={[styles.watchText, styles.collectText]}>COLLECT</Text>
+        </Pressable>
+      ) : running ? (
+        <View style={[styles.watchBtn, styles.waitingBtn]} accessibilityRole="timer">
+          <Text style={[styles.watchText, styles.waitingText]}>
+            {countdownLabel(wait!.readyAt! - now)}
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.freeActions}>
+          {canWatch && (
+            <Pressable onPress={onPress} disabled={busy} style={styles.watchBtn} accessibilityRole="button" hitSlop={6}>
+              <Text style={styles.watchText}>WATCH</Text>
+            </Pressable>
+          )}
+          <Pressable
+            onPress={onWait}
+            disabled={waitBusy}
+            style={[styles.watchBtn, styles.waitBtn]}
+            accessibilityRole="button"
+            hitSlop={6}
+          >
+            <Text style={[styles.watchText, styles.waitText]}>WAIT</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -729,6 +856,15 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
   },
   watchText: { fontFamily: Fonts.monoBold, fontSize: Type.micro, letterSpacing: 1.4, color: Accents.passion },
+  freeActions: { flexDirection: 'row', alignItems: 'center', gap: Space.sm },
+  // The slow path reads quieter than the advert on purpose: it is the fallback,
+  // not the offer.
+  waitBtn: { borderColor: Palette.hairlineBright },
+  waitText: { color: Palette.textMuted },
+  waitingBtn: { borderColor: Palette.hairlineBright, minWidth: 74, alignItems: 'center' },
+  waitingText: { color: Palette.textMuted, letterSpacing: 1 },
+  collectBtn: { borderColor: Accents.systemic, backgroundColor: 'rgba(133,212,194,0.12)' },
+  collectText: { color: Accents.systemic },
   lockedRow: { gap: 6 },
   swatchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6, borderRadius: Radius.sm },
   swatchOn: { backgroundColor: Palette.surfaceRaised },

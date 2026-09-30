@@ -564,6 +564,15 @@ export interface DocketView {
   adCasesLeft: number;
 }
 
+export interface WaitState {
+  /** Epoch millis when the running wait finishes, or null if none is running. */
+  readyAt: number | null;
+  /** Finished and collectable. */
+  ready: boolean;
+  /** How much of today's shared allowance is left for this reward. */
+  left: number;
+}
+
 export interface StoreView {
   merit: number;
   entitlements: Entitlement[];
@@ -577,6 +586,16 @@ export interface StoreView {
   rewardedAdsLeft: number;
   rewardedCasesLeft: number;
   rewardedAdMerit: number;
+  /**
+   * The slow path: wait for a reward instead of watching for it. Present
+   * whether or not adverts are available, because a player without adverts is
+   * exactly who it is for.
+   */
+  wait: {
+    ms: number;
+    merit: WaitState;
+    case: WaitState;
+  };
   items: StoreItem[];
 }
 
@@ -971,6 +990,20 @@ export const api = {
     request<{ merit: number; awarded: number }>('/api/store/ad-reward', {
       method: 'POST',
       body: { viewId, reward },
+    }),
+
+  /** Start the slow path to a reward. Idempotent while one is running. */
+  startWait: (reward: 'merit' | 'case' = 'merit') =>
+    request<WaitState & { waitMs: number }>('/api/store/wait/start', {
+      method: 'POST',
+      body: { reward },
+    }),
+
+  /** Collect a finished wait. The server decides whether it finished. */
+  claimWait: (reward: 'merit' | 'case' = 'merit') =>
+    request<{ merit: number; awarded: number }>('/api/store/wait/claim', {
+      method: 'POST',
+      body: { reward },
     }),
 
   /** Put on a courtroom or seal the juror owns; null takes it off. */
