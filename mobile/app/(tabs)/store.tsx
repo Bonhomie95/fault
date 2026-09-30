@@ -527,8 +527,21 @@ function ItemCard({
   onEarn: (i: StoreItem) => void;
   onPay: (i: StoreItem) => void;
 }) {
-  // Money-only items the store cannot sell here are not shown at all.
-  if (!item.owned && item.meritPrice === null && !price) return null;
+  /**
+   * A money-only item the store cannot price yet.
+   *
+   * These used to return null — invisible, with nothing to explain them. For
+   * most of the shelf that is right: a courtroom nobody can buy today is noise.
+   * But the MERIT BUNDLES are money-only by definition (you buy the currency
+   * with money; you cannot buy it with itself), so before the products exist in
+   * App Store Connect the entire shelf was priced in Merit with no way anywhere
+   * to obtain Merit. The one thing the shop is for was the one thing it hid.
+   *
+   * Currency is shown regardless, with the price slot saying why it is not
+   * buyable. Everything else keeps the old behaviour.
+   */
+  const unpriced = !item.owned && item.meritPrice === null && !price;
+  if (unpriced && item.kind !== 'currency') return null;
   return (
     <View style={[styles.card, item.owned && styles.ownedCard]}>
       <View style={styles.row}>
@@ -544,6 +557,11 @@ function ItemCard({
         <View style={styles.prices}>
           <MeritButton item={item} onPress={onEarn} busy={busy === item.id} />
           {price && <PriceButton label={price} onPress={() => onPay(item)} busy={busy === item.id} />}
+          {unpriced && (
+            <View style={[styles.buyBtn, styles.cantAfford]}>
+              <Text style={styles.cantAffordText}>Not on sale yet</Text>
+            </View>
+          )}
         </View>
       )}
     </View>

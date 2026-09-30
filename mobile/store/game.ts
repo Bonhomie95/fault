@@ -302,6 +302,17 @@ export const useGame = create<GameState>((set, get) => ({
       },
       city: result.city,
       activeCase: null,
+      /**
+       * Apply the Merit immediately, rather than waiting for the wallet.
+       *
+       * `refreshWallet` below is fire-and-forget over the network, so the
+       * balance on the home screen lagged a verdict by however long the round
+       * trip took — the verdict screen said "+42 MERIT" and the chip behind it
+       * still showed the old number. The server is still the authority; this
+       * is the same arithmetic applied a second early, and the refresh
+       * reconciles it.
+       */
+      merit: get().merit + result.meritAwarded,
     });
     void get().refreshStanding();
     void get().refreshWallet();
