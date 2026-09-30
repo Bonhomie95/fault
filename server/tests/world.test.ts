@@ -192,3 +192,49 @@ describe('the city clock', () => {
     assert.ok(first.length === 0 || second.length === 0, 'the clock ran twice');
   });
 });
+
+const CITY = {
+  crimeRate: 55,
+  judicialTrust: 50,
+  wealthDisparity: 50,
+  organizedCrimePower: 45,
+  policeIntegrity: 50,
+  mediaPressure: 50,
+};
+
+describe('the papers do not print nonsense', () => {
+  it('never link a neighbourhood to itself', () => {
+    // "New bus route links Ojuelegba and Ojuelegba" — a route from a place to
+    // itself, on the front page, in a game whose whole claim is that the city
+    // is real. {hood} and {hood2} drew independently, so in a district with
+    // two neighbourhoods it happened half the time; measured on the code
+    // before the fix, 2466 of 5047 bus-route headlines.
+    //
+    // Math.random, not the seeded roller used elsewhere in this file: that
+    // roller's FIRST value is tiny for a small seed, so `pick` returns index 0
+    // every time and the template that carries {hood2} is never drawn. The
+    // first version of this test passed against the broken code for exactly
+    // that reason.
+    const two: NewsContext = { ...ctx, neighbourhoods: ['Ikorodu', 'Ojuelegba'] };
+    let linked = 0;
+    for (let i = 0; i < 4000; i++) {
+      const { story } = cityEvent(two, CITY, Math.random);
+      const m = story.headline.match(/links (.+) and (.+)$/);
+      if (!m) continue;
+      linked++;
+      assert.notEqual(m[1], m[2], `"${story.headline}" links a place to itself`);
+    }
+    assert.ok(linked > 100, `only ${linked} link headlines drawn — test is not exercising the path`);
+  });
+
+  it('can offer a different story when one has already run', () => {
+    // The city clock prints one story per tick and picked each independently,
+    // so a player returning after a day found the same headline at eleven
+    // hours ago and again at seventeen. The clock re-rolls a repeat now, which
+    // only works if the generator can produce a different headline for the
+    // same city state.
+    const heads = new Set<string>();
+    for (let i = 0; i < 400; i++) heads.add(cityEvent(ctx, CITY, Math.random).story.headline);
+    assert.ok(heads.size > 3, `only ${heads.size} distinct headlines for one city state`);
+  });
+});

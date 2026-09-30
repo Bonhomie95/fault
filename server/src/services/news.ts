@@ -177,15 +177,41 @@ export async function runCityClock(user: User, roll: Roll = Math.random, now = n
     let city: CityMetrics = await getCityState(user.id);
     const printed: NewsItem[] = [];
     const ctxUser = { ...user, rank: rankFor(user.xp).level };
+
+    /**
+     * Headlines already printed in this catch-up.
+     *
+     * Each tick picked its event independently, so a player returning after a
+     * day came back to "Balogun Market traders complain of power cuts" at
+     * eleven hours ago and again at seventeen — the same sentence, twice, on
+     * the same page. The city state is the same at both ticks, so the same
+     * event is exactly what the weighting is supposed to produce; it just must
+     * not be PRINTED twice.
+     */
+    const alreadyPrinted = new Set<string>();
+
     for (let t = ticks; t >= 1; t--) {
       const at = new Date(now.getTime() - t * TICK_HOURS * 3_600_000 + roll() * 3_600_000);
       city = drift(city, roll);
       const ctx = contextFor(ctxUser, city);
-      const event = cityEvent(ctx, city, roll);
+
+      // Re-roll a repeat a few times. `roll` advances, so each attempt is a
+      // fresh draw against the same city.
+      let event = cityEvent(ctx, city, roll);
+      for (let attempt = 0; attempt < 6 && alreadyPrinted.has(event.story.headline); attempt++) {
+        event = cityEvent(ctx, city, roll);
+      }
+
+      // The deltas apply either way: the thing happened, the city moved. Only
+      // the printing is suppressed, because a day where the power went out
+      // twice is a day with one story about the power going out.
       for (const [k, v] of Object.entries(event.deltas)) {
         const key = k as keyof CityMetrics;
         city[key] = Math.max(0, Math.min(100, city[key] + (v as number)));
       }
+      if (alreadyPrinted.has(event.story.headline)) continue;
+      alreadyPrinted.add(event.story.headline);
+
       const stories: Story[] = [event.story];
 
       // Now and then a face from the docket turns up in the papers.

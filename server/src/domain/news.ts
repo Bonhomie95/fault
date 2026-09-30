@@ -77,12 +77,25 @@ function fill(t: string, s: Record<string, string>): string {
 }
 
 function slots(ctx: NewsContext, roll: Roll, extra: Record<string, string> = {}) {
+  /**
+   * Two DIFFERENT neighbourhoods.
+   *
+   * These drew independently, so one roll in four printed "New bus route links
+   * Ojuelegba and Ojuelegba" — a route from a place to itself, on the front
+   * page, in a game whose whole claim is that the city is real. With four
+   * neighbourhoods per district a collision was not a rare event.
+   */
+  const hoods = ctx.neighbourhoods.length ? ctx.neighbourhoods : [ctx.district];
+  const hood = pick(hoods, roll);
+  const others = hoods.filter((h) => h !== hood);
+  const hood2 = others.length ? pick(others, roll) : hood;
+
   return {
     district: ctx.district,
     court: ctx.court,
     police: ctx.police,
-    hood: pick(ctx.neighbourhoods.length ? ctx.neighbourhoods : [ctx.district], roll),
-    hood2: pick(ctx.neighbourhoods.length ? ctx.neighbourhoods : [ctx.district], roll),
+    hood,
+    hood2,
     market: ctx.market,
     job: ctx.transportJob,
     small: ctx.money.small,
