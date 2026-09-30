@@ -179,7 +179,7 @@ export const SKUS: Sku[] = [
     priceMinor: 499,
     // Earnable, and a real road: roughly 70 cases of service, or a few weeks
     // of daily play. A player who will not pay still gets there.
-    meritPrice: 6000,
+    meritPrice: 4800,
     grants: ['campaign'],
     kind: 'unlock',
     store: 'nonconsumable',
@@ -239,7 +239,7 @@ export const SKUS: Sku[] = [
     title: 'Three More Cases',
     blurb: 'Open three more cases today, past the free docket.',
     priceMinor: null,
-    meritPrice: 200,
+    meritPrice: 450,
     grants: [],
     casesGranted: 3,
     kind: 'consumable',
@@ -250,7 +250,7 @@ export const SKUS: Sku[] = [
     title: 'Streak Shield',
     blurb: 'Covers one missed day, automatically, so your streak survives it.',
     priceMinor: null,
-    meritPrice: 400,
+    meritPrice: 600,
     grants: [],
     shieldsGranted: 1,
     kind: 'consumable',
@@ -310,6 +310,10 @@ export const SKUS: Sku[] = [
   // Every one of these is drawn: seals in components/Seal.tsx, courtrooms in
   // scene2d/CourtroomScene (THEMES). All earnable, and cheap in Merit — a
   // cosmetic nobody can earn is a paywall with better art.
+  //
+  // The NUMBERS are unchanged by the 2026 rebalance on purpose: halving the
+  // faucet already doubled what each of these costs in play time, and doubling
+  // the price as well would have been a fourfold rise nobody asked for.
   {
     id: 'seal_brass',
     title: 'Brass Seal',
@@ -410,18 +414,45 @@ export const skuById = (id: string): Sku | undefined => SKUS.find((s) => s.id ==
  * verdicts would be a scoreboard, and a scoreboard answers the question this
  * game exists to keep open.
  */
+/**
+ * The faucet.
+ *
+ * These were roughly twice what they are now, and the arithmetic did not work.
+ * An engaged free player earned about 1,430 Merit a day — six cases at 85, the
+ * Daily Trial, three missions, a capped streak and five rewarded views at 120
+ * apiece — while the cheapest Merit bundle, at £1.99, granted 1,200. The
+ * shelf's entry price was worth LESS THAN ONE DAY of playing for free, so
+ * there was never a reason to buy it, and the whole merit-priced catalogue
+ * could be owned outright in under three weeks.
+ *
+ * Halved, the day comes to about 620. That keeps the cheapest bundle worth two
+ * days, the middle one a week and the largest a fortnight — which is the ratio
+ * a currency needs before anyone will pay for it — and it makes the things
+ * Merit buys feel earned rather than inevitable.
+ *
+ * Nothing here has become unearnable. Everything on the shelf is still bought
+ * with Merit by anyone willing to sit cases for it; it now takes long enough
+ * that choosing WHICH thing is a real decision.
+ */
 export const MERIT = {
-  perCase: 60,
+  perCase: 30,
   /** Reading before deciding. Same signal XP uses; costs the player nothing. */
-  deliberationBonus: 25,
+  deliberationBonus: 12,
   /** The clock decided, not you. */
-  hungPenalty: -20,
+  hungPenalty: -12,
   perDailyMissionMultiplier: 1,
-  streakDay: 15,
-  streakCap: 150,
-  rewardedAd: 120,
+  streakDay: 8,
+  streakCap: 80,
+  /**
+   * A rewarded view was 120 — two cases' worth for thirty seconds of
+   * attention, which made sitting a case the least efficient way to earn in a
+   * game about sitting cases. At 35 it sits just under a case's 42, so the
+   * advert is worth watching and hearing a case is still the better way to
+   * earn — which is the only ordering that makes sense here.
+   */
+  rewardedAd: 35,
   /** Rewarded views per day. A faucet needs a tap, not a hole. */
-  rewardedAdsPerDay: 5,
+  rewardedAdsPerDay: 4,
 } as const;
 
 export function meritForVerdict(opts: {

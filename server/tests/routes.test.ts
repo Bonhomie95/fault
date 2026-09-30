@@ -245,7 +245,10 @@ describe('the paid game is paid', () => {
     const res = await api().get('/api/store').set(auth(accessToken));
     const campaign = res.body.items.find((i: { id: string }) => i.id === 'campaign');
     assert.equal(campaign.priceMinor, 499);
-    assert.equal(campaign.meritPrice, 6000);
+    // 4,800 after the 2026 rebalance. Halving the faucet doubled what every
+    // Merit price costs in play time, so the campaign came DOWN in Merit to
+    // stay inside the 30-120 case band store.test.ts enforces.
+    assert.equal(campaign.meritPrice, 4800);
   });
 });
 

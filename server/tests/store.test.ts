@@ -244,3 +244,53 @@ describe('the daily docket', () => {
     assert.equal(DOCKET.packCases, 10);
   });
 });
+
+describe('the currency is worth paying for', () => {
+  /**
+   * What an engaged free player earns in a day: the full docket read properly,
+   * the Daily Trial, three daily missions, a capped streak, and every rewarded
+   * view taken.
+   */
+  function dailyEarn(): number {
+    const perCase = MERIT.perCase + MERIT.deliberationBonus;
+    const docketCases = 6 + 1; // the day's docket, plus the Daily Trial
+    const missions = 3 * 15; // DAILY_OFFERED, at about the average mission
+    return docketCases * perCase + missions + MERIT.streakCap + MERIT.rewardedAdsPerDay * MERIT.rewardedAd;
+  }
+
+  it('does not give away more in a day than the cheapest bundle sells', () => {
+    // This is the bug that made the shelf pointless. A free player earned
+    // about 1,430 Merit a day while merit_small granted 1,200 for £1.99 — the
+    // entry price of the store was worth LESS THAN ONE DAY of not paying, so
+    // there was never a reason to buy it.
+    const smallest = SKUS.filter((s) => s.kind === 'currency')
+      .map((s) => s.meritGranted ?? 0)
+      .sort((a, b) => a - b)[0]!;
+    const days = smallest / dailyEarn();
+    assert.ok(
+      days >= 1.5,
+      `the cheapest bundle is ${days.toFixed(1)} days of free play — nobody buys that`,
+    );
+  });
+
+  it('does not let adverts out-earn sitting a case', () => {
+    // A rewarded view paid 120 against 85 for a case, so the most profitable
+    // way to play a game about hearing cases was to not hear them.
+    const perCase = MERIT.perCase + MERIT.deliberationBonus;
+    assert.ok(
+      MERIT.rewardedAd < perCase,
+      `a rewarded view pays ${MERIT.rewardedAd} and a case pays ${perCase}`,
+    );
+  });
+
+  it('keeps the repeatable sink costing more than it returns', () => {
+    // extra_docket grants three cases. If it cost less than those three cases
+    // earn, buying it PRINTS Merit and the economy runs backwards.
+    const extra = skuById('extra_docket')!;
+    const earnedBack = 3 * (MERIT.perCase + MERIT.deliberationBonus);
+    assert.ok(
+      extra.meritPrice! > earnedBack,
+      `extra_docket costs ${extra.meritPrice} and returns ${earnedBack} — it mints Merit`,
+    );
+  });
+});
