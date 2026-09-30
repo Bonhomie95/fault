@@ -45,7 +45,7 @@ export interface AdDecision {
  */
 export async function noteCaseHeard(userId: string): Promise<AdDecision> {
   if (await hasEntitlement(userId, 'no_ads')) {
-    return { showInterstitial: false, casesUntilNext: Number.POSITIVE_INFINITY };
+    return { showInterstitial: false, casesUntilNext: 0 };
   }
 
   const user = await prisma.user.findUniqueOrThrow({

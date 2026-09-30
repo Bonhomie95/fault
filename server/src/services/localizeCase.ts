@@ -98,13 +98,21 @@ function buildSlots(ctx: LocalizeContext, presents: [Presents, Presents, Present
   // surname reads as family, and in these cases it would be an accident.
   const names: { first: string; last: string }[] = [];
   for (let i = 0; i < 3; i++) {
-    const pool = givenFor(t.givenNames, presents[i] ?? null);
+    const registers = t.registers?.filter((r) =>
+      !presents[i] || r.given.some((n) => presentsFeminine(`${n} x`) === (presents[i] === 'f')),
+    );
+    const total = registers?.reduce((n, r) => n + r.weight, 0) ?? 0;
+    const random = Math.sin(ctx.seed * 91.7 + (101 + i * 19) * 47.3) * 21374.1;
+    let ticket = Math.floor((random - Math.floor(random)) * total);
+    const register = registers?.find((r) => { ticket -= r.weight; return ticket < 0; });
+    const pool = givenFor(register?.given ?? t.givenNames, presents[i] ?? null);
+    const surnames = register?.surnames ?? t.surnames;
     let first = pick(pool, ctx.seed, 11 + i * 7);
-    let last = pick(t.surnames, ctx.seed, 23 + i * 13);
+    let last = pick(surnames, ctx.seed, 23 + i * 13);
     let guard = 0;
     while (names.some((n) => n.first === first || n.last === last) && guard < 12) {
       first = pick(pool, ctx.seed + guard * 31, 11 + i * 7);
-      last = pick(t.surnames, ctx.seed + guard * 17, 23 + i * 13);
+      last = pick(surnames, ctx.seed + guard * 17, 23 + i * 13);
       guard++;
     }
     names.push({ first, last });

@@ -78,10 +78,10 @@ export async function showInterstitial(): Promise<boolean> {
   try {
     if (!(await backend.isReady())) return false;
 
-    return await Promise.race([
-      backend.showInterstitial(),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), AD_LOAD_TIMEOUT_MS)),
-    ]);
+    // The backend uses preloaded ads and skips immediately if unavailable.
+    // Once presented, wait for dismissal: timing out the VIEW would resume
+    // play behind the native ad and could start a case clock out of sight.
+    return await backend.showInterstitial();
   } catch (err) {
     reportError('ads.interstitial', err);
     return false;

@@ -189,10 +189,8 @@ describe('everything meaningful is earnable', () => {
     }
   });
 
-  it('does NOT let ad-removal be ground for', () => {
-    // Watching ads to earn the removal of ads is a dark pattern wearing a
-    // progression system.
-    assert.equal(skuById('no_ads')?.meritPrice, null);
+  it('lets a player earn permanent ad removal through service', () => {
+    assert.equal(skuById('no_ads')?.meritPrice, 4500);
   });
 
   it('keeps the campaign a real but long road', () => {

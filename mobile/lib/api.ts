@@ -747,9 +747,12 @@ export const api = {
     nonce?: string;
     jurorName?: string;
     country?: string;
+    countrySource?: 'gps' | 'ip' | 'locale' | 'declined' | 'unavailable';
     /** IANA zone, so the player's day ends at their midnight. */
     timezone?: string;
   }) => request<SignInResult>('/api/auth/sign-in', { method: 'POST', body, auth: false }),
+
+  locateCountry: () => request<{ country: string | null }>('/api/auth/location', { auth: false }),
 
   countries: () =>
     request<{ countries: { code: string; name: string; districts: string[] }[] }>(

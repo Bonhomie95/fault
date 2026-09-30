@@ -1,11 +1,9 @@
 /**
  * app.json plus the parts that differ per build.
  *
- * AdMob's app ids live in the native project, so they are set at build time
- * from the environment (eas.json / EAS secrets). Without them a build gets
- * Google's public TEST app ids — which is right for development, and the
- * app's ad units are separately gated (lib/admob) so a release build without
- * real ids serves no ads at all rather than test ads to the public.
+ * All current builds use Google's public test app ids. Runtime ad units are
+ * also locked to TestIds (lib/admob). Live credentials are intentionally ignored
+ * during testing; switch both together before a public launch.
  */
 /**
  * Google's published SKAdNetwork identifiers
@@ -92,8 +90,8 @@ module.exports = ({ config }) => ({
     [
       'react-native-google-mobile-ads',
       {
-        iosAppId: process.env.ADMOB_IOS_APP_ID || TEST_APP_IDS.ios,
-        androidAppId: process.env.ADMOB_ANDROID_APP_ID || TEST_APP_IDS.android,
+        iosAppId: TEST_APP_IDS.ios,
+        androidAppId: TEST_APP_IDS.android,
         // Nothing is measured before the consent form has been answered.
         delayAppMeasurementInit: true,
         skAdNetworkItems: SKAD_NETWORKS,

@@ -20,7 +20,7 @@ This policy explains what FAULT (the "Service"), provided by Bonhomie LLC ("we",
 
 **Your juror name.** The name you choose is shown publicly on the leaderboards, next to your country and your city's standing.
 
-**Country and district.** When you first swear in, the app may ask for your approximate location. It is used **on your device** only to work out which country you are in; your coordinates are never sent to us or stored. If you decline, the app uses your device's region setting. We store the country code. Your in-game district is assigned by the game within that country — it is not your real address or neighbourhood.
+**Country and district.** When you first swear in, the app may ask for your approximate location. It is used **on your device** only to work out which country you are in; your coordinates are never sent to us or stored. If device location is unavailable or you decline, our server uses a local IP-to-country database to estimate your country. No external geolocation service receives your IP address. If that lookup fails, the app uses your device's region setting. IP geolocation is approximate and may reflect a VPN's location. We store the country code. Your in-game district is assigned by the game within that country — it is not your real address or neighbourhood.
 
 **Time zone.** Your device's time zone (for example, "Europe/Oslo"), so daily missions and streaks end at your midnight.
 

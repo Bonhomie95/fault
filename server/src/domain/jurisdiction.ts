@@ -2497,7 +2497,8 @@ export const COUNTRIES: Record<string, CountryProfile> = {
  * so the experience degrades to "plausible" rather than to "somewhere else".
  */
 export function genericProfile(code: string, displayName?: string): CountryProfile {
-  const name = displayName ?? code;
+  const name = displayName ?? (code === 'ZZ' ? 'your country'
+    : new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code);
   return {
     code,
     name,
@@ -2538,7 +2539,7 @@ export function genericProfile(code: string, displayName?: string): CountryProfi
 }
 
 export function profileFor(code: string | null | undefined): CountryProfile {
-  if (!code) return COUNTRIES.NO!; // a juror always sits somewhere
+  if (!code) return genericProfile('ZZ');
   return COUNTRIES[code.toUpperCase()] ?? genericProfile(code.toUpperCase());
 }
 

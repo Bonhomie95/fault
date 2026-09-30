@@ -1,3 +1,4 @@
+import { containsStoryDisclosure } from '../domain/storyPolicy.js';
 import type { Tier } from '@prisma/client';
 import { ACCENTS, generatedCaseSchema, structureKeyFor, TWIN_GAP, type GeneratedCase } from '../domain/case.js';
 import type { CityMetrics } from '../domain/city.js';
@@ -92,15 +93,9 @@ const BLOCKED_PATTERNS = [
 ];
 
 function violatesPolicy(c: GeneratedCase): boolean {
-  const haystack = [
-    c.title,
-    c.charge,
-    c.defendant.background,
-    ...c.evidence.map((e) => e.description),
-    ...c.witnesses.map((w) => w.testimony),
-    ...c.courtroom_lines.map((l) => l.text),
-  ].join(' ');
-  return BLOCKED_PATTERNS.some((p) => p.test(haystack));
+  // Cover every narrative field, including lies, readings and arguments.
+  const haystack = JSON.stringify(c);
+  return BLOCKED_PATTERNS.some((p) => p.test(haystack)) || containsStoryDisclosure(haystack);
 }
 
 /** Where this case is heard. Real institutions; fictional people. */
@@ -310,6 +305,11 @@ procedural and cultural texture — how a case actually moves in
 ${place.countryName}, what the police are actually called, what the money is
 (${place.currency}), what the streets and jobs and pressures are.
 
+Every EVENT and PERSON is fictional and must be invented. Do not adapt
+headlines, real stories, famous trials or identifiable real incidents.
+Do not put fiction disclaimers, 'based on a true story', or AI-generation
+labels in titles, testimony, evidence or courtroom dialogue; those disclosures
+belong in the game's Terms, outside the story.
 Every PERSON is fictional and must be invented. Never use the name of a real
 person — not a real officer, prosecutor, judge, politician, executive, or
 public figure, living or dead, and no thinly-veiled version of one. Do not
@@ -318,15 +318,14 @@ name you are about to write belongs to someone who actually exists in
 ${place.countryName}, choose a different name. Officers and officials are
 fictional individuals who happen to work for a real service.
 
-Names should read as ${place.nameRegister}, and reflect who actually lives in
-${place.district} — including immigrant and minority communities where that is
-true to the city.${place.nameSeed ? `
+Names should read as ${place.nameRegister}, using everyday names familiar
+across ${place.countryName}. Draw from the country's whole population, not
+only one ethnic group or the neighbourhood where the case is heard. Never
+make ethnicity, religion or national origin a character trait or a clue.${place.nameSeed ? `
 
 Do NOT reach for the handful of names from this country that are best known
-abroad. Spread this case's people across different communities, regions and
-religions within ${place.countryName}, the way a real day's docket does, and
-let the defendant, the witnesses and the two counsel come from different
-backgrounds rather than all from one. Names in the spirit of these — invent
+abroad. Use ordinary names from across ${place.countryName}. Do not explain their
+ethnic or religious origins, or build the case around those origins. Names in the spirit of these — invent
 your own, do not copy these:
 ${place.nameSeed}` : ''}
 
@@ -791,7 +790,7 @@ function nameSeedFor(profile: CountryProfile, seed: string): string {
       const reg = regs.splice(roll() % regs.length, 1)[0]!;
       const r = roll();
       out.push(
-        `${reg.given[r % reg.given.length]} ${reg.surnames[(r >> 7) % reg.surnames.length]} (${reg.label})`,
+        `${reg.given[r % reg.given.length]} ${reg.surnames[(r >> 7) % reg.surnames.length]}`,
       );
     }
     return out.join('; ');
@@ -1198,7 +1197,7 @@ export function placeForUser(user: {
   currentDistrict?: string | null;
   xp?: number;
 }): PlaceContext {
-  const country = (user.currentCountry ?? user.homeCountry ?? 'NO').toUpperCase();
+  const country = (user.currentCountry ?? user.homeCountry ?? 'ZZ').toUpperCase();
   const profile = profileFor(country);
   const home = user.homeDistrict ?? districtFor(country, user.id);
   // The seat the player chose, if they have opened it; home otherwise.

@@ -18,10 +18,8 @@ import { setAdBackend, type AdBackend } from '@/lib/ads';
  *     the view is for — so Google calls our server (GET /api/store/ssv) when
  *     the view completes. The app never claims the reward in production.
  *
- *  3. NO TEST ADS IN PRODUCTION, NO REAL ADS IN DEVELOPMENT. Development builds
- *     use Google's test units; a release build without real unit ids simply
- *     has no ads, rather than serving test ads to the public (a policy
- *     violation) or crashing.
+ *  3. TEST ADS ONLY during the current testing phase, including internal
+ *     release-mode builds. Replace both app ids and units before public launch.
  *
  * Loaded lazily and optionally: a build without the native module has no ads.
  */
@@ -45,17 +43,9 @@ function load(): Gma | null {
   return gma;
 }
 
-/** Real unit ids come from the build (eas.json env); dev falls back to Google's test units. */
-function unitIds(g: Gma): { interstitial: string | null; rewarded: string | null } {
-  const ios = Platform.OS === 'ios';
-  const interstitial = ios
-    ? process.env.EXPO_PUBLIC_ADMOB_IOS_INTERSTITIAL
-    : process.env.EXPO_PUBLIC_ADMOB_ANDROID_INTERSTITIAL;
-  const rewarded = ios ? process.env.EXPO_PUBLIC_ADMOB_IOS_REWARDED : process.env.EXPO_PUBLIC_ADMOB_ANDROID_REWARDED;
-  if (__DEV__) {
-    return { interstitial: g.TestIds.INTERSTITIAL, rewarded: g.TestIds.REWARDED };
-  }
-  return { interstitial: interstitial || null, rewarded: rewarded || null };
+/** Testing phase: use test units even in internal release-mode builds. */
+function unitIds(g: Gma): { interstitial: string; rewarded: string } {
+  return { interstitial: g.TestIds.INTERSTITIAL, rewarded: g.TestIds.REWARDED };
 }
 
 /**
@@ -173,7 +163,7 @@ export function startAds(): Promise<boolean> {
       }
 
       // Apple's prompt, with OUR words in it (NSUserTrackingUsageDescription).
-      await requestTracking();
+      if (!onSampleAccount(ids)) await requestTracking();
       await g.default().setRequestConfiguration({
         // A courtroom game rated for teens: no mature advertising.
         maxAdContentRating: g.MaxAdContentRating.T,
@@ -198,9 +188,17 @@ function backendFor(g: Gma, ids: { interstitial: string | null; rewarded: string
     if (!ids.interstitial) return;
     interstitialReady = false;
     interstitial = g.InterstitialAd.createForAdRequest(ids.interstitial);
-    const off = interstitial.addAdEventListener(g.AdEventType.LOADED, () => {
+    const ad = interstitial;
+    const off = ad.addAdEventListener(g.AdEventType.LOADED, () => {
       interstitialReady = true;
       off();
+      offError();
+    });
+    const offError = ad.addAdEventListener(g.AdEventType.ERROR, () => {
+      off();
+      offError();
+      interstitial = null;
+      interstitialReady = false;
     });
     interstitial.load();
   };
@@ -243,7 +241,11 @@ function backendFor(g: Gma, ids: { interstitial: string | null; rewarded: string
           resolve(false);
           return;
         }
+        let done = false;
+        interstitialReady = false;
         const end = (shown: boolean) => {
+          if (done) return;
+          done = true;
           offClose();
           offError();
           adCovering(false);

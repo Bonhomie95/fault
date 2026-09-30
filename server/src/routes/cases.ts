@@ -268,9 +268,8 @@ caseRouter.get('/next', requireJuror, generationLimiter, async (req, res) => {
       accent: accentHexFor(generated.accent),
       mood: deriveCaseMood(city),
       country: place.country,
-      // The fallback docket is set in a fictional city, so it must not claim a
-      // real court. Only generated cases carry a real jurisdiction.
-      jurisdiction: source === 'fallback' ? '' : place.court,
+      // Authored and generated cases use the same localised setting.
+      jurisdiction: place.court,
       tier: place.tier,
       defendantName: generated.defendant.name,
       defendantAge: generated.defendant.age,

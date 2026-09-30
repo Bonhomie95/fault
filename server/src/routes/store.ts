@@ -340,6 +340,7 @@ storeRouter.get('/ads', requireJuror, economyLimiter, async (req, res) => {
     // delivering a verdict would be the game selling the player's attention
     // during the one moment it asked them to concentrate.
     interstitialEveryNCases: noAds ? null : 3,
+    interstitialCaseRange: noAds ? null : { min: 2, max: 3 },
     rewardedAvailable:
       rewardedEnabled() && (await rewardedAdsToday(userId, 'merit')) < MERIT.rewardedAdsPerDay,
   });

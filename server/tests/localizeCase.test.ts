@@ -137,3 +137,21 @@ describe('unlisted countries', () => {
     }
   });
 });
+
+ describe('country-wide fallback naming', () => {
+  it('keeps given names and surnames coherent across national registers', () => {
+    const profile = profileFor('NG');
+    const seen = new Set<string>();
+    for (let seed = 0; seed < 120; seed++) {
+      const c = localizeCase(SEED_CASES[0]!, ctxFor('NG', seed));
+      for (const name of [c.defendant.name, ...c.witnesses.map((w) => w.name)]) {
+        const register = profile.texture.registers!.find((r) =>
+          r.given.some((first) => r.surnames.some((last) => name === `${first} ${last}`)),
+        );
+        assert.ok(register, `incoherent name: ${name}`);
+        seen.add(register.label);
+      }
+    }
+    assert.ok(seen.size >= 6, `only ${seen.size} national naming registers used`);
+  });
+});

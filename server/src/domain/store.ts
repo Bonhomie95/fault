@@ -188,11 +188,10 @@ export const SKUS: Sku[] = [
     id: 'no_ads',
     title: 'No Adverts. Ever.',
     blurb:
-      'Removes every interstitial, permanently. Rewarded views stay available if you want them; they are never required.',
+      'Removes every interstitial, permanently. Earn it with 4,500 Merit or unlock it instantly. Optional rewarded views stay available.',
     priceMinor: 399,
-    // Deliberately NOT earnable. An ad-removal you can grind for is a game
-    // that makes you watch ads to stop watching ads.
-    meritPrice: null,
+    // A second permanent upgrade reachable through service or a purchase.
+    meritPrice: 4500,
     grants: ['no_ads'],
     kind: 'unlock',
     store: 'nonconsumable',

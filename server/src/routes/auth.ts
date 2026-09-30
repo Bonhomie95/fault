@@ -13,6 +13,7 @@ import {
   verifyGuest,
   type VerifiedIdentity,
 } from '../services/auth.js';
+import { countryForIp, resolveSignInCountry } from '../services/geolocation.js';
 import { getCityState } from '../services/cityState.js';
 import { consumeNonce, issueNonce, nonceIsLive, nonceStoreReady } from '../services/nonces.js';
 import { issueTokens, revokeAll, rotateRefresh } from '../services/tokens.js';
@@ -52,7 +53,8 @@ const signInSchema = z.object({
    * the personalisation is country-level, so coordinates would be data the
    * game collects and never uses.
    */
-  country: z.string().length(2).optional(),
+  country: z.string().regex(/^[a-zA-Z]{2}$/).optional(),
+  countrySource: z.enum(['gps', 'ip', 'locale', 'declined', 'unavailable']).optional(),
   /** IANA zone from the device, so streaks and daily missions end at the
    *  player's midnight rather than UTC's. */
   timezone: z.string().max(64).optional(),
@@ -227,7 +229,7 @@ authRouter.post('/sign-in', authLimiter, async (req, res) => {
     return;
   }
 
-  const code = (country ?? 'NO').toUpperCase();
+  const code = resolveSignInCountry(req.ip, country, parsed.data.countrySource);
   const profile = profileFor(code);
   const localeTag = profile.localeTag;
 
@@ -294,6 +296,13 @@ authRouter.post('/refresh', refreshLimiter, async (req, res) => {
 authRouter.post('/sign-out', requireJuror, async (req, res) => {
   await revokeAll(req.juror.userId);
   res.json({ signedOut: true });
+});
+
+// Express resolves req.ip using the configured trusted proxy chain. Never
+// accept a country header or caller-supplied IP on this endpoint.
+authRouter.get('/location', nonceLimiter, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ country: countryForIp(req.ip) });
 });
 
 /** Countries the game can actually stage a case in. */

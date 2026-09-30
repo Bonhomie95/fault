@@ -37,8 +37,8 @@ export function Interstitial({ onDone }: { onDone: () => void }) {
     const nag = setTimeout(() => setSlow(true), 1800);
     void (async () => {
       // With no network registered this resolves false at once and the slot
-      // fails open. A failed or slow ad must never trap the player: lib/ads
-      // gives up after six seconds whatever the network is doing.
+      // fails open. A failed or slow ad must never trap the player: the native backend
+      // uses a preloaded ad or skips immediately, then waits for dismissal.
       if (adsAvailable()) await showInterstitial();
       if (!cancelled) done.current();
     })();
@@ -57,7 +57,7 @@ export function Interstitial({ onDone }: { onDone: () => void }) {
         </Text>
         {slow && (
           <Animated.Text entering={FadeIn.duration(300)} style={styles.note}>
-            Waiting on the network. This will not take longer than a few seconds.
+            Close the advert to resume the court.
           </Animated.Text>
         )}
       </Animated.View>

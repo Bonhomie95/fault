@@ -191,6 +191,7 @@ export const useGame = create<GameState>((set, get) => ({
       consentVersion: LEGAL_VERSION,
       jurorName,
       ...(country.code ? { country: country.code } : {}),
+      countrySource: country.source,
       // The player's own day is where streaks and daily missions end.
       timezone: deviceTimezone(),
     });

@@ -1,3 +1,4 @@
+import { api } from '@/lib/api';
 import * as Location from 'expo-location';
 import { getLocales } from 'expo-localization';
 
@@ -10,16 +11,14 @@ import { getLocales } from 'expo-localization';
  * the server and never stored. Keeping them would be collecting data the game
  * has no use for.
  *
- * Permission is genuinely optional. A player who declines picks their
- * jurisdiction from a list instead, which is a perfectly good outcome and in
- * some ways a better one: it lets them choose the country they want to be a
- * juror in.
+ * Permission is optional. If GPS is unavailable, the API estimates a country
+ * from the request IP using its local database, then falls back to device region.
  */
 
 export interface CountryResult {
   /** ISO 3166-1 alpha-2, or null if we could not tell. */
   code: string | null;
-  source: 'gps' | 'locale' | 'declined' | 'unavailable';
+  source: 'gps' | 'ip' | 'locale' | 'declined' | 'unavailable';
 }
 
 /** The device's own guess, needing no permission at all. */
@@ -34,7 +33,7 @@ export function countryFromLocale(): string | null {
 
 /**
  * Ask for location and reverse-geocode to a country.
- * Falls back to the device locale on any refusal or failure — the game must
+ * Falls back to IP country, then device locale on refusal or failure — the game must
  * never be blocked by this.
  */
 /**
@@ -80,14 +79,27 @@ export async function resolveCountry(): Promise<CountryResult> {
     return { code: code.toUpperCase(), source: 'gps' };
   })();
 
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([
+    const result = await Promise.race([
       lookup,
-      new Promise<CountryResult>((resolve) =>
-        setTimeout(() => resolve({ code: fallback, source: 'unavailable' }), LOOKUP_TIMEOUT_MS),
-      ),
+      new Promise<CountryResult>((resolve) => {
+        timer = setTimeout(() => resolve({ code: null, source: 'unavailable' }), LOOKUP_TIMEOUT_MS);
+      }),
+    ]).catch((): CountryResult => ({ code: null, source: 'unavailable' }));
+    if (result.source === 'gps') return result;
+    // Country-only GeoIP on our API, with a short deadline. No external
+    // geolocation vendor receives the player's IP or coordinates.
+    const ip = await Promise.race([
+      api.locateCountry().catch(() => null),
+      new Promise<null>((resolve) => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => resolve(null), 2500);
+      }),
     ]);
-  } catch {
-    return { code: fallback, source: 'unavailable' };
+    if (ip?.country) return { code: ip.country, source: 'ip' };
+    return { code: fallback, source: fallback ? 'locale' : 'unavailable' };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }

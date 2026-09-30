@@ -18,7 +18,7 @@ You may delete your account at any time from **Settings → Delete this juror**.
 
 ## 3. The game is fiction
 
-FAULT presents criminal cases for you to judge. **Every case, defendant, witness, officer, lawyer and other person in the game is fictional.** Case files are generated in part by artificial intelligence and are not reviewed by a human before you see them.
+FAULT presents criminal cases for you to judge. **Every case, defendant, witness, officer, lawyer and other person in the game is fictional.** Stories and events are invented for the player’s country; they are not adaptations of real news, trials or personal stories. Case files are generated in part by artificial intelligence and are not reviewed by a human before you see them.
 
 Real countries, cities, districts, courts and police services are named **as setting only**, to give the cases a sense of place. Their appearance does not mean that any real institution, or anyone who works for one, did anything described in the game. Any resemblance to a real person or a real case is unintended; if you see one, please report it using the in-game report button and we will withdraw the case.
 

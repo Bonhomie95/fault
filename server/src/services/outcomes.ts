@@ -1,3 +1,5 @@
+import { containsStoryDisclosure } from '../domain/storyPolicy.js';
+import { profileFor } from '../domain/jurisdiction.js';
 import type { Case } from '@prisma/client';
 import { aiEnabled, completeOnce } from '../lib/groq.js';
 
@@ -24,6 +26,9 @@ export async function writeOutcome(
   const prompt = `
 Write ONE sentence of newspaper-style follow-up reporting, past tense, factual,
 no editorialising, no moral judgement, no adjectives of praise or blame.
+Continue this invented case in ${profileFor(caseData.country).name}, using its
+local setting. Invent all events; never borrow real news, cases or people.
+Do not add a fiction disclaimer or AI label inside the reporting.
 
 Defendant: ${caseData.defendantName}, ${caseData.defendantOccupation}
 Charge: ${caseData.charge}
@@ -44,7 +49,8 @@ Include a timeframe in months. Return only the sentence.
   // rather than throwing — the deterministic writer is a real fallback here,
   // not an error path, and it is written in the same voice.
   const written = await completeOnce({ prompt, maxTokens: 120, temperature: 0.8 });
-  return written ?? deterministicOutcome(caseData, verdict, wasHung);
+  return written && !containsStoryDisclosure(written)
+    ? written : deterministicOutcome(caseData, verdict, wasHung);
 }
 
 function deterministicOutcome(
